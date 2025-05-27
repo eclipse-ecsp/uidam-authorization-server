@@ -105,7 +105,7 @@ maven/mavencentral/org.apache.httpcomponents/httpcore/4.4.16, Apache-2.0, approv
 maven/mavencentral/org.apache.james/apache-mime4j-core/0.8.6, Apache-2.0, approved, clearlydefined
 maven/mavencentral/org.apache.logging.log4j/log4j-api/2.24.3, Apache-2.0, approved, #16095
 maven/mavencentral/org.apache.logging.log4j/log4j-to-slf4j/2.24.3, Apache-2.0, approved, #16094
-maven/mavencentral/org.apache.tomcat.embed/tomcat-embed-core/10.1.36, Apache-2.0 AND (EPL-2.0 OR (GPL-2.0 WITH Classpath-exception-2.0)) AND CDDL-1.0 AND (CDDL-1.1 OR (GPL-2.0-only WITH Classpath-exception-2.0)) AND EPL-2.0, approved, #15195
+maven/mavencentral/org.apache.tomcat.embed/tomcat-embed-core/10.1.36, Apache-2.0 AND (EPL-2.0 OR (GPL-2.0-only WITH Classpath-exception-2.0)) AND CDDL-1.0 AND (CDDL-1.1 OR (GPL-2.0-only WITH Classpath-exception-2.0)) AND EPL-2.0, approved, #15195
 maven/mavencentral/org.apache.tomcat.embed/tomcat-embed-el/10.1.36, Apache-2.0, approved, #6997
 maven/mavencentral/org.apache.tomcat.embed/tomcat-embed-websocket/10.1.36, Apache-2.0, approved, #7920
 maven/mavencentral/org.apache.ws.commons.axiom/axiom-api/1.4.0, Apache-2.0, approved, #20720
