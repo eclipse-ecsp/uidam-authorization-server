@@ -91,7 +91,7 @@ class SignUpControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        when(tenantConfigurationService.getTenantProperties(any())).thenReturn(tenantProperties);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         signUpController = new SignUpController(userManagementClient, tenantConfigurationService,
                 passwordPolicyService);
     }

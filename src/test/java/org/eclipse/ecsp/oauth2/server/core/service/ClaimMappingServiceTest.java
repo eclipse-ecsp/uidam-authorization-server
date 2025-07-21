@@ -23,6 +23,9 @@ import java.util.Set;
 class ClaimMappingServiceTest {
 
     @Mock
+    private TenantConfigurationService tenantConfigurationService;
+
+    @Mock
     private TenantProperties tenantProperties;
 
     @Mock
@@ -34,19 +37,23 @@ class ClaimMappingServiceTest {
 
     @BeforeEach
     void setUp() {
-        claimMappingService = new ClaimMappingService(tenantProperties, userMapper);
+        claimMappingService = new ClaimMappingService(tenantConfigurationService, userMapper);
 
         // Setup IDP config
         idpConfig = new ExternalIdpRegisteredClient();
         idpConfig.setRegistrationId(REGISTRATION_ID);
         Set<String> defaultRoles = Set.of("USER", "GUEST");
         idpConfig.setDefaultUserRoles(defaultRoles);
+
+        // Mock tenant configuration service - using lenient to avoid unnecessary stubbing exceptions
+        Mockito.lenient().when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
     }
 
     @Test
     void constructor_ShouldThrowException_WhenNullParameters() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> new ClaimMappingService(null, userMapper));
-        Assertions.assertThrows(IllegalArgumentException.class, () -> new ClaimMappingService(tenantProperties, null));
+        Assertions.assertThrows(IllegalArgumentException.class, 
+                () -> new ClaimMappingService(tenantConfigurationService, null));
     }
 
     @Test

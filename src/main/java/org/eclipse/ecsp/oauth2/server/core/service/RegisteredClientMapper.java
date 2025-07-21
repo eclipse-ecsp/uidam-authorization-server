@@ -24,7 +24,6 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -55,14 +54,18 @@ public class RegisteredClientMapper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RegisteredClientMapper.class);
 
-    @Autowired
-    TenantProperties tenantProperties;
+    private final TenantConfigurationService tenantConfigurationService;
     
     @Value("${security.client.bcrypt.strength:high}")
     private String bcryptLength;
 
-    protected RegisteredClientMapper() {
-        // Prevent instantiation
+    /**
+     * Constructor for RegisteredClientMapper.
+     *
+     * @param tenantConfigurationService the tenant configuration service
+     */
+    public RegisteredClientMapper(TenantConfigurationService tenantConfigurationService) {
+        this.tenantConfigurationService = tenantConfigurationService;
     }
 
     /**
@@ -234,6 +237,7 @@ public class RegisteredClientMapper {
      * @return the built TokenSettings instance.
      */
     private TokenSettings tokenSettingsBuilder(RegisteredClientDetails clientDetails) {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         ClientProperties clientProperties = tenantProperties.getClient();
         TokenSettings.Builder tokenSettingsBuilder = TokenSettings.builder();
         tokenSettingsBuilder.accessTokenTimeToLive(

@@ -26,7 +26,6 @@ import org.eclipse.ecsp.oauth2.server.core.response.ResponseMessage;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageConversionException;
@@ -46,9 +45,9 @@ import org.springframework.web.servlet.ModelAndView;
 import java.util.ArrayList;
 import java.util.List;
 
+
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECORD_ALREADY_EXISTS_ERROR_MESSAGE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_FORGOT_PASSWORD;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ACC_NAME_FORMAT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_SITE;
@@ -64,18 +63,16 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 public class ExceptionControllerAdvice {
     private static final Logger LOGGER = LoggerFactory.getLogger(ExceptionControllerAdvice.class);
 
-    private TenantProperties tenantProperties;
+    private TenantConfigurationService tenantConfigurationService;
 
     /**
      * Constructor for ExceptionControllerAdvice.
-     * This constructor is used to initialize the tenantProperties field by fetching the tenant properties
-     * from the TenantConfigurationService.
+     * This constructor is used to initialize the tenantConfigurationService field.
      *
      * @param tenantConfigurationService the service used to fetch tenant properties
      */
-    @Autowired
     public ExceptionControllerAdvice(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        this.tenantConfigurationService = tenantConfigurationService;
     }
 
     /**
@@ -311,6 +308,7 @@ public class ExceptionControllerAdvice {
      */
     @ExceptionHandler(PatternMismatchException.class)
     public ModelAndView patternMismatchException() {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         return new ModelAndView(RECOVERY_FORGOT_PASSWORD)
                 .addObject(ERROR_LITERAL, ACC_NAME_FORMAT_ERROR)
                 .addObject(CAPTCHA_FIELD_ENABLED, TRUE)

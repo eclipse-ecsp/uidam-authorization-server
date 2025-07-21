@@ -18,11 +18,9 @@
 
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
-import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
@@ -38,7 +36,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(EmailVerificationController.class)
 @ContextConfiguration(classes = {EmailVerificationController.class})
-@EnableConfigurationProperties(value = TenantProperties.class)
 class EmailVerificationControllerTest {
 
     @Autowired

@@ -20,7 +20,7 @@ package org.eclipse.ecsp.oauth2.server.core.utils;
 
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.UidamApplicationException;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.BadPaddingException;
@@ -55,8 +55,16 @@ public class AdvEncryptionStdAlgoDecryption {
     private static final int IV_LENGTH_BYTE = 12;
     private static final int AES_KEY_BIT = 256;
 
-    @Autowired
-    TenantProperties tenantProperties;
+    private final TenantConfigurationService tenantConfigurationService;
+
+    /**
+     * Constructor for AdvEncryptionStdAlgoDecryption.
+     *
+     * @param tenantConfigurationService the tenant configuration service
+     */
+    public AdvEncryptionStdAlgoDecryption(TenantConfigurationService tenantConfigurationService) {
+        this.tenantConfigurationService = tenantConfigurationService;
+    }
 
     /**
      * The decrypt method is used to decrypt an encrypted string - client secret.
@@ -81,6 +89,7 @@ public class AdvEncryptionStdAlgoDecryption {
             // separate prefix with IV from the rest of encrypted data
             byte[] encryptedPayload = Base64.getDecoder().decode(encryptedString);
             // get back the iv and salt from the cipher text
+            TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
             String salt = tenantProperties.getClient().getSecretEncryptionSalt();
             String secretKey = tenantProperties.getClient().getSecretEncryptionKey();
             ByteBuffer bb = ByteBuffer.wrap(encryptedPayload);

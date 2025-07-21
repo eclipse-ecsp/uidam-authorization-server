@@ -29,7 +29,7 @@ public final class AuthorizationServerConstants {
 
     }
 
-    public static final String UIDAM = "uidam";
+    public static final String ECSP = "ecsp";
     public static final String TENANT_CONTACT_NAME = "contact-name";
     public static final String TENANT_PHONE_NUMBER = "phone-number";
     public static final String TENANT_EMAIL = "email";

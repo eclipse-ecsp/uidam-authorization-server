@@ -26,8 +26,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
-
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ACCOUNT_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_SITE;
@@ -46,32 +44,34 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 @Controller
 public class LoginController {
 
-    private TenantProperties tenantProperties;
-
-    @Autowired
-    LoginService loginService;
+    private final TenantConfigurationService tenantConfigurationService;
+    private final LoginService loginService;
 
     /**
      * The constructor for the LoginController class.
-     * It initializes the tenant properties using the provided TenantConfigurationService.
+     * It initializes the required services for multi-tenant configuration and login functionality.
      *
      * @param tenantConfigurationService The service that provides the tenant configuration.
+     * @param loginService The service that handles login operations.
      */
     @Autowired
-    public LoginController(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+    public LoginController(TenantConfigurationService tenantConfigurationService, LoginService loginService) {
+        this.tenantConfigurationService = tenantConfigurationService;
+        this.loginService = loginService;
     }
 
     /**
      * The endpoint for the UIDAM Login.
      * It adds additional login form attributes like account name, captcha, etc. to the model.
-     * It returns the login page.
+     * It returns the login page. Tenant properties are resolved dynamically based on current tenant context.
      *
      * @param model The Model object that is used for adding attributes.
      * @return The name of the login page.
      */
     @GetMapping("/login")
     public String login(Model model) {
+        // Get tenant properties dynamically based on current tenant context
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(ACCOUNT_FIELD_ENABLED, tenantProperties.getAccount().getAccountFieldEnabled());
         boolean isCaptchaEnabledForUserInterface = loginService.isCaptchaEnabledForUserInterface();
         model.addAttribute(CAPTCHA_FIELD_ENABLED, isCaptchaEnabledForUserInterface);

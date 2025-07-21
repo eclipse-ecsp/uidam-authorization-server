@@ -29,7 +29,6 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -37,7 +36,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_CLIENT_BY_CLIENT_ID_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.utils.RequestResponseLogger.logRequest;
 import static org.eclipse.ecsp.oauth2.server.core.utils.RequestResponseLogger.logResponse;
 
@@ -50,28 +48,18 @@ public class AuthManagementClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthManagementClient.class);
 
-    private WebClient webClient;
-
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    private TenantProperties tenantProperties;
+    private final TenantConfigurationService tenantConfigurationService;
 
     /**
      * Constructor for AuthManagementClient.
-     * It initializes tenantProperties using the provided TenantConfigurationService.
-     * It also builds the WebClient with the base URL from tenantProperties.
+     * It initializes the tenant configuration service for dynamic tenant resolution.
      *
      * @param tenantConfigurationService the service to fetch tenant properties.
      */
-    @Autowired
     public AuthManagementClient(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
-        this.webClient = WebClient.builder().baseUrl(tenantProperties.getExternalUrls()
-          .get(TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV))
-                .filter(ClientAddCorrelationIdInterceptor.addCorrelationIdAndContentType())
-                .filter(logRequest()).filter(logResponse())
-          .build();
-
+        this.tenantConfigurationService = tenantConfigurationService;
     }
 
     /**
@@ -82,7 +70,30 @@ public class AuthManagementClient {
     private void init() {
         objectMapper.setSerializationInclusion(Include.NON_NULL)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
 
+    /**
+     * Get the current tenant's properties and create a WebClient for the current tenant.
+     *
+     * @return WebClient configured for the current tenant
+     */
+    private WebClient getWebClientForCurrentTenant() {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        if (tenantProperties == null) {
+            throw new IllegalStateException("No tenant properties found for current tenant");
+        }
+        
+        String baseUrl = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV);
+        if (baseUrl == null) {
+            throw new IllegalStateException("No user management base URL configured for current tenant");
+        }
+        
+        return WebClient.builder()
+                .baseUrl(baseUrl)
+                .filter(ClientAddCorrelationIdInterceptor.addCorrelationIdAndContentType())
+                .filter(logRequest())
+                .filter(logResponse())
+                .build();
     }
 
     /**
@@ -96,16 +107,33 @@ public class AuthManagementClient {
      */
     public RegisteredClientDetails getClientDetails(String clientId) {
         LOGGER.info("fetching client details for clientId {} from auth-mgmt", clientId);
-        String uri = tenantProperties.getExternalUrls().get(
-                TENANT_EXTERNAL_URLS_CLIENT_BY_CLIENT_ID_ENDPOINT);
+        
         try {
+            // Get tenant properties for current tenant
+            TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+            if (tenantProperties == null) {
+                LOGGER.error("No tenant properties found for current tenant");
+                return null;
+            }
+            
+            // Get WebClient for current tenant
+            WebClient webClient = getWebClientForCurrentTenant();
+            
+            // Get the endpoint URI
+            String uri = tenantProperties.getExternalUrls().get(
+                TENANT_EXTERNAL_URLS_CLIENT_BY_CLIENT_ID_ENDPOINT);
+            
+            if (uri == null) {
+                LOGGER.error("No client-by-client-id endpoint configured for current tenant");
+                return null;
+            }
+            
             RegisteredClientDetails response = webClient.get()
                 .uri(uri, clientId)
                 .accept(MediaType.APPLICATION_JSON).retrieve()
                 .bodyToMono(RegisteredClientDetails.class).block();
 
             if (response != null && HttpStatus.OK.equals(response.getHttpStatus())) {
-
                 return objectMapper.convertValue(response.getData(), new TypeReference<RegisteredClientDetails>() {
                 });
             }
@@ -115,7 +143,6 @@ public class AuthManagementClient {
             LOGGER.error("error while fetching client details for clientId {} from auth-mgmt, ex: {}", clientId, ex);
         }
         return null;
-
     }
 
 }

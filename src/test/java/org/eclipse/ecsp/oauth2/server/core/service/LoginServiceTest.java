@@ -31,28 +31,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.LOGIN_ATTEMPT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_CAPTCHA_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_ENFORCE_AFTER_NO_OF_FAILURES;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.ENFORCE_AFTER_FAILURE_COUNT;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
 /**
  * This class tests the functionality of the LoginService.
  */
-@ExtendWith(SpringExtension.class)
-@EnableConfigurationProperties(value = TenantProperties.class)
-@ContextConfiguration(classes = { TenantConfigurationService.class })
-@TestPropertySource("classpath:application-test.properties")
+@ExtendWith(MockitoExtension.class)
 class LoginServiceTest {
     @InjectMocks
     LoginService loginService;
@@ -63,19 +56,15 @@ class LoginServiceTest {
     @Mock
     private TenantConfigurationService tenantConfigurationService;
 
-    @MockitoBean
+    @Mock
     private HttpServletRequest httpServletRequest;
 
     /**
      * This method sets up the test environment before each test.
-     * It initializes the mocks and sets the tenant properties.
      */
     @BeforeEach
     void setup() {
-
-        Mockito.when(tenantConfigurationService.getTenantProperties(UIDAM)).thenReturn(tenantProperties);
-        MockitoAnnotations.openMocks(this);
-
+        ReflectionTestUtils.setField(loginService, "request", httpServletRequest);
     }
 
     /**
@@ -96,6 +85,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaDisableForUiWhenLoginAttemptLesserThanEnforceCount() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(1, true, ENFORCE_AFTER_FAILURE_COUNT);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -113,6 +103,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenLoginAttemptGreaterThanEnforceCount() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(ENFORCE_AFTER_FAILURE_COUNT, true, 1);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -131,6 +122,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenLoginAttemptEqualsEnforceCount() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(1, true, 1);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -148,6 +140,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaDisableForUiWhenUserResponseCaptchaDisabled() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(1, false, 1);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -166,11 +159,9 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaDisableForUiWhenTenantPropsCaptchaDisabled() {
-        setRecaptchaSession(1, true, 1);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(false);
-        Mockito.when(tenantProperties.getUser().getCaptchaAfterInvalidFailures())
-            .thenReturn(ENFORCE_AFTER_FAILURE_COUNT);
 
         boolean isCaptchaEnabled = loginService.isCaptchaEnabledForUserInterface();
         assertFalse(isCaptchaEnabled);
@@ -184,7 +175,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenTenantPropsCaptchaEnabledAndFailureCaptchaCountZero() {
-        setRecaptchaSession(1, false, 1);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
         Mockito.when(tenantProperties.getUser().getCaptchaAfterInvalidFailures()).thenReturn(0);
@@ -201,6 +192,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenTenantPropsCaptchaEnabledAndFailureCaptchaCountNotZero() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(1, true, null);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -218,6 +210,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaDisableForUiWhenTenantPropsCaptchaEnabledAndLoginAttemptLesserThanFailureCaptchaCountNotZero() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(1, true, null);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -236,6 +229,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenTenantPropsCaptchaEnabledAndLoginAttemptGreaterThanFailureCaptchaCountNotZero() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(TestConstants.LOGIN_ATTEMPT, true, null);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -253,6 +247,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenTenantPropsCaptchaEnabledAndLoginAttemptEqualsFailureCaptchaCountNotZero() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(TestConstants.LOGIN_ATTEMPT, true, null);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -271,6 +266,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaDisableForUiWhenTenantPropsCaptchaEnabledAndFailureCaptchaCountNotZeroButNoLoginAttempt() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(null, true, null);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
@@ -288,7 +284,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaEnabledForUiWhenTenantPropsCaptchaEnabledAndUserResponsePropsNull() {
-        setRecaptchaSession(null, null, null);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);
         Mockito.when(tenantProperties.getUser().getCaptchaAfterInvalidFailures()).thenReturn(0);
@@ -305,6 +301,7 @@ class LoginServiceTest {
      */
     @Test
     void isCaptchaDisableForUiWhenTenantPropsCaptchaEnabledAndUserRespPropsNullAndTenantFailedCaptchaCountNotZero() {
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         setRecaptchaSession(null, null, null);
         Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
         Mockito.when(tenantProperties.getUser().getCaptchaRequired()).thenReturn(true);

@@ -18,20 +18,22 @@
 
 package org.eclipse.ecsp.oauth2.server.core.authentication.providers;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UserProperties;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationToken;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.eclipse.ecsp.oauth2.server.core.test.TestCommonStaticData.getUser;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_ACCOUNT_NAME;
@@ -44,22 +46,34 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * This class tests the functionality of the CustomUserPwdAuthenticationProvider.
  */
-@SpringBootTest
-@ContextConfiguration(classes = { CustomUserPwdAuthenticationProvider.class })
+@ExtendWith(MockitoExtension.class)
 class CustomUserPwdAuthenticationProviderTest {
 
-    @Autowired
-    CustomUserPwdAuthenticationProvider customUserPwdAuthenticationProvider;
-
-    @MockitoBean
-    UserManagementClient userManagementClient;
+    @Mock
+    private UserManagementClient userManagementClient;
     
-    @MockitoBean
-    TenantProperties tenantProperties;
+    @Mock
+    private TenantConfigurationService tenantConfigurationService;
+    
+    @Mock
+    private HttpServletRequest request;
+    
+    @Mock 
+    private HttpSession session;
+    
+    private CustomUserPwdAuthenticationProvider customUserPwdAuthenticationProvider;
+
+    @BeforeEach
+    void setUp() {
+        customUserPwdAuthenticationProvider = new CustomUserPwdAuthenticationProvider(
+            userManagementClient, tenantConfigurationService, request);
+    }
 
     /**
      * This method tests the scenario where the authentication attempt is successful.
@@ -69,9 +83,16 @@ class CustomUserPwdAuthenticationProviderTest {
      */
     @Test
     void testAuthenticateSuccess() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        
+        // Setup user management client mock
         doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
-        Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
-        Mockito.when(tenantProperties.getUser().getMaxAllowedLoginAttempts()).thenReturn(1);
+        
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
             TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
         CustomUserPwdAuthenticationToken authenticationToken =
@@ -89,15 +110,51 @@ class CustomUserPwdAuthenticationProviderTest {
      */
     @Test
     void testAuthenticateFail() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        
+        // Setup session mock for failure case (needed for setRecaptchaSession)
+        when(request.getSession()).thenReturn(session);
+        
+        // Setup user with wrong password
         UserDetailsResponse userDetailsResponse = getUser();
         userDetailsResponse.setPassword(TEST_PASSWORD);
         doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
-        Mockito.when(tenantProperties.getUser()).thenReturn(Mockito.mock(UserProperties.class));
-        Mockito.when(tenantProperties.getUser().getMaxAllowedLoginAttempts()).thenReturn(1);
+        
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
             TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
         assertThrows(BadCredentialsException.class,
                 () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+    }
+
+    /**
+     * This method tests the scenario where different tenant configurations are used.
+     */
+    @Test
+    void testAuthenticateWithDifferentTenantConfigurations() {
+        // Setup tenant properties mock with different max attempts
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        final int maxLoginAttempts = 5; // Different from default
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(maxLoginAttempts);
+        
+        // Setup user management client mock
+        doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
+            TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
+        CustomUserPwdAuthenticationToken authenticationToken =
+            (CustomUserPwdAuthenticationToken) customUserPwdAuthenticationProvider.authenticate(authentication);
+        assertNotNull(authenticationToken);
+        assertEquals(authentication.getPrincipal(), authenticationToken.getPrincipal());
+        assertEquals(authentication.getCredentials(), authenticationToken.getCredentials());
+        assertEquals(authentication.getAccountName(), authenticationToken.getAccountName());
     }
 
     /**

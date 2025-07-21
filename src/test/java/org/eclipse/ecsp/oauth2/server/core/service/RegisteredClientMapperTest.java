@@ -30,8 +30,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -46,45 +47,57 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * This class tests the functionality of the RegisteredClientMapper.
  */
-@ExtendWith(MockitoExtension.class)
+@ExtendWith(MockitoExtension.class) 
+@MockitoSettings(strictness = Strictness.LENIENT) 
 @ActiveProfiles("test")
 class RegisteredClientMapperTest {
 
+    private static final int ACCESS_TOKEN_TTL = 3600;
+    private static final int REFRESH_TOKEN_TTL = 7200;
+
     @Mock
-    TenantProperties tenantProperties;
+    TenantConfigurationService tenantConfigurationService;
 
     @InjectMocks
     RegisteredClientMapper registeredClientMapper;
 
     /**
-     * This method sets up the test environment before each test.
-     * It initializes the mocks.
+     * This method sets up the test environment before each test. It initializes the mocks.
      */
     @BeforeEach
     void setup() {
-        MockitoAnnotations.openMocks(this);
         ReflectionTestUtils.setField(registeredClientMapper, "bcryptLength", "high");
+
+        // Set up default tenant configuration mock
+        ClientProperties clientProperties = Mockito.mock(ClientProperties.class);
+        Mockito.when(clientProperties.getAccessTokenTtl()).thenReturn(ACCESS_TOKEN_TTL);
+        Mockito.when(clientProperties.getIdTokenTtl()).thenReturn(ACCESS_TOKEN_TTL);
+        Mockito.when(clientProperties.getRefreshTokenTtl()).thenReturn(REFRESH_TOKEN_TTL);
+        Mockito.when(clientProperties.getAuthCodeTtl()).thenReturn(SECONDS_300);
+        Mockito.when(clientProperties.getReuseRefreshToken()).thenReturn(true);
+
+        TenantProperties tenantProperties = Mockito.mock(TenantProperties.class);
+        Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
+        Mockito.when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
     }
 
     /**
-     * Tests the conversion of a client to a RegisteredClient instance.
-     * It sets up a mock ClientProperties instance and configures the tenantProperties mock to return it.
-     * Then, it verifies that the registeredClientMapper correctly converts the client to a RegisteredClient instance.
+     * Tests the conversion of a client to a RegisteredClient instance. It sets up a mock ClientProperties instance and
+     * configures the tenantConfigurationService mock to return it. Then, it verifies that the registeredClientMapper
+     * correctly converts the client to a RegisteredClient instance.
      */
     @Test
     void testToRegisteredClient() {
-        ClientProperties clientProperties = Mockito.mock(ClientProperties.class);
-        Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
         RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(getClient());
         assert registeredClient != null;
         assertEquals("testClientId", registeredClient.getClientId());
     }
 
     /**
-     * Tests the conversion of a client with specific properties to a RegisteredClient instance.
-     * It sets up a ClientProperties instance with predefined TTL values and configures the tenantProperties mock to
-     * return it.
-     * Then, it verifies that the registeredClientMapper correctly converts the client to a RegisteredClient instance.
+     * Tests the conversion of a client with specific properties to a RegisteredClient instance. It sets up a
+     * ClientProperties instance with predefined TTL values and configures the tenantConfigurationService mock to return
+     * it. Then, it verifies that the registeredClientMapper correctly converts the client to a RegisteredClient
+     * instance.
      */
     @Test
     void testToRegisteredClient2() {
@@ -93,7 +106,9 @@ class RegisteredClientMapperTest {
         clientProperties.setAuthCodeTtl(SECONDS_300);
         clientProperties.setRefreshTokenTtl(SECONDS_300);
         clientProperties.setReuseRefreshToken(false);
+        TenantProperties tenantProperties = Mockito.mock(TenantProperties.class);
         Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
+        Mockito.when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
 
         RegisteredClientDetails registeredClientDetails = getClientWithEmptyScope();
         registeredClientDetails.setRedirectUris(null);
@@ -107,33 +122,27 @@ class RegisteredClientMapperTest {
     }
 
     /**
-     * Provides a stream of arguments for parameterized tests.
-     * Each argument represents a different client secret to be tested.
+     * Provides a stream of arguments for parameterized tests. Each argument represents a different client secret to be
+     * tested.
      *
      * @return a stream of arguments containing various client secrets.
      */
     static Stream<Arguments> clientSecretProvider() {
-        return Stream.of(
-            Arguments.of("{noop}secret"),
-            Arguments.of("{bcrypt}$2a$10$PE5VkNv7q93/c43HtD/FpOV2ixhbDQ.ijfslzImHtL/YGVGYHfgZi"),
-            Arguments.of("noop}secret"),
-            Arguments.of("{noopsecret")
-        );
+        return Stream.of(Arguments.of("{noop}secret"),
+                Arguments.of("{bcrypt}$2a$10$PE5VkNv7q93/c43HtD/FpOV2ixhbDQ.ijfslzImHtL/YGVGYHfgZi"),
+                Arguments.of("noop}secret"), Arguments.of("{noopsecret"));
     }
 
     /**
-     * Tests the conversion of a client with various client secrets to a RegisteredClient instance.
-     * This test uses parameterized inputs to verify the behavior of the RegisteredClientMapper with different client
-     * secrets.
+     * Tests the conversion of a client with various client secrets to a RegisteredClient instance. This test uses
+     * parameterized inputs to verify the behavior of the RegisteredClientMapper with different client secrets.
      *
      * @param clientSecret the client secret to be tested.
      */
-    @ParameterizedTest
+    
+    @ParameterizedTest 
     @MethodSource("clientSecretProvider")
     void testToRegisteredClientWithVariousClientSecrets(String clientSecret) {
-        ClientProperties clientProperties = Mockito.mock(ClientProperties.class);
-        Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
-
         RegisteredClientDetails registeredClientDetails = getClient();
         registeredClientDetails.setClientSecret(clientSecret);
         RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(registeredClientDetails);

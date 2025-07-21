@@ -18,43 +18,105 @@
 
 package org.eclipse.ecsp.oauth2.server.core.service;
 
+import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MultiTenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 
 /**
  * This service class is used to manage tenant configurations.
+ * It provides multi-tenant support by managing configurations for multiple tenants.
  */
 @Service
 public class TenantConfigurationService {
 
-    private Map<String, TenantProperties> propertiesHashMap = new ConcurrentHashMap<>();
+    private static final Logger LOGGER = LoggerFactory.getLogger(TenantConfigurationService.class);
+    
+    private final MultiTenantProperties multiTenantProperties;
 
     /**
      * Constructor for TenantConfigurationService.
-     * It initializes the tenant properties map with the provided tenant properties, using the UIDAM constant as the
-     * key.
+     * It initializes the service with multi-tenant properties.
      *
-     * @param tenantProperties the tenant properties to be stored in the map
+     * @param multiTenantProperties the multi-tenant properties configuration
      */
-    @Autowired
-    public TenantConfigurationService(TenantProperties tenantProperties) {
-        propertiesHashMap.put(UIDAM, tenantProperties);
+    public TenantConfigurationService(MultiTenantProperties multiTenantProperties) {
+        this.multiTenantProperties = multiTenantProperties;
+        
+        // Add null safety for tenant properties
+        if (multiTenantProperties.getTenants() != null) {
+            LOGGER.info("TenantConfigurationService initialized with {} tenant(s)", 
+                       multiTenantProperties.getTenants().size());
+        } else {
+            LOGGER.warn("TenantConfigurationService initialized with null tenant properties - check property loading");
+        }
     }
 
     /**
      * This method retrieves the tenant properties for a given tenant ID.
-     * It returns the tenant properties from the map using the provided tenant ID as the key.
+     * It returns the tenant properties from the multi-tenant properties configuration.
      *
      * @param tenantId the ID of the tenant whose properties are to be retrieved
-     * @return the tenant properties for the given tenant ID
+     * @return the tenant properties for the given tenant ID, or null if not found
      */
     public TenantProperties getTenantProperties(String tenantId) {
-        return propertiesHashMap.get(tenantId);
+        // Add null safety check
+        if (multiTenantProperties.getTenants() == null) {
+            LOGGER.error("Multi-tenant properties not loaded - getTenants() returns null for tenant: {}", tenantId);
+            return null;
+        }
+        
+        TenantProperties properties = multiTenantProperties.getTenants().get(tenantId);
+        if (properties == null) {
+            LOGGER.warn("No properties found for tenant: {}", tenantId);
+        }
+        return properties;
+    }
+    
+    /**
+     * This method retrieves the tenant properties for the current tenant.
+     * It uses the TenantContext to get the current tenant ID and returns the corresponding tenant properties.
+     *
+     * @return the tenant properties for the current tenant
+     */
+    public TenantProperties getTenantProperties() {
+        String currentTenant = TenantContext.getCurrentTenant();
+        LOGGER.debug("Getting properties for current tenant: {}", currentTenant);
+        return getTenantProperties(currentTenant);
+    }
+
+    /**
+     * Check if a tenant exists in the configuration.
+     *
+     * @param tenantId the tenant ID to check
+     * @return true if the tenant exists, false otherwise
+     */
+    public boolean tenantExists(String tenantId) {
+        // Add null safety check
+        if (multiTenantProperties.getTenants() == null) {
+            LOGGER.error("Multi-tenant properties not loaded - cannot check if tenant exists: {}", tenantId);
+            return false;
+        }
+        return multiTenantProperties.getTenants().containsKey(tenantId);
+    }
+
+    /**
+     * Get the default tenant properties.
+     *
+     * @return the default tenant properties
+     */
+    public TenantProperties getDefaultTenantProperties() {
+        return multiTenantProperties.getDefaultTenant();
+    }
+
+    /**
+     * Get the default tenant ID.
+     *
+     * @return the default tenant ID
+     */
+    public String getDefaultTenantId() {
+        return multiTenantProperties.getDefaultTenantId();
     }
 }

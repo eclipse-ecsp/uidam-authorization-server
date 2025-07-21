@@ -27,6 +27,7 @@ import org.eclipse.ecsp.oauth2.server.core.common.CustomOauth2TokenGenErrorCodes
 import org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationException;
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -51,20 +52,35 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 public class JwtTokenValidator {
     private static final Logger LOGGER = LoggerFactory.getLogger(JwtTokenValidator.class);
 
-    private final PublicKey publicKey;
+    private final TenantConfigurationService tenantConfigurationService;
     private static final String LOCAL_FILE_PATH_IDENTIFIER = "/";
 
     /**
      * Constructor for JwtTokenValidator.
-     * Initializes the provider with the public key from the specified path in tenant properties.
+     * Initializes the provider with the TenantConfigurationService for dynamic tenant property resolution.
      *
-     * @param tenantProperties the tenant properties containing the public key path
+     * @param tenantConfigurationService the service to retrieve tenant properties
+     */
+    public JwtTokenValidator(TenantConfigurationService tenantConfigurationService) {
+        this.tenantConfigurationService = tenantConfigurationService;
+        LOGGER.debug("JwtTokenValidator initialized with TenantConfigurationService");
+    }
+
+    /**
+     * Gets the public key for the current tenant.
+     *
+     * @return the public key for JWT verification
      * @throws Exception if an error occurs while loading the public key
      */
-    public JwtTokenValidator(TenantProperties tenantProperties) throws Exception {
-        LOGGER.debug("## JwtTokenValidator - START");
+    private PublicKey getCurrentTenantPublicKey() throws Exception {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        if (tenantProperties == null) {
+            throw new IllegalStateException("No tenant properties found for current tenant");
+        }
+
+        LOGGER.debug("## getCurrentTenantPublicKey - START");
         String publicKeyPath = tenantProperties.getKeyStore().get(TENANT_JWT_PUBLIC_KEY_PEM_PATH);
-        LOGGER.debug("Initializing JwtTokenValidator with public key path:  {}", publicKeyPath);
+        LOGGER.debug("Loading public key from path: {}", publicKeyPath);
 
         try {
             InputStream inputStream = null;
@@ -77,9 +93,10 @@ public class JwtTokenValidator {
                 LOGGER.error("Public key file not found: {}", publicKeyPath);
                 throw new FileNotFoundException("Public key file not found: " + publicKeyPath);
             }
-            this.publicKey = PublicKeyLoader.loadPublicKey(inputStream);
+            PublicKey publicKey = PublicKeyLoader.loadPublicKey(inputStream);
             LOGGER.debug("Public key successfully loaded from path: {}", publicKeyPath);
-            LOGGER.debug("## JwtTokenValidator - END");
+            LOGGER.debug("## getCurrentTenantPublicKey - END");
+            return publicKey;
         } catch (Exception e) {
             LOGGER.error("Error loading public key from path: {}", publicKeyPath, e);
             throw e;
@@ -96,6 +113,7 @@ public class JwtTokenValidator {
     private Claims getClaimsFromToken(String token) {
         LOGGER.debug("## getClaimsFromToken - START");
         try {
+            PublicKey publicKey = getCurrentTenantPublicKey();
             return Jwts.parser()
                     .verifyWith(publicKey)
                     .build()

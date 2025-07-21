@@ -49,7 +49,6 @@ import org.springframework.web.servlet.ModelAndView;
 
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -60,7 +59,6 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.Authorization
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_INV_SECRET;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_PASSWORD_CHANGED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SECRET_LITERAL;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_SITE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.EMPTY_STRING;
@@ -80,27 +78,28 @@ public class PasswordRecoveryController {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int ERROR_MESSAGE_KEY_LENGTH = 10;
 
-
-    private TenantProperties tenantProperties;
-
-    @Autowired
-    private UserManagementClient userManagementClient;
-
-    @Autowired
-    private CaptchaServiceImpl captchaServiceImpl;
-
+    private final TenantConfigurationService tenantConfigurationService;
+    private final UserManagementClient userManagementClient;
+    private final CaptchaServiceImpl captchaServiceImpl;
     private final PasswordPolicyService passwordPolicyService;
 
     /**
      * This is the constructor for the PasswordRecoveryController class.
-     * It initializes the tenant properties using the provided TenantConfigurationService.
+     * It initializes the required services for multi-tenant configuration and password recovery functionality.
      *
      * @param tenantConfigurationService The service that provides the tenant configuration.
+     * @param userManagementClient The client for user management operations.
+     * @param captchaServiceImpl The service for captcha processing.
+     * @param passwordPolicyService The service for password policy management.
      */
     @Autowired
     public PasswordRecoveryController(TenantConfigurationService tenantConfigurationService,
+            UserManagementClient userManagementClient,
+            CaptchaServiceImpl captchaServiceImpl,
             PasswordPolicyService passwordPolicyService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        this.tenantConfigurationService = tenantConfigurationService;
+        this.userManagementClient = userManagementClient;
+        this.captchaServiceImpl = captchaServiceImpl;
         this.passwordPolicyService = passwordPolicyService;
     }
 
@@ -111,12 +110,15 @@ public class PasswordRecoveryController {
      * This method is used to initialize the password recovery process.
      * It is a GET request handler that loads the forgot-password page.
      * It also adds captcha related attributes to the model.
+     * Tenant properties are resolved dynamically based on current tenant context.
      *
      * @param model The Model object to bind to the view.
      * @return A string representing the name of the view to be returned.
      */
     @GetMapping
     public String passwordInit(Model model) {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
         return RECOVERY_FORGOT_PASSWORD;
@@ -157,6 +159,7 @@ public class PasswordRecoveryController {
      * This method handles the GET request for the password reset operation - load password reset page with link
      * received in email notification.
      * It decodes the encoded parameters from the URL, validates the secret key, and returns a ModelAndView object.
+     * Tenant properties are resolved dynamically based on current tenant context.
      *
      * @param encodedParams The encoded parameters from the URL. They include the secret key for password reset.
      * @param model The Model object to bind to the view.
@@ -181,6 +184,8 @@ public class PasswordRecoveryController {
             throw new InvalidSecretException(IgniteOauth2CoreConstants.INVALID_SECRET_PROVIDED);
         }
 
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+
         model.addAttribute(SECRET_LITERAL, secret);
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
@@ -191,6 +196,7 @@ public class PasswordRecoveryController {
     /**
      * This method handles the POST request for the password update operation.
      * It validates the secret key, updates the user's password in the system, and returns a ModelAndView object.
+     * Tenant properties are resolved dynamically based on current tenant context.
      *
      * @param request The HttpServletRequest object that contains the request the client made of the servlet.
      * @param password The new password provided by the user.
@@ -209,6 +215,8 @@ public class PasswordRecoveryController {
             LOGGER.error(SECRET_KEY_IS_NULL);
             throw new InvalidSecretException(IgniteOauth2CoreConstants.INVALID_SECRET_PROVIDED);
         }
+
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
 
         String recaptchaResponse = obtainRecaptchaResponse(request);
         recaptchaResponse = (recaptchaResponse != null) ? recaptchaResponse : EMPTY_STRING;
@@ -262,13 +270,15 @@ public class PasswordRecoveryController {
      * This method is an exception handler for the UserNotFoundException.
      * It is triggered when a UserNotFoundException is thrown in the application.
      * It adds the necessary attributes to the model and returns a ModelAndView object that includes the view name and
-     * model attributes.
+     * model attributes. Tenant properties are resolved dynamically based on current tenant context.
      *
      * @param model The Model object to bind to the view.
      * @return A ModelAndView object that includes the view name and model attributes.
      */
     @ExceptionHandler(UserNotFoundException.class)
     public ModelAndView handleUserNotFound(Model model) {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
         model.addAttribute(ERROR_LITERAL, IgniteOauth2CoreConstants.USER_DETAILS_NOT_FOUND);
@@ -294,11 +304,14 @@ public class PasswordRecoveryController {
      * This method is an exception handler for the PasswordRecoveryException.
      * It is triggered when a PasswordRecoveryException is thrown in the application.
      * It returns a ModelAndView object that includes the view name and model attributes.
+     * Tenant properties are resolved dynamically based on current tenant context.
      *
      * @return A ModelAndView object that includes the view name and model attributes.
      */
     @ExceptionHandler(PasswordRecoveryException.class)
     public ModelAndView passwordRecoveryException() {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        
         return new ModelAndView(RECOVERY_FORGOT_PASSWORD)
                 .addObject(ERROR_LITERAL, IgniteOauth2CoreConstants.PASSWORD_RECOVERY_EMAIL_SENT_FAILURE)
                 .addObject(CAPTCHA_FIELD_ENABLED, true)

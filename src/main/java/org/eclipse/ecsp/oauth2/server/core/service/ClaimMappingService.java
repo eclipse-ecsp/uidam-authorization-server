@@ -22,20 +22,20 @@ public class ClaimMappingService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClaimMappingService.class);
 
-    private final TenantProperties tenantProperties;
+    private final TenantConfigurationService tenantConfigurationService;
     private final ClaimsToUserMapper userMapper;
 
     /**
      * Constructs a new ClaimMappingService.
      *
-     * @param tenantProperties Configuration properties for tenant-specific settings
-     * @param userMapper       Mapper for converting claims to user objects
+     * @param tenantConfigurationService Service for tenant configuration
+     * @param userMapper                 Mapper for converting claims to user objects
      */
-    public ClaimMappingService(TenantProperties tenantProperties, ClaimsToUserMapper userMapper) {
-        if (tenantProperties == null || userMapper == null) {
-            throw new IllegalArgumentException("TenantProperties and ClaimsToUserMapper cannot be null");
+    public ClaimMappingService(TenantConfigurationService tenantConfigurationService, ClaimsToUserMapper userMapper) {
+        if (tenantConfigurationService == null || userMapper == null) {
+            throw new IllegalArgumentException("TenantConfigurationService and ClaimsToUserMapper cannot be null");
         }
-        this.tenantProperties = tenantProperties;
+        this.tenantConfigurationService = tenantConfigurationService;
         this.userMapper = userMapper;
         LOGGER.debug("ClaimMappingService initialized");
     }
@@ -156,6 +156,7 @@ public class ClaimMappingService {
         }
 
         // Set audience and default roles
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         userDto.setAud(tenantProperties.getExternalIdpClientName());
         userDto.setRoles(idpConfig.getDefaultUserRoles());
         if (StringUtils.isEmpty(userDto.getEmail())) {
@@ -179,6 +180,7 @@ public class ClaimMappingService {
     private ExternalIdpRegisteredClient getIdpConfigByRegistrationId(String registrationId) {
         LOGGER.debug("Looking up IDP configuration for registrationId: {}", registrationId);
 
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         return tenantProperties.getExternalIdpRegisteredClientList().stream()
                 .filter(client -> client.getRegistrationId().equals(registrationId)).findFirst().orElse(null);
     }

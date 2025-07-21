@@ -1,9 +1,8 @@
 package org.eclipse.ecsp.oauth2.server.core.request.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
-
-import javax.validation.constraints.NotNull;
 
 /**
  * BaseUserDto.

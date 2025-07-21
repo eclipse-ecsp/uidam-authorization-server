@@ -58,7 +58,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.AUTHORIZATION_CODE_GRANT_TYPE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_ACCOUNT_ID;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_ACCOUNT_NAME;
@@ -92,28 +91,44 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 public class ClaimsConfigManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClaimsConfigManager.class);
 
-    private TenantProperties tenantProperties;
-    @Autowired
-    private UserManagementClient userManagementClient;
-
-    private ClaimMappingService claimMappingService;
+    private final TenantConfigurationService tenantConfigurationService;
+    private final UserManagementClient userManagementClient;
+    private final ClaimMappingService claimMappingService;
 
     /**
-     * Constructor for ClaimsConfigManager. It initializes the tenant properties
-     * using the provided TenantConfigurationService.
+     * Constructor for ClaimsConfigManager. It initializes the tenant configuration service
+     * for dynamic tenant resolution.
      *
-     * @param tenantConfigurationService the service to retrieve tenant properties
+     * @param tenantConfigurationService the service to retrieve tenant properties from
+     * @param claimMappingService the service for claim mapping operations
+     * @param userManagementClient the client for user management operations
      */
-
     @Autowired
     public ClaimsConfigManager(TenantConfigurationService tenantConfigurationService,
-            ClaimMappingService claimMappingService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+            ClaimMappingService claimMappingService,
+            UserManagementClient userManagementClient) {
+        this.tenantConfigurationService = tenantConfigurationService;
         this.claimMappingService = claimMappingService;
+        this.userManagementClient = userManagementClient;
     }
 
-    public ClaimsConfigManager() {
-
+    
+    /**
+     * This method retrieves the current tenant properties from the TenantConfigurationService. It throws an exception
+     * if the service is not initialized or if no tenant properties are found.
+     *
+     * @return TenantProperties containing the properties of the current tenant.
+     * @throws IllegalStateException if TenantConfigurationService is not initialized or no tenant properties are found.
+     */
+    private TenantProperties getCurrentTenantProperties() {
+        if (tenantConfigurationService == null) {
+            throw new IllegalStateException("TenantConfigurationService not initialized");
+        }
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        if (tenantProperties == null) {
+            throw new IllegalStateException("No tenant properties found for current tenant");
+        }
+        return tenantProperties;
     }
 
     /**
@@ -201,6 +216,7 @@ public class ClaimsConfigManager {
      * @return ExternalIdpRegisteredClient The matching IdP client configuration, or null if not found
      */
     private ExternalIdpRegisteredClient findExternalIdpClient(String idpRegisteredClientId) {
+        TenantProperties tenantProperties = getCurrentTenantProperties();
         return tenantProperties.getExternalIdpRegisteredClientList().stream()
                 .filter(x -> x.getRegistrationId().equalsIgnoreCase(idpRegisteredClientId))
                 .findFirst()
@@ -400,6 +416,7 @@ public class ClaimsConfigManager {
         if (!CollectionUtils.isEmpty(additionalAttributes)) {
             LOGGER.info("Adding claims from additional attributes");
             List<String> additionalClaimsAttributesList;
+            TenantProperties tenantProperties = getCurrentTenantProperties();
             for (Map.Entry<String, Object> entry : additionalAttributes.entrySet()) {
                 if (Objects.nonNull(tenantProperties) && Objects.nonNull(tenantProperties.getUser())
                         && Objects.nonNull(tenantProperties.getUser().getJwtAdditionalClaimAttributes())) {
@@ -425,6 +442,7 @@ public class ClaimsConfigManager {
      */
     private void setStandardClaims(JwtClaimsSet.Builder claimsBuilder) {
         LOGGER.debug("## setStandardClaims - START");
+        TenantProperties tenantProperties = getCurrentTenantProperties();
         claimsBuilder.claim(JwtClaimNames.JTI, UUID.randomUUID().toString())
                 .claim(CLAIM_ACCOUNT_ID, tenantProperties.getAccount().getAccountId())
                 .claim(CLAIM_TENANT_ID, tenantProperties.getTenantId());
@@ -454,6 +472,7 @@ public class ClaimsConfigManager {
                                    Set<String> scopeSet,
                                    boolean isClientCredentialsGrantType) {
         LOGGER.debug("## addScopeAndScopes - START");
+        TenantProperties tenantProperties = getCurrentTenantProperties();
         if (CommonMethodsUtils.isUserScopeValidationRequired(
                 (null != clientDetails ? clientDetails.getClientType() : null),
                 tenantProperties.getClient().getOauthScopeCustomization()

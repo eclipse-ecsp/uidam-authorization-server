@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
@@ -28,7 +29,6 @@ import org.eclipse.ecsp.oauth2.server.core.service.PasswordPolicyService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -40,7 +40,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-import javax.validation.Valid;
+
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ADD_REQ_PAR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.EMAIL_SENT_SUFFIX;
@@ -51,7 +51,6 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.Authorization
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SIGN_UP_NOT_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SLASH;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TERMS_OF_USE;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UNEXPECTED_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.USER_CREATED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
@@ -74,18 +73,17 @@ public class SignUpController {
 
     private PasswordPolicyService passwordPolicyService;
 
-    private TenantProperties tenantProperties;
+    private TenantConfigurationService tenantConfigurationService;
 
     /**
      * Constructor for SelfUserController.
      *
      * @param tenantConfigurationService the service to get tenant properties
      */
-    @Autowired
     public SignUpController(UserManagementClient userManagementClient,
             TenantConfigurationService tenantConfigurationService, PasswordPolicyService passwordPolicyService) {
         this.userManagementClient = userManagementClient;
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        this.tenantConfigurationService = tenantConfigurationService;
         this.passwordPolicyService = passwordPolicyService;
     }
 
@@ -97,6 +95,7 @@ public class SignUpController {
      */
     @GetMapping(SLASH + SELF_SIGN_UP)
     public String selfSignUpInit(Model model) {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(IS_SIGN_UP_ENABLED, tenantProperties.isSignUpEnabled());
         if (tenantProperties.isSignUpEnabled()) {
             setupCaptcha(model);
@@ -108,6 +107,7 @@ public class SignUpController {
     }
 
     private void setupCaptcha(Model model) {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
         if (!model.containsAttribute(ERROR_LITERAL)) {
@@ -168,6 +168,7 @@ public class SignUpController {
             return new ModelAndView(REDIRECT_LITERAL + SELF_SIGN_UP);
         }
         LOGGER.debug("Adding self user with username: {}", userDto.getFirstName());
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         if (tenantProperties.isSignUpEnabled()) {
             try {
                 UserDetailsResponse userDetailsResponse = userManagementClient.selfCreateUser(userDto, request);
