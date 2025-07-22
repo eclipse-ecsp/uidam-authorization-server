@@ -18,15 +18,22 @@
 
 package org.eclipse.ecsp.oauth2.server.core.service;
 
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.AccountProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.ClientProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MultiTenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UserProperties;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.HashMap;
+import java.util.Map;
+
+
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ECSP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_CONTACT_NAME;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EMAIL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_IDP_CLIENT_ID;
@@ -37,20 +44,25 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.Authorization
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_KEYSTORE_FILENAME;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_KEYSTORE_PASS;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_PHONE_NUMBER;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.ENFORCE_AFTER_FAILURE_COUNT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.when;
 
 /**
  * This class tests the functionality of the TenantConfigurationService.
  */
-@ExtendWith(SpringExtension.class)
-@EnableConfigurationProperties(value = TenantProperties.class)
-@ContextConfiguration(classes = {TenantConfigurationService.class})
-@TestPropertySource("classpath:application-test.properties")
+@ExtendWith(MockitoExtension.class)
 class TenantConfigurationServiceTest {
-    @Autowired
+    
+    @Mock
+    private MultiTenantProperties multiTenantProperties;
+    
     private TenantConfigurationService tenantConfigurationService;
+
+    @BeforeEach
+    void setUp() {
+        tenantConfigurationService = new TenantConfigurationService(multiTenantProperties);
+    }
 
     /**
      * This test method tests the getTenantProperties method of the TenantConfigurationService.
@@ -58,7 +70,18 @@ class TenantConfigurationServiceTest {
      */
     @Test
     void getTenantPropertiesTest() {
-        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        // Setup the expected tenant properties
+        TenantProperties expectedTenantProperties = createMockTenantProperties();
+        
+        // Setup the mock to return the tenant properties
+        Map<String, TenantProperties> tenants = new HashMap<>();
+        tenants.put(ECSP, expectedTenantProperties);
+        when(multiTenantProperties.getTenants()).thenReturn(tenants);
+        
+        // Execute the method under test
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties(ECSP);
+        
+        // Verify the results
         assertEquals("uidam", tenantProperties.getTenantId());
         assertEquals("uidam", tenantProperties.getTenantName());
         assertEquals("ecsp", tenantProperties.getAlias());
@@ -86,5 +109,64 @@ class TenantConfigurationServiceTest {
         assertEquals("uidamauthserver.jks", tenantProperties.getKeyStore().get(TENANT_KEYSTORE_FILENAME));
         assertEquals("uidam-test-pwd", tenantProperties.getKeyStore().get(TENANT_KEYSTORE_PASS));
         assertEquals("uidam-dev", tenantProperties.getKeyStore().get(TENANT_KEYSTORE_ALIAS));
+    }
+    
+    private TenantProperties createMockTenantProperties() {
+        TenantProperties tenantProperties = new TenantProperties();
+        tenantProperties.setTenantId("uidam");
+        tenantProperties.setTenantName("uidam");
+        tenantProperties.setAlias("ecsp");
+        
+        // Client properties
+        ClientProperties clientProperties = new ClientProperties();
+        clientProperties.setAccessTokenTtl(1);
+        clientProperties.setIdTokenTtl(1);
+        clientProperties.setRefreshTokenTtl(1);
+        clientProperties.setAuthCodeTtl(1);
+        clientProperties.setReuseRefreshToken(false);
+        clientProperties.setSecretEncryptionKey("ChangeMe");
+        clientProperties.setSecretEncryptionSalt("ChangeMe");
+        tenantProperties.setClient(clientProperties);
+        
+        // Contact details
+        HashMap<String, String> contactDetails = new HashMap<>();
+        contactDetails.put(TENANT_CONTACT_NAME, "admin");
+        contactDetails.put(TENANT_PHONE_NUMBER, "8888888888");
+        contactDetails.put(TENANT_EMAIL, "john.doe@domain.com");
+        tenantProperties.setContactDetails(contactDetails);
+        
+        // User properties
+        UserProperties userProperties = new UserProperties();
+        userProperties.setCaptchaAfterInvalidFailures(ENFORCE_AFTER_FAILURE_COUNT);
+        userProperties.setCaptchaRequired(Boolean.FALSE);
+        tenantProperties.setUser(userProperties);
+        
+        // Account properties
+        AccountProperties accountProperties = new AccountProperties();
+        accountProperties.setAccountId("ecsp");
+        accountProperties.setAccountName("ecsp");
+        accountProperties.setAccountType("ecsp");
+        tenantProperties.setAccount(accountProperties);
+        
+        // External IDP details
+        HashMap<String, String> externalIdpDetails = new HashMap<>();
+        externalIdpDetails.put(TENANT_EXTERNAL_IDP_CLIENT_ID, "ignite");
+        externalIdpDetails.put(TENANT_EXTERNAL_IDP_CLIENT_SECRET, "secret");
+        tenantProperties.setExternalIdpDetails(externalIdpDetails);
+        
+        // External URLs
+        HashMap<String, String> externalUrls = new HashMap<>();
+        externalUrls.put(TENANT_EXTERNAL_URLS_USER_BY_USERNAME_ENDPOINT, "/v1/users/{userName}/byUserName");
+        externalUrls.put(TENANT_EXTERNAL_URLS_CLIENT_BY_CLIENT_ID_ENDPOINT, "/v1/oauth2/client/{clientId}");
+        tenantProperties.setExternalUrls(externalUrls);
+        
+        // Key store
+        HashMap<String, String> keyStore = new HashMap<>();
+        keyStore.put(TENANT_KEYSTORE_FILENAME, "uidamauthserver.jks");
+        keyStore.put(TENANT_KEYSTORE_PASS, "uidam-test-pwd");
+        keyStore.put(TENANT_KEYSTORE_ALIAS, "uidam-dev");
+        tenantProperties.setKeyStore(keyStore);
+        
+        return tenantProperties;
     }
 }

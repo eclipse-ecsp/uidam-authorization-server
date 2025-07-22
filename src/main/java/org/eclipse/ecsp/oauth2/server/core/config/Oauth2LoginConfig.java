@@ -24,9 +24,7 @@ import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantPropert
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
@@ -37,22 +35,20 @@ import org.springframework.security.oauth2.client.registration.InMemoryClientReg
 import org.springframework.security.oauth2.client.web.AuthenticatedPrincipalOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.util.CollectionUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ECSP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.COMMA_DELIMITER;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.IDP_REDIRECT_URI;
 
 /**
  * The Oauth2LoginConfig class is responsible for configuring OAuth2 login for the application.
- * It is conditionally loaded when the property "tenant.external-idp-enabled" is set to true.
+ * It provides OAuth2 client registration for external identity providers when configured.
  */
 @Configuration
-@ConditionalOnProperty(name = "tenant.external-idp-enabled", havingValue = "true")
 public class Oauth2LoginConfig {
     @Value("${ignite.oauth2.issuer.protocol:http}")
     private String issuerProtocol;
@@ -62,19 +58,26 @@ public class Oauth2LoginConfig {
 
     @Value("${ignite.oauth2.issuer.prefix:}")
     private String issuerPrefix;
+    
     private TenantProperties tenantProperties;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Oauth2LoginConfig.class);
 
     /**
      * Constructor for the Oauth2LoginConfig class.
-     * It initializes the tenant properties using the provided TenantConfigurationService.
+     * It stores the TenantConfigurationService for dynamic tenant property resolution.
      *
      * @param tenantConfigurationService the service to fetch tenant properties
      */
-    @Autowired
     public Oauth2LoginConfig(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        try {
+            tenantProperties = tenantConfigurationService.getTenantProperties(ECSP);
+            LOGGER.info("Initialized Oauth2LoginConfig with tenant properties for: {}", ECSP);
+        } catch (Exception e) {
+            LOGGER.warn("Could not load tenant properties for {}, external IDP will not be available: {}", 
+                       ECSP, e.getMessage());
+            tenantProperties = null;
+        }
     }
 
     /**
@@ -82,26 +85,32 @@ public class Oauth2LoginConfig {
      * It creates a list of ClientRegistrations by iterating over the list of external identity providers
      * fetched from the tenant properties. Each external identity provider is converted into a ClientRegistration
      * by calling the externalIdpClientRegistration method.
-     * The method then returns a ClientRegistrationRepository that is created using the list of ClientRegistrations.
+     * If no external IDP clients are configured, it returns a custom empty repository.
      *
      * @return ClientRegistrationRepository that contains the ClientRegistrations for the external identity providers.
      */
     @Bean
     public ClientRegistrationRepository clientRegistrationRepository() {
         LOGGER.debug("## clientRegistrationRepository - START");
-
         List<ClientRegistration> clientRegistrationList = new ArrayList<>();
-        if (!CollectionUtils.isEmpty(tenantProperties.getExternalIdpRegisteredClientList())) {
+        if (tenantProperties != null && tenantProperties.getExternalIdpRegisteredClientList() != null
+                && !tenantProperties.getExternalIdpRegisteredClientList().isEmpty()) {
             LOGGER.info("Registering external IDP clients in UIDAM");
             for (ExternalIdpRegisteredClient externalIdpRegisteredClient : tenantProperties
                     .getExternalIdpRegisteredClientList()) {
                 clientRegistrationList.add(externalIdpClientRegistration(externalIdpRegisteredClient));
             }
+            LOGGER.debug("## clientRegistrationRepository - END");
+            return new InMemoryClientRegistrationRepository(clientRegistrationList);
         } else {
-            LOGGER.info("No external IDP clients configured in UIDAM");
+            LOGGER.info("No external IDP clients configured in UIDAM - using empty client registration repository");
+            LOGGER.debug("## clientRegistrationRepository - END");
+            // Return a custom empty repository that doesn't throw exceptions'
+            return (registrationId) -> {
+                LOGGER.warn("No client registration found for registrationId: {}", registrationId);
+                return null; // Return null or throw an exception based on your requirements
+            };
         }
-        LOGGER.debug("## clientRegistrationRepository - END");
-        return new InMemoryClientRegistrationRepository(clientRegistrationList);
     }
 
     /**

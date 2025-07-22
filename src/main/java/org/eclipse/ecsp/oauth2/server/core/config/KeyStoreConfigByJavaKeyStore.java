@@ -48,11 +48,12 @@ import java.security.interfaces.RSAPublicKey;
 import java.util.Collections;
 import java.util.UUID;
 
+
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ECSP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_KEYSTORE_ALIAS;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_KEYSTORE_FILENAME;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_KEYSTORE_PASS;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_KEYSTORE_TYPE;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.MSG_DIGEST_ALGORITHM;
 
 /**
@@ -73,7 +74,7 @@ public class KeyStoreConfigByJavaKeyStore {
      */
     @Autowired
     public KeyStoreConfigByJavaKeyStore(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        tenantProperties = tenantConfigurationService.getTenantProperties(ECSP);
     }
 
     /**

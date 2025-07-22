@@ -56,7 +56,6 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.utils.ObjectMapperUtils.parseMap;
 import static org.eclipse.ecsp.oauth2.server.core.utils.ObjectMapperUtils.writeMap;
 
@@ -76,7 +75,7 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
 
     private final AuthorizationSecurityContextRepository authorizationSecurityContextRepository;
 
-    private TenantProperties tenantProperties;
+    private final TenantConfigurationService tenantConfigurationService;
 
     private final String sessionTimeout;
 
@@ -103,7 +102,7 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
                                              String sessionTimeout) {
         Assert.notNull(authorizationSecurityContextRepository, "authorizationSecurityContextRepository cannot be null");
         this.authorizationSecurityContextRepository = authorizationSecurityContextRepository;
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        this.tenantConfigurationService = tenantConfigurationService;
         this.sessionTimeout = sessionTimeout;
 
         ClassLoader classLoader = DatabaseSecurityContextRepository.class.getClassLoader();
@@ -198,6 +197,7 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
             accountName = customUserPwdAuthenticationToken.getAccountName();
         }
         if (StringUtils.isEmpty(accountName)) {
+            TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
             accountName = tenantProperties.getAccount().getAccountName();
         }
         authorizationSecurityContext.setAccountName(accountName);

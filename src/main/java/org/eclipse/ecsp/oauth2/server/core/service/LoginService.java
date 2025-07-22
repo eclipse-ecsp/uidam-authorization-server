@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.LOGIN_ATTEMPT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_CAPTCHA_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_ENFORCE_AFTER_NO_OF_FAILURES;
@@ -37,20 +36,20 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 @Service
 public class LoginService {
 
-    private TenantProperties tenantProperties;
-
-    @Autowired
-    private HttpServletRequest request;
+    private final TenantConfigurationService tenantConfigurationService;
+    private final HttpServletRequest request;
 
     /**
      * Constructor for LoginService.
-     * It initializes tenantProperties using the provided TenantConfigurationService.
+     * It initializes the service with the tenant configuration service for dynamic tenant resolution.
      *
      * @param tenantConfigurationService the service to retrieve tenant properties from
+     * @param request the HTTP servlet request
      */
     @Autowired
-    public LoginService(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+    public LoginService(TenantConfigurationService tenantConfigurationService, HttpServletRequest request) {
+        this.tenantConfigurationService = tenantConfigurationService;
+        this.request = request;
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LoginService.class);
@@ -64,6 +63,7 @@ public class LoginService {
      * @return boolean flag indicating whether captcha is enabled or not
      */
     public boolean isCaptchaEnabledForUserInterface() {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         boolean isCaptchaEnabled;
         if (BooleanUtils.isTrue(tenantProperties.getUser().getCaptchaRequired())) {
             LOGGER.debug("Captcha Enabled for Tenant");
@@ -111,6 +111,7 @@ public class LoginService {
      * @return boolean flag indicating whether captcha is enabled post user login
      */
     private boolean isCaptchaEnabledPostUserLogin() {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         boolean isCaptchaEnabled = false;
 
         Integer loginAttempt = request.getSession().getAttribute(LOGIN_ATTEMPT) != null
@@ -172,6 +173,7 @@ public class LoginService {
      * @return true if auto redirection is enabled, false otherwise
      */
     public boolean isAutoRedirectionEnabled() {
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         return tenantProperties.getExternalIdpRegisteredClientList().size() == 1;
     }
 }

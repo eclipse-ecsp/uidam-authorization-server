@@ -22,6 +22,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.SneakyThrows;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.AccountProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MultiTenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.entities.AuthorizationSecurityContext;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationSecurityContextRepository;
@@ -63,6 +64,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -94,7 +96,9 @@ class DatabaseSecurityContextRepositoryTest {
         this.authorizationSecurityContextRepository = mock(AuthorizationSecurityContextRepository.class);
         this.securityContextHolderStrategy = mock(SecurityContextHolderStrategy.class);
         this.tenantProperties = mock(TenantProperties.class);
-        tenantConfigurationService = new TenantConfigurationService(tenantProperties);
+        MultiTenantProperties multiTenantProperties = mock(MultiTenantProperties.class);
+        when(multiTenantProperties.getTenantProperties(anyString())).thenReturn(tenantProperties);
+        tenantConfigurationService = new TenantConfigurationService(multiTenantProperties);
         request = new MockHttpServletRequest();
         request.setRequestedSessionId(REQUESTED_SESSION_ID);
         // Create a MockHttpSession
@@ -113,8 +117,16 @@ class DatabaseSecurityContextRepositoryTest {
         response = new MockHttpServletResponse();
         databaseSecurityContextRepository = new DatabaseSecurityContextRepository(
             authorizationSecurityContextRepository, tenantConfigurationService, "5m");
-        when(tenantProperties.getAccount()).thenReturn(Mockito.mock(AccountProperties.class));
-        when(tenantProperties.getAccount().getAccountName()).thenReturn(ACCOUNT_NAME);
+        
+        // Mock the account properties
+        AccountProperties accountProperties = Mockito.mock(AccountProperties.class);
+        when(accountProperties.getAccountName()).thenReturn(ACCOUNT_NAME);
+        when(tenantProperties.getAccount()).thenReturn(accountProperties);
+        
+        // Mock multiTenantProperties.getTenants() to return a map with the ecsp tenant
+        Map<String, TenantProperties> tenantsMap = new HashMap<>();
+        tenantsMap.put("ecsp", tenantProperties);
+        when(multiTenantProperties.getTenants()).thenReturn(tenantsMap);
     }
 
     /**

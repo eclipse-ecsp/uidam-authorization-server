@@ -21,7 +21,6 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.validator;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
 import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
-import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils;
 import org.slf4j.Logger;
@@ -46,7 +45,6 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 
 /**
  * The CustomScopeValidator class implements the Consumer interface with
@@ -62,19 +60,21 @@ public class CustomScopeValidator implements Consumer<OAuth2AuthorizationCodeReq
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomScopeValidator.class);
 
-    private TenantProperties tenantProperties;
-    @Autowired
+    private TenantConfigurationService tenantConfigurationService;
+    
     CacheClientUtils cacheClientUtils;
 
     /**
-     * Constructor for CustomScopeValidator.
-     * It initializes tenantProperties and authManagementClient.
+     * constructor to initialize the CustomScopeValidator with the required services.
      *
-     * @param tenantConfigurationService the service to fetch tenant properties.
+     * @param tenantConfigurationService the service to get tenant configurations.
+     * @param cacheClientUtils the utility class for cache operations related to clients.
      */
     @Autowired
-    public CustomScopeValidator(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+    public CustomScopeValidator(TenantConfigurationService tenantConfigurationService,
+            CacheClientUtils cacheClientUtils) {
+        this.tenantConfigurationService = tenantConfigurationService;
+        this.cacheClientUtils = cacheClientUtils;
     }
 
     /**
@@ -130,9 +130,9 @@ public class CustomScopeValidator implements Consumer<OAuth2AuthorizationCodeReq
         ClientCacheDetails clientDetails = cacheClientUtils.getClientDetails(
             authenticationContext.getRegisteredClient().getClientId());
 
-        if (!CommonMethodsUtils.isUserScopeValidationRequired((null != clientDetails
-                ? clientDetails.getClientType() : null),
-            tenantProperties.getClient().getOauthScopeCustomization())) {
+        if (!CommonMethodsUtils.isUserScopeValidationRequired(
+                (null != clientDetails ? clientDetails.getClientType() : null),
+                tenantConfigurationService.getTenantProperties().getClient().getOauthScopeCustomization())) {
 
             LOGGER.debug("Scope Validation for username {} not required", principal.getName());
         } else {

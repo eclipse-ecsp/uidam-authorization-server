@@ -21,7 +21,6 @@ package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import javax.annotation.PostConstruct;
 
 import java.util.Arrays;
@@ -32,15 +31,16 @@ import java.util.stream.Collectors;
 
 /**
  * The TenantProperties class represents the properties related to a tenant.
+ * Note: This class does not need @ConfigurationProperties as it's used as a nested property
+ * within MultiTenantProperties which handles the binding.
  */
 @Getter
 @Setter
-@ConfigurationProperties(prefix = "tenant")
 public class TenantProperties {
     private String tenantId;
     private String tenantName;
     private Boolean jksEnabled;
-    @Pattern(regexp = "[A-Za-z]")
+    @Pattern(regexp = "[A-Za-z]+")
     private String alias;
     private HashMap<String, String> contactDetails;
     private AccountProperties account;
@@ -51,10 +51,16 @@ public class TenantProperties {
     private HashMap<String, String> keyStore;
     private HashMap<String, String> cert;
     private CaptchaProperties captcha;
+    
+    
+    // Legacy External IDP List (for backward compatibility and direct property binding)
     private List<ExternalIdpRegisteredClient> externalIdpRegisteredClientList;
+    
+    // Direct External IDP configuration fields for property binding
     private boolean externalIdpEnabled;
     private String externalIdpClientName;
-    private boolean internalLoginEnabled;
+    
+    private boolean internalLoginEnabled = true;
     private boolean signUpEnabled;
 
     private static final String MAPPINGS_DELIMITER = ",";

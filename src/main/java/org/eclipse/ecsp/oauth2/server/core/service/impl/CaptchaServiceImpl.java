@@ -20,6 +20,7 @@ package org.eclipse.ecsp.oauth2.server.core.service.impl;
 
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.ReCaptchaInvalidException;
 import org.eclipse.ecsp.oauth2.server.core.exception.ReCaptchaUnavailableException;
@@ -37,7 +38,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.net.URI;
 
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.LOGIN_ATTEMPT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.RECAPTCHA_URL_TEMPLATE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.RESPONSE_PATTERN;
@@ -48,21 +48,35 @@ import static org.eclipse.ecsp.oauth2.server.core.utils.RequestResponseLogger.lo
 
 /**
  * The CaptchaServiceImpl class is an implementation of the CaptchaService interface.
+ * This service handles CAPTCHA generation and validation with multi-tenant support.
+ * Each tenant can have their own CAPTCHA configuration.
  */
 @Service("captchaService")
 public class CaptchaServiceImpl implements CaptchaService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CaptchaServiceImpl.class);
 
-    private TenantProperties tenantProperties;
+    private final TenantConfigurationService tenantConfigurationService;
 
     /**
-     * Constructor that initializes the tenantProperties object.
+     * Constructor that initializes the tenantConfigurationService.
      *
      * @param tenantConfigurationService the service to retrieve tenant properties.
      */
     public CaptchaServiceImpl(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        this.tenantConfigurationService = tenantConfigurationService;
+    }
+
+    /**
+     * Get the current tenant's properties.
+     *
+     * @return the tenant properties for the current tenant
+     */
+    private TenantProperties getCurrentTenantProperties() {
+        String currentTenant = TenantContext.getCurrentTenant();
+        LOGGER.debug("Getting CAPTCHA properties for tenant: {}", currentTenant);
+        TenantProperties properties = tenantConfigurationService.getTenantProperties();
+        return properties;
     }
 
     /**
@@ -75,11 +89,17 @@ public class CaptchaServiceImpl implements CaptchaService {
      */
     @Override
     public void processResponse(final String response, HttpServletRequest request) {
-        LOGGER.info("## processResponse - START");
+        String currentTenant = TenantContext.getCurrentTenant();
+        LOGGER.info("## processResponse - START for tenant: {}", currentTenant);
+        
         securityCheck(response);
+        
+        TenantProperties tenantProperties = getCurrentTenantProperties();
         String recaptchaVerifyUrl = tenantProperties.getCaptcha().getRecaptchaVerifyUrl() + RECAPTCHA_URL_TEMPLATE;
         final URI verifyUri = URI.create(String.format(recaptchaVerifyUrl, getReCaptchaSecret(), response,
             getClientIp(request)));
+        
+        LOGGER.debug("Using reCAPTCHA verify URL: {} for tenant: {}", recaptchaVerifyUrl, currentTenant);
         WebClient webClient = WebClient.builder().baseUrl(String.valueOf(verifyUri))
                 .filter(logRequest()).filter(logResponse())
                 .build();
@@ -109,27 +129,33 @@ public class CaptchaServiceImpl implements CaptchaService {
                 request.getSession().removeAttribute(SESSION_USER_RESPONSE_ENFORCE_AFTER_NO_OF_FAILURES);
             }
         }
-        LOGGER.info("## processResponse - END");
+        LOGGER.info("## processResponse - END for tenant: {}", currentTenant);
     }
 
     /**
-     * Returns the reCAPTCHA site key.
+     * Returns the reCAPTCHA site key for the current tenant.
      *
      * @return the reCAPTCHA site key.
      */
     @Override
     public String getReCaptchaSite() {
-        return this.tenantProperties.getCaptcha().getRecaptchaKeySite();
+        String currentTenant = TenantContext.getCurrentTenant();
+        String siteKey = getCurrentTenantProperties().getCaptcha().getRecaptchaKeySite();
+        LOGGER.debug("Retrieved reCAPTCHA site key for tenant: {}", currentTenant);
+        return siteKey;
     }
 
     /**
-     * Returns the reCAPTCHA secret key.
+     * Returns the reCAPTCHA secret key for the current tenant.
      *
      * @return the reCAPTCHA secret key.
      */
     @Override
     public String getReCaptchaSecret() {
-        return this.tenantProperties.getCaptcha().getRecaptchaKeySecret();
+        String currentTenant = TenantContext.getCurrentTenant();
+        String secretKey = getCurrentTenantProperties().getCaptcha().getRecaptchaKeySecret();
+        LOGGER.debug("Retrieved reCAPTCHA secret key for tenant: {}", currentTenant);
+        return secretKey;
     }
 
     /**

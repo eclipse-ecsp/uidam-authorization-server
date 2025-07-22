@@ -26,10 +26,10 @@ import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreCons
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
@@ -57,14 +57,24 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomUserPwdAuthenticationProvider.class);
 
-    @Autowired
-    UserManagementClient userManagementClient;
-    
-    @Autowired 
-    TenantProperties tenantProperties;
+    private final UserManagementClient userManagementClient;
+    private final TenantConfigurationService tenantConfigurationService;
+    private final HttpServletRequest request;
 
-    @Autowired
-    private HttpServletRequest request;
+    /**
+     * Constructor for CustomUserPwdAuthenticationProvider.
+     *
+     * @param userManagementClient the user management client
+     * @param tenantConfigurationService the tenant configuration service
+     * @param request the HTTP servlet request
+     */
+    public CustomUserPwdAuthenticationProvider(UserManagementClient userManagementClient,
+                                               TenantConfigurationService tenantConfigurationService,
+                                               HttpServletRequest request) {
+        this.userManagementClient = userManagementClient;
+        this.tenantConfigurationService = tenantConfigurationService;
+        this.request = request;
+    }
 
     /**
      * This method overrides the authenticate method from the AuthenticationProvider interface.
@@ -88,6 +98,7 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
         String accountName = customUserPwdAuthenticationToken.getAccountName();
         UserEvent userEvent = new UserEvent();
         userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         int maxAllowedLoginAttempt = tenantProperties.getUser().getMaxAllowedLoginAttempts();
         LOGGER.debug("Authenticating user details for username {}", username);
         UserDetailsResponse userDetailsResponse = userManagementClient.getUserDetailsByUsername(username, accountName);

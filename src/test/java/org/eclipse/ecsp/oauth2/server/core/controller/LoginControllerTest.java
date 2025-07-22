@@ -19,52 +19,105 @@
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.AccountProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.CaptchaProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.service.LoginService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.servlet.View;
 
+import java.util.Collections;
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
 /**
- * This class tests the functionality of the LoginController.
+ * This class tests the functionality of the LoginController with multi-tenant support.
  */
 @Slf4j
-@WebMvcTest(LoginController.class)
-@ContextConfiguration(classes = {LoginController.class, TenantConfigurationService.class})
-@EnableConfigurationProperties(value = TenantProperties.class)
-@TestPropertySource("classpath:application-test.properties")
-@TestPropertySource("classpath:external-idp-application.properties")
+@ExtendWith(MockitoExtension.class)
 class LoginControllerTest {
 
-    @Autowired
-    private WebApplicationContext wac;
+    @Mock
+    private TenantConfigurationService tenantConfigurationService;
 
-    @MockitoBean
-    LoginService loginService;
+    @Mock
+    private LoginService loginService;
+
+    @InjectMocks
+    private LoginController loginController;
 
     private MockMvc mockMvc;
 
     /**
      * This method sets up the test environment before each test.
-     * It initializes the MockMvc instance.
+     * It initializes the MockMvc instance and sets up default tenant context.
      */
     @BeforeEach
     void setup() {
-        this.mockMvc = MockMvcBuilders.webAppContextSetup(this.wac).build();
+        TenantContext.setCurrentTenant("ecsp"); // Set default tenant for tests
+        this.mockMvc = MockMvcBuilders.standaloneSetup(loginController)
+            .setViewResolvers((viewName, locale) -> new View() {
+                @Override
+                public String getContentType() {
+                    return "text/html";
+                }
+
+                @Override
+                public void render(Map<String, ?> model, 
+                                   jakarta.servlet.http.HttpServletRequest request,
+                                   jakarta.servlet.http.HttpServletResponse response) throws Exception {
+                    response.getWriter().write("Mock view: " + viewName);
+                }
+            })
+            .build();
+    }
+
+    /**
+     * Clean up tenant context after each test to avoid side effects.
+     */
+    @AfterEach
+    void cleanup() {
+        TenantContext.clear();
+    }
+
+    /**
+     * Creates a mock TenantProperties for testing.
+     *
+     * @return Mock TenantProperties with default values
+     */
+    private TenantProperties createMockTenantProperties() {
+        TenantProperties tenantProperties = new TenantProperties();
+        
+        AccountProperties accountProperties = new AccountProperties();
+        accountProperties.setAccountFieldEnabled(true);
+        tenantProperties.setAccount(accountProperties);
+        
+        CaptchaProperties captchaProperties = new CaptchaProperties();
+        captchaProperties.setRecaptchaKeySite("test-site-key");
+        tenantProperties.setCaptcha(captchaProperties);
+        
+        tenantProperties.setExternalIdpEnabled(false);
+        tenantProperties.setInternalLoginEnabled(true);
+        tenantProperties.setSignUpEnabled(true);
+        tenantProperties.setExternalIdpRegisteredClientList(Collections.emptyList());
+        
+        return tenantProperties;
     }
 
     /**
@@ -75,11 +128,49 @@ class LoginControllerTest {
      */
     @Test
     void shouldAllowLoginPageAccessForAnonymousUser() throws Exception {
+        // Setup mock tenant properties
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mockTenantProperties);
+        when(loginService.isCaptchaEnabledForUserInterface()).thenReturn(false);
+
         this.mockMvc
             .perform(get("/login"))
             .andExpect(status().isOk())
             .andExpect(view().name("login"))
-            .andExpect(model().attributeExists("isAccountFieldEnabled"));
+            .andExpect(model().attributeExists("isAccountFieldEnabled"))
+            .andExpect(model().attributeExists("isCaptchaFieldEnabled"))
+            .andExpect(model().attributeExists("captchaSite"))
+            .andExpect(model().attributeExists("isExternalIdpEnabled"))
+            .andExpect(model().attributeExists("isInternalLoginEnabled"))
+            .andExpect(model().attributeExists("isIDPAutoRedirectionEnabled"))
+            .andExpect(model().attributeExists("isSignUpEnabled"));
+    }
+
+    /**
+     * This test method tests the login page access for a specific tenant.
+     * It performs a GET request to the /login endpoint after setting a specific tenant context.
+     */
+    @Test
+    void shouldAllowLoginPageAccessForSpecificTenant() throws Exception {
+        // Setup specific tenant context
+        TenantContext.setCurrentTenant("demo");
+        
+        // Setup mock tenant properties for demo tenant
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        mockTenantProperties.setExternalIdpEnabled(true);
+        mockTenantProperties.setInternalLoginEnabled(false);
+        
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mockTenantProperties);
+        when(loginService.isCaptchaEnabledForUserInterface()).thenReturn(true);
+        when(loginService.isAutoRedirectionEnabled()).thenReturn(true);
+
+        this.mockMvc
+            .perform(get("/login"))
+            .andExpect(status().isOk())
+            .andExpect(view().name("login"))
+            .andExpect(model().attribute("isExternalIdpEnabled", true))
+            .andExpect(model().attribute("isInternalLoginEnabled", false))
+            .andExpect(model().attribute("isCaptchaFieldEnabled", true));
     }
 
     /**

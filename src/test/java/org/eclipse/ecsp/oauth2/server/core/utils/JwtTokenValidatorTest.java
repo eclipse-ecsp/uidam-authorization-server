@@ -59,9 +59,10 @@ class JwtTokenValidatorTest {
 
         MockitoAnnotations.openMocks(this);
         when(tenantProperties.getKeyStore()).thenReturn(getKeyStore());
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
 
         // Initialize JwtTokenValidator
-        jwtTokenValidator = new JwtTokenValidator(tenantProperties);
+        jwtTokenValidator = new JwtTokenValidator(tenantConfigurationService);
     }
 
     public HashMap<String, String> getKeyStore() {

@@ -18,8 +18,6 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config;
 
-
-
 import com.nimbusds.jose.jwk.RSAKey;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.KeyGenerationException;
@@ -42,12 +40,13 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
+
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.BEGIN_PUBLIC_KEY;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ECSP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.END_PUBLIC_KEY;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_JWT_KEY_ID;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_JWT_PRIVATE_KEY;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_JWT_PUBLIC_KEY;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UIDAM;
 
 /**
  * The KeyStoreConfigByPubPvtKey class is a configuration class that uses a public/private key pair for generating RSA
@@ -67,7 +66,7 @@ public class KeyStoreConfigByPubPvtKey {
      */
     @Autowired
     public KeyStoreConfigByPubPvtKey(TenantConfigurationService tenantConfigurationService) {
-        tenantProperties = tenantConfigurationService.getTenantProperties(UIDAM);
+        tenantProperties = tenantConfigurationService.getTenantProperties(ECSP);
     }
 
     /**

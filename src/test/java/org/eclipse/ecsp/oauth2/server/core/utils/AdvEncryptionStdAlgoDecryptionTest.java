@@ -20,14 +20,16 @@ package org.eclipse.ecsp.oauth2.server.core.utils;
 
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.ClientProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,13 +39,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * This class tests the functionality of the AdvEncryptionStdAlgoDecryption class.
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 @ActiveProfiles("test")
 class AdvEncryptionStdAlgoDecryptionTest {
     @Mock
     TenantProperties tenantProperties;
 
-    @InjectMocks
-    AdvEncryptionStdAlgoDecryption advEncryptionStdAlgoDecryption;
+    @Mock
+    TenantConfigurationService tenantConfigurationService;
+
+    @Mock
+    ClientProperties clientProperties;
+
+    private AdvEncryptionStdAlgoDecryption advEncryptionStdAlgoDecryption;
 
     /**
      * This method sets up the test environment before each test.
@@ -51,8 +59,18 @@ class AdvEncryptionStdAlgoDecryptionTest {
      */
     @BeforeEach
     void setup() {
-
         MockitoAnnotations.openMocks(this);
+        
+        // Set up default tenant configuration mock FIRST
+        Mockito.when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        
+        // Set up default client properties mock for all tests
+        Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
+        Mockito.when(clientProperties.getSecretEncryptionKey()).thenReturn("ChangeMe");
+        Mockito.when(clientProperties.getSecretEncryptionSalt()).thenReturn("ChangeMe");
+        
+        // THEN create the instance with the properly mocked service
+        advEncryptionStdAlgoDecryption = new AdvEncryptionStdAlgoDecryption(tenantConfigurationService);
     }
 
     /**
@@ -63,11 +81,6 @@ class AdvEncryptionStdAlgoDecryptionTest {
      */
     @Test
      void testDecrypt() {
-        ClientProperties clientProperties = Mockito.mock(ClientProperties.class);
-        Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
-        Mockito.when(clientProperties.getSecretEncryptionKey()).thenReturn("ChangeMe");
-        Mockito.when(clientProperties.getSecretEncryptionSalt()).thenReturn("ChangeMe");
-
         String secret = advEncryptionStdAlgoDecryption
             .decrypt("83aRAFlyMdDzpSc1Q2hhbmdlTWVcs1vGTDCTCvTvBWEB/vVysh2qRT1GWA0=");
         assertEquals("ChangeMe", secret);
@@ -92,8 +105,6 @@ class AdvEncryptionStdAlgoDecryptionTest {
      */
     @Test()
      void testDecrypt_Exception() {
-        ClientProperties clientProperties = Mockito.mock(ClientProperties.class);
-        Mockito.when(tenantProperties.getClient()).thenReturn(clientProperties);
         Mockito.when(clientProperties.getSecretEncryptionKey()).thenReturn("ignite_secret_key");
         Mockito.when(clientProperties.getSecretEncryptionSalt()).thenReturn("ignite_random_salt_ex");
 
