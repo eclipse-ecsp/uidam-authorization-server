@@ -90,7 +90,8 @@ public class LogoutController {
                        HttpServletRequest request,
                        HttpServletResponse response) throws IOException {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.info("Processing OIDC logout POST request - client_id: {}, post_logout_redirect_uri: {}, state: {}, tenantId: {}",
+        LOGGER.info("Processing OIDC logout POST request - client_id: {}, post_logout_redirect_uri: {}, state: {}, " 
+            + "tenantId: {}",
                 clientId, postLogoutRedirectUri, state, tenantId);
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

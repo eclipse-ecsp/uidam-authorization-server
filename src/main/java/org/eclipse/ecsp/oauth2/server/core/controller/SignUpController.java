@@ -160,7 +160,8 @@ public class SignUpController {
      * @return the name of the user-created UI view
      */
     @GetMapping(SLASH + PRIVACY_AGREEMENT)
-    public String getPrivacyAgreementPage(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
+    public String getPrivacyAgreementPage(@PathVariable(value = "tenantId", required = false) String tenantId,
+        Model model) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return PRIVACY_AGREEMENT;

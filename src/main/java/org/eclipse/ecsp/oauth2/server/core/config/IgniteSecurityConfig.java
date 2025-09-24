@@ -244,7 +244,7 @@ public class IgniteSecurityConfig {
         // Configure security matchers for ALL OAuth2 patterns (authorization server + external IDP)
         http.securityMatchers(matchers -> matchers.requestMatchers(
                 DEFAULT_LOGIN_MATCHER_PATTERN,
-                "/*/oauth2/**", "/oauth2/**",// Tenant-prefixed OAuth2 URLs
+                "/*/oauth2/**", "/oauth2/**", // Tenant-prefixed OAuth2 URLs
                 "/*/login/oauth2/code/**", // Tenant-prefixed OAuth2 callback URLs
                 LOGIN_MATCHER_PATTERN, 
                 LOGOUT_MATCHER_PATTERN))

@@ -89,10 +89,11 @@ class TenantResolutionFilterTest {
     private void setSpringProperties(boolean multiTenantEnabled, String defaultTenant) {
         // Simulate Spring @Value injection for test
         try {
-            var multiTenantField = TenantResolutionFilter.class.getDeclaredField("multiTenantEnabled");
+            java.lang.reflect.Field multiTenantField = TenantResolutionFilter.class
+                .getDeclaredField("multiTenantEnabled");
             multiTenantField.setAccessible(true);
             multiTenantField.set(tenantResolutionFilter, multiTenantEnabled);
-            var defaultTenantField = TenantResolutionFilter.class.getDeclaredField("defaultTenant");
+            java.lang.reflect.Field defaultTenantField = TenantResolutionFilter.class.getDeclaredField("defaultTenant");
             defaultTenantField.setAccessible(true);
             defaultTenantField.set(tenantResolutionFilter, defaultTenant);
         } catch (Exception e) {
