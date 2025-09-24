@@ -243,7 +243,8 @@ class TenantConfigurationServiceTest {
         // Use ReflectionTestUtils to set the tenantIds field
         List<String> tenantIdsList = Arrays.asList(ECSP, "sdp");
         ReflectionTestUtils.setField(tenantConfigurationService, "tenantIds", tenantIdsList);
-        
+        // Use ReflectionTestUtils to set the tenantIds field
+        ReflectionTestUtils.setField(tenantConfigurationService, "defaultTenantId", "ecsp");
         // Execute the method under test
         boolean exists = tenantConfigurationService.tenantExists(ECSP);
         
@@ -264,6 +265,9 @@ class TenantConfigurationServiceTest {
         // Use ReflectionTestUtils to set the tenantIds field
         List<String> tenantIdsList = Arrays.asList(ECSP);
         ReflectionTestUtils.setField(tenantConfigurationService, "tenantIds", tenantIdsList);
+
+        // Use ReflectionTestUtils to set the tenantIds field
+        ReflectionTestUtils.setField(tenantConfigurationService, "defaultTenantId", "ecsp");
         
         // Execute the method under test
         boolean exists = tenantConfigurationService.tenantExists("nonexistent");
@@ -279,6 +283,9 @@ class TenantConfigurationServiceTest {
     void tenantExistsNullTenantsTest() {
         // Setup null tenants
         when(multiTenantProperties.getTenants()).thenReturn(null);
+
+        // Use ReflectionTestUtils to set the tenantIds field
+        ReflectionTestUtils.setField(tenantConfigurationService, "defaultTenantId", "ecsp");
         
         // Execute the method under test
         boolean exists = tenantConfigurationService.tenantExists(ECSP);

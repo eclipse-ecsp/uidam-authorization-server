@@ -51,6 +51,18 @@ public class MultiTenantProperties {
      */
     private String defaultTenantId = "ecsp";
     
+    /**
+     * Whether multi-tenancy is enabled.
+     */
+    private boolean multitenantEnabled = true;
+
+    public boolean isMultitenantEnabled() {
+        return multitenantEnabled;
+    }
+
+    public void setMultitenantEnabled(boolean multitenantEnabled) {
+        this.multitenantEnabled = multitenantEnabled;
+    }
     
     /**
      * Get tenant properties for a specific tenant ID.
@@ -60,10 +72,7 @@ public class MultiTenantProperties {
      * @return tenant properties for the specified tenant
      */
     public TenantProperties getTenantProperties(String tenantId) {
-        if (tenantId == null || tenantId.trim().isEmpty()) {
-            return getDefaultTenant();
-        }
-        return tenants.getOrDefault(tenantId, getDefaultTenant());
+        return tenants.get(tenantId);
     }
     
     /**

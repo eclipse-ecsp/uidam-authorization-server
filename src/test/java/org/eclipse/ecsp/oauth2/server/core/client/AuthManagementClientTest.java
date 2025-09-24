@@ -68,7 +68,7 @@ class AuthManagementClientTest {
         
         // Set up mock external URLs
         HashMap<String, String> externalUrls = new HashMap<>();
-        externalUrls.put(TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV, "http://localhost:8080");
+        externalUrls.put(TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV, "http://localhost:8081");
         externalUrls.put(TENANT_EXTERNAL_URLS_CLIENT_BY_CLIENT_ID_ENDPOINT, "/v1/oauth2/client/{clientId}");
         tenantProperties.setExternalUrls(externalUrls);
         

@@ -27,6 +27,7 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserDto;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.PasswordPolicyService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +67,7 @@ import static org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils.obtai
  * Controller class for handling self user sign-up operations.
  */
 @Controller
-@RequestMapping("/{tenantId}")
+@RequestMapping({"/{tenantId}", "/"})
 public class SignUpController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SignUpController.class);
@@ -100,7 +101,8 @@ public class SignUpController {
      * @return the name of the sign-up view
      */
     @GetMapping(SLASH + SELF_SIGN_UP)
-    public String selfSignUpInit(@PathVariable("tenantId") String tenantId, Model model) {
+    public String selfSignUpInit(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(IS_SIGN_UP_ENABLED, tenantProperties.isSignUpEnabled());
         model.addAttribute("issuer", tenantId);
@@ -134,7 +136,8 @@ public class SignUpController {
      */
 
     @GetMapping(SLASH + USER_CREATED)
-    public String userCreated(@PathVariable("tenantId") String tenantId, Model model) {
+    public String userCreated(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return USER_CREATED;
     }
@@ -145,7 +148,8 @@ public class SignUpController {
      * @return the name of the user-created UI view
      */
     @GetMapping(SLASH + TERMS_OF_USE)
-    public String getTermsOfUsePage(@PathVariable("tenantId") String tenantId, Model model) {
+    public String getTermsOfUsePage(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return TERMS_OF_USE;
     }
@@ -156,7 +160,9 @@ public class SignUpController {
      * @return the name of the user-created UI view
      */
     @GetMapping(SLASH + PRIVACY_AGREEMENT)
-    public String getPrivacyAgreementPage(@PathVariable("tenantId") String tenantId, Model model) {
+    public String getPrivacyAgreementPage(@PathVariable(value = "tenantId", required = false) String tenantId,
+        Model model) {
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return PRIVACY_AGREEMENT;
     }
@@ -171,11 +177,12 @@ public class SignUpController {
      * @return a ModelAndView object to redirect to the appropriate view
      */
     @PostMapping(value = SLASH + SELF_SIGN_UP, consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE})
-    public ModelAndView addSelfUser(@PathVariable("tenantId") String tenantId,
+    public ModelAndView addSelfUser(@PathVariable(value = "tenantId", required = false) String tenantId,
                                     @ModelAttribute @Valid UserDto userDto,
                                     HttpServletRequest request,
                                     RedirectAttributes redirectAttributes) {
-        LOGGER.info("## addSelfUser - START");
+        tenantId = TenantUtils.resolveTenantId(tenantId);
+        LOGGER.info("## addSelfUser - START for tenantId: {}", tenantId);
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         boolean reqParametersPresent = checkForReqParameters(userDto, obtainRecaptchaResponse(request),
             request, tenantProperties);
