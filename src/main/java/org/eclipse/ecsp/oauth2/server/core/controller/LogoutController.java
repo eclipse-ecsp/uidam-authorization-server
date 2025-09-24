@@ -111,7 +111,7 @@ public class LogoutController {
     @GetMapping("/success")
     public String logoutSuccess(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.info("Logout successful, redirecting to logout success page for tenantId: {}.", tenantId);
+        LOGGER.info("Logout successful, redirecting to logout success page.");
         // Add UI attributes for logout success page
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return "logout-success";
@@ -129,7 +129,7 @@ public class LogoutController {
     public String logoutError(@PathVariable(value = "tenantId", required = false) String tenantId, Model model,
             @RequestParam(value = "error", required = false) String error) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.error("Logout error occurred: {} for tenantId: {}", error, tenantId);
+        LOGGER.error("Logout error occurred: {}", error);
         if (error != null) {
             String errorMessage = getErrorMessage(error);
             model.addAttribute("errorMessage", errorMessage);
