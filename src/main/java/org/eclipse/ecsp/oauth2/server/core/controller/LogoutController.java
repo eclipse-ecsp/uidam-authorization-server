@@ -129,9 +129,10 @@ public class LogoutController {
     public String logoutError(@PathVariable(value = "tenantId", required = false) String tenantId, Model model,
             @RequestParam(value = "error", required = false) String error) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.error("Logout error occurred: {}", error);
+
         if (error != null) {
             String errorMessage = getErrorMessage(error);
+            LOGGER.error("Logout error occurred: {}", errorMessage);
             model.addAttribute("errorMessage", errorMessage);
         }
         // Add UI attributes for logout error page
