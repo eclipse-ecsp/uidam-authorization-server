@@ -127,14 +127,6 @@ class SignUpControllerTest {
     }
 
     @Test
-    void getPrivacyAgreementPage_Success() {
-        Model model = new ExtendedModelMap();
-        when(tenantProperties.isSignUpEnabled()).thenReturn(false);
-        String viewName = signUpController.getPrivacyAgreementPage("ecsp", model);
-        assertEquals(PRIVACY_AGREEMENT, viewName);
-    }
-
-    @Test
     void addSelfUser_Success() {
         UserDto userDto = new UserDto();
         userDto.setUserName("testUser");

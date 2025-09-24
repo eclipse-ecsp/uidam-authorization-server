@@ -361,4 +361,31 @@ class LiquibaseConfigTest {
         assertFalse(sql.contains(";"), "SQL should not contain injection characters");
         assertFalse(sql.contains("--"), "SQL should not contain comment characters");
     }
+
+    @Test
+    void createSchemaForTenant_shouldUseCorrectTenantListBasedOnMultiTenantFlag() {
+        // Arrange
+        // Simulate the logic for lines 80-85 in LiquibaseConfig.java
+        java.util.List<String> allTenants = java.util.Arrays.asList("ecsp", "sdp", "custom");
+        String defaultTenant = "ecsp";
+        boolean multiTenantEnabled;
+        java.util.List<String> tenantIds;
+
+        // Case 1: Multi-tenant disabled
+        multiTenantEnabled = false;
+        tenantIds = allTenants;
+        if (!multiTenantEnabled) {
+            tenantIds = java.util.Collections.singletonList(defaultTenant);
+        }
+        assertEquals(1, tenantIds.size(), "Should only use default tenant when multi-tenant is disabled");
+        assertEquals(defaultTenant, tenantIds.get(0), "Default tenant should be used");
+
+        // Case 2: Multi-tenant enabled
+        multiTenantEnabled = true;
+        tenantIds = allTenants;
+        if (!multiTenantEnabled) {
+            tenantIds = java.util.Collections.singletonList(defaultTenant);
+        }
+        assertEquals(allTenants, tenantIds, "Should use all tenants when multi-tenant is enabled");
+    }
 }

@@ -53,6 +53,12 @@ public class LiquibaseConfig  {
     
     @Value("#{'${tenant.ids}'.split(',')}")
     private List<String> tenantIds;
+
+    @Value("${tenant.multitenant.enabled}")
+    private boolean multiTenantEnabled;
+
+    @Value("${tenant.default}")
+    private String defaultTenant;
     
     @Value("${uidam.liquibase.change-log.path}")
     private String liquibaseChangeLogPath;
@@ -77,6 +83,15 @@ public class LiquibaseConfig  {
     // Bean creation will be skipped when spring.liquibase.enabled=false (e.g., in tests)
     public SpringLiquibase createSchemaForTenant() {
         SpringLiquibase liquibase = new SpringLiquibase();
+
+        // If multi-tenant is disabled, run Liquibase for the default tenant only
+        if (!multiTenantEnabled) {
+            tenantIds = List.of(defaultTenant);
+            LOGGER.info("Multi-tenant is disabled. Running Liquibase for the default tenant only: {}", defaultTenant);
+        } else {
+            LOGGER.info("Multi-tenant is enabled. Running Liquibase for tenants: {}", tenantIds);
+        }
+
         for (String tenantId : tenantIds) {
             TenantContext.setCurrentTenant(tenantId);
             MDC.put(TENANT_HEADER, tenantId);

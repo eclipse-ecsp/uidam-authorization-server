@@ -22,6 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.service.LoginService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
@@ -93,15 +94,7 @@ public class LoginController {
             @RequestParam(name = "response_type", required = false) String responseType,
             @RequestParam(required = false) String state) {
         // Determine tenantId based on multitenant config
-        if (multitenantEnabled) {
-            if (tenantId == null || tenantId.isEmpty()) {
-                throw new IllegalArgumentException("TenantId is required when multi-tenant is enabled.");
-            }
-        } else {
-            if (tenantId == null || tenantId.isEmpty()) {
-                tenantId = defaultTenant;
-            }
-        }
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         // Get tenant properties dynamically based on current tenant context
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(ACCOUNT_FIELD_ENABLED, tenantProperties.getAccount().getAccountFieldEnabled());
