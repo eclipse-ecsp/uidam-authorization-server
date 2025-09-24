@@ -156,7 +156,7 @@ public class SignUpController {
                                     HttpServletRequest request,
                                     RedirectAttributes redirectAttributes) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.info("## addSelfUser - START for tenantId: {}", tenantId);
+        LOGGER.info("## addSelfUser - START for FirstName: {}", userDto.getFirstName());
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         boolean reqParametersPresent = checkForReqParameters(userDto, obtainRecaptchaResponse(request),
             request, tenantProperties);

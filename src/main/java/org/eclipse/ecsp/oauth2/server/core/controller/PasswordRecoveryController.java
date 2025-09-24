@@ -155,7 +155,7 @@ public class PasswordRecoveryController {
         if (!StringUtils.isEmpty(recaptchaResponse)) {
             captchaServiceImpl.processResponse(recaptchaResponse, request);
         }
-        LOGGER.info("sending email notification with recovery secret to reset password for tenantId: {}", tenantId);
+        LOGGER.info("sending email notification with recovery secret to reset password");
         userManagementClient.sendUserResetPasswordNotification(username, accountName);
         model.addAttribute(MESSAGE_LITERAL, IgniteOauth2CoreConstants.PASSWORD_RECOVERY_EMAIL_SENT);
         return new ModelAndView(RECOVERY_EMAIL_SENT).addObject(model);

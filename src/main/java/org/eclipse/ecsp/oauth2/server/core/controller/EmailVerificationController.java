@@ -81,7 +81,7 @@ public class EmailVerificationController {
             verifyStatus = ERROR_LITERAL;
         }
         verifyStatus = verifyStatus.toLowerCase(Locale.ROOT);
-        LOGGER.info("Email Verification is verified: {} for tenantId: {}", verifyStatus, tenantId);
+        LOGGER.info("Email Verification is verified: {}", verifyStatus);
         model.addAttribute(SUCCESS, verifyStatus);
         
         // Add UI configuration attributes based on tenant properties

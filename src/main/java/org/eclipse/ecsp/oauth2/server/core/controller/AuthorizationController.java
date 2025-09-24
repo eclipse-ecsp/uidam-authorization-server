@@ -63,8 +63,8 @@ public class AuthorizationController {
                                                    @RequestHeader(value = "Authorization",
         required = true) String authorization, RevokeTokenRequest revokeTokenRequest) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.info("Revoke token request for clientId: {} or username: {} for tenantId: {}",
-                revokeTokenRequest.getClientId(), revokeTokenRequest.getUsername(), tenantId);
+        LOGGER.info("Revoke token request for clientId: {} or username: {} ",
+                revokeTokenRequest.getClientId(), revokeTokenRequest.getUsername());
         String response = authorizationService.revokeToken(revokeTokenRequest, authorization);
         return buildResponse(response, null, HttpStatus.OK, null);
     }
