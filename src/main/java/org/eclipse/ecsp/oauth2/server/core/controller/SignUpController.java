@@ -143,32 +143,6 @@ public class SignUpController {
     }
 
     /**
-     * Initializes the terms of policy page.
-     *
-     * @return the name of the user-created UI view
-     */
-    @GetMapping(SLASH + TERMS_OF_USE)
-    public String getTermsOfUsePage(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
-        tenantId = TenantUtils.resolveTenantId(tenantId);
-        uiAttributeUtils.addUiAttributes(model, tenantId);
-        return TERMS_OF_USE;
-    }
-
-    /**
-     * Initializes the privacy agreement page.
-     *
-     * @return the name of the user-created UI view
-     */
-    @GetMapping(SLASH + PRIVACY_AGREEMENT)
-    public String getPrivacyAgreementPage(@PathVariable(value = "tenantId", required = false) String tenantId,
-        Model model) {
-        tenantId = TenantUtils.resolveTenantId(tenantId);
-        uiAttributeUtils.addUiAttributes(model, tenantId);
-        return PRIVACY_AGREEMENT;
-    }
-
-
-    /**
      * Handles the submission of the self sign-up form.
      *
      * @param userDto the user data transfer object containing user details
