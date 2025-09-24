@@ -99,8 +99,7 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
      * Check if the current request is for an authentication endpoint.
      */
     private boolean isAuthenticationEndpoint(String requestUri) {
-        return requestUri.startsWith(FORM_LOGIN_ENDPOINT) || requestUri.startsWith(OAUTH_LOGIN_ENDPOINT)
-                || requestUri.contains("/oauth2/authorization/");
+        return requestUri.startsWith(FORM_LOGIN_ENDPOINT) || requestUri.contains(OAUTH_LOGIN_ENDPOINT);
     }
 
     /**
