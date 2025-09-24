@@ -43,6 +43,12 @@ public class TenantConfigurationService {
     @Value("#{'${tenant.ids}'.split(',')}")
     private List<String> tenantIds;
 
+    @Value("${tenant.multitenant.enabled:true}")
+    private boolean multitenantEnabled;
+
+    @Value("${tenant.default:ecsp}")
+    private String defaultTenantId;
+
     /**
      * Constructor for TenantConfigurationService.
      * It initializes the service with multi-tenant properties.
@@ -107,7 +113,11 @@ public class TenantConfigurationService {
             LOGGER.error("Multi-tenant properties not loaded - cannot check if tenant exists");
             return false;
         }
-        return tenantIds.contains(tenantId) && multiTenantProperties.getTenants().containsKey(tenantId);
+        if (multitenantEnabled) {
+            return tenantIds.contains(tenantId) && multiTenantProperties.getTenants().containsKey(tenantId);
+        } else {
+            return defaultTenantId.equals(tenantId) && multiTenantProperties.getTenants().containsKey(tenantId);
+        }
     }
 
     /**

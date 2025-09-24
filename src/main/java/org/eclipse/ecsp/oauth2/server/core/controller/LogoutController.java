@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.LogoutHandler;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +46,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
  * provides endpoints for logout success and error pages.
  */
 @Controller
-@RequestMapping("/{tenantId}" + LOGOUT_HANDLER)
+@RequestMapping({"/{tenantId}" + LOGOUT_HANDLER, LOGOUT_HANDLER})
 public class LogoutController {   
     
     private static final Logger LOGGER = LoggerFactory.getLogger(LogoutController.class);
@@ -80,7 +81,7 @@ public class LogoutController {
      */
     @SuppressWarnings("java:S5146")
     @PostMapping
-    public void logout(@PathVariable("tenantId") String tenantId,
+    public void logout(@PathVariable(value = "tenantId", required = false) String tenantId,
                        @RequestParam(value = "id_token_hint", required = true) String idTokenHint,
                        @RequestParam(value = "logout_hint", required = false) String logoutHint,
                        @RequestParam(value = "client_id", required = true) String clientId,
@@ -88,9 +89,9 @@ public class LogoutController {
                        @RequestParam(value = "state", required = false) String state,
                        HttpServletRequest request,
                        HttpServletResponse response) throws IOException {
-
-        LOGGER.info("Processing OIDC logout POST request - client_id: {}, post_logout_redirect_uri: {}, state: {}",
-                clientId, postLogoutRedirectUri, state);
+        tenantId = TenantUtils.resolveTenantId(tenantId);
+        LOGGER.info("Processing OIDC logout POST request - client_id: {}, post_logout_redirect_uri: {}, state: {}, tenantId: {}",
+                clientId, postLogoutRedirectUri, state, tenantId);
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
@@ -109,8 +110,9 @@ public class LogoutController {
      * @return The name of the logout success page template
      */
     @GetMapping("/success")
-    public String logoutSuccess(@PathVariable("tenantId") String tenantId, Model model) {
-        LOGGER.info("Logout successful, redirecting to logout success page.");
+    public String logoutSuccess(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
+        tenantId = TenantUtils.resolveTenantId(tenantId);
+        LOGGER.info("Logout successful, redirecting to logout success page for tenantId: {}.", tenantId);
         // Add UI attributes for logout success page
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return "logout-success";
@@ -125,9 +127,10 @@ public class LogoutController {
      * @return The name of the logout error page template
      */
     @GetMapping("/error")
-    public String logoutError(@PathVariable("tenantId") String tenantId, Model model,
+    public String logoutError(@PathVariable(value = "tenantId", required = false) String tenantId, Model model,
             @RequestParam(value = "error", required = false) String error) {
-        LOGGER.error("Logout error occurred: {}", error);
+        tenantId = TenantUtils.resolveTenantId(tenantId);
+        LOGGER.error("Logout error occurred: {} for tenantId: {}", error, tenantId);
         if (error != null) {
             String errorMessage = getErrorMessage(error);
             model.addAttribute("errorMessage", errorMessage);

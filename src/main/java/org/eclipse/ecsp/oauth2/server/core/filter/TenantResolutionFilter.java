@@ -36,6 +36,7 @@ import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -106,6 +107,11 @@ public class TenantResolutionFilter implements Filter {
         this.tenantConfigurationService = tenantConfigurationService;
     }
 
+    @Value("${tenant.multitenant.enabled}")
+    private boolean multiTenantEnabled;
+
+    @Value("${tenant.default}")
+    private String defaultTenant;
     
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
@@ -138,14 +144,20 @@ public class TenantResolutionFilter implements Filter {
                 LOGGER.debug("Tenant resolved from request: {}", tenantId);
             } else {
                 // Fallback: try to get tenant from session
-                tenantId = getTenantFromSession(httpRequest);
+                //tenantId = getTenantFromSession(httpRequest);
                 if (StringUtils.hasText(tenantId)) {
                     LOGGER.debug("Tenant resolved from session: {}", tenantId);
-                } else {
+                } else if (multiTenantEnabled) {
                     // No tenant could be resolved - throw exception
                     LOGGER.error("No tenant could be resolved for request: {}", requestUri);
                     throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
                 }
+            }
+
+            // Additional validation: if multitenant is disabled, set tenantId to default
+            if (!StringUtils.hasText(tenantId) && !multiTenantEnabled) {
+                tenantId = defaultTenant;
+                LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
             }
 
             // Validate that the resolved tenant actually exists in configuration
@@ -290,7 +302,7 @@ public class TenantResolutionFilter implements Filter {
             return null;
         }
         
-        // Pattern 1: /tenant/{tenantId}/... (explicit tenant prefix)
+        // Pattern 1: /{tenantId}/... (explicit tenant prefix)
         if (TENANT_PARAM.equals(parts[TENANT_PREFIX_POSITION])) {
             String tenantId = parts[TENANT_ID_POSITION];
             if (StringUtils.hasText(tenantId)) {

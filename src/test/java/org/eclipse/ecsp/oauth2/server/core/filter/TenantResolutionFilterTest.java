@@ -76,12 +76,28 @@ class TenantResolutionFilterTest {
         tenantResolutionFilter = new TenantResolutionFilter(tenantConfigurationService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
+        // Set default property values for @Value fields
+        setSpringProperties(true, "ecsp");
     }
 
     @AfterEach
     void tearDown() {
         // Ensure tenant context is cleared after each test
         TenantContext.clear();
+    }
+
+    private void setSpringProperties(boolean multiTenantEnabled, String defaultTenant) {
+        // Simulate Spring @Value injection for test
+        try {
+            var multiTenantField = TenantResolutionFilter.class.getDeclaredField("multiTenantEnabled");
+            multiTenantField.setAccessible(true);
+            multiTenantField.set(tenantResolutionFilter, multiTenantEnabled);
+            var defaultTenantField = TenantResolutionFilter.class.getDeclaredField("defaultTenant");
+            defaultTenantField.setAccessible(true);
+            defaultTenantField.set(tenantResolutionFilter, defaultTenant);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -585,6 +601,24 @@ class TenantResolutionFilterTest {
                 tenantContextMock.verify(TenantContext::clear);
                 verify(filterChain, never()).doFilter(request, response);
             }
+        }
+    }
+
+    @Test
+    void whenMultiTenantDisabledShouldSetTenantToDefault() throws IOException, ServletException {
+        // Given
+        setSpringProperties(false, "default-tenant");
+        request.setRequestURI("/oauth2/authorize");
+        when(tenantConfigurationService.tenantExists("default-tenant")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("default-tenant"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
         }
     }
 }
