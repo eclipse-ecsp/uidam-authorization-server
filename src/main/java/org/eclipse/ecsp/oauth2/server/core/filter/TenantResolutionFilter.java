@@ -262,8 +262,8 @@ public class TenantResolutionFilter implements Filter {
                 }
             }
         }
-        // Strategy 4: Check request parameter
-        tenantId = request.getParameter(TENANT_PARAM);
+        // Strategy 4: Check request parameter tenantId
+        tenantId = request.getParameter(TENANT_HEADER);
         if (StringUtils.hasText(tenantId)) {
             LOGGER.debug("Tenant resolved from parameter: {}", tenantId);
             storeTenantInSession(request, tenantId);
