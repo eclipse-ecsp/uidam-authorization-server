@@ -166,7 +166,7 @@ class TenantResolutionFilterTest {
     @Test
     void tenantResolutionFromParameterShouldExtractTenantFromParameter() throws IOException, ServletException {
         // Given
-        request.addParameter("tenant", "param-tenant");
+        request.addParameter("tenantId", "param-tenant");
         request.setRequestURI("/oauth2/authorize");
         when(tenantConfigurationService.tenantExists("param-tenant")).thenReturn(true);
 
@@ -186,7 +186,7 @@ class TenantResolutionFilterTest {
         // Given - Set all possible tenant sources
         request.addHeader("tenantId", "header-tenant");
         request.setRequestURI("/tenant/path-tenant/oauth2/authorize");
-        request.addParameter("tenant", "param-tenant");
+        request.addParameter("tenantId", "param-tenant");
         when(tenantConfigurationService.tenantExists("header-tenant")).thenReturn(true);
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -347,7 +347,7 @@ class TenantResolutionFilterTest {
     @Test
     void parameterExtractionWithEmptyParameterShouldBeIgnored() throws IOException, ServletException {
         // Given
-        request.addParameter("tenant", "");
+        request.addParameter("tenantId", "");
         request.setRequestURI("/oauth2/authorize");
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -371,7 +371,7 @@ class TenantResolutionFilterTest {
     @Test
     void parameterExtractionWithNullParameterShouldBeIgnored() throws IOException, ServletException {
         // Given
-        request.addParameter("tenant", (String) null);
+        request.addParameter("tenantId", (String) null);
         request.setRequestURI("/oauth2/authorize");
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -436,7 +436,7 @@ class TenantResolutionFilterTest {
     void tenantResolutionFallbackChainShouldTestFallbackOrder() throws IOException, ServletException {
         // Given - Only parameter is available
         request.setRequestURI("/oauth2/authorize"); // No tenant path
-        request.addParameter("tenant", "fallback-tenant");
+        request.addParameter("tenantId", "fallback-tenant");
         when(tenantConfigurationService.tenantExists("fallback-tenant")).thenReturn(true);
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
