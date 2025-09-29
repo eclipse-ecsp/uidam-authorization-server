@@ -27,6 +27,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.UpdatePasswordData;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
+import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.InvalidSecretException;
 import org.eclipse.ecsp.oauth2.server.core.exception.PasswordRecoveryException;
@@ -54,6 +55,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.BAD_REQUEST_LITERAL;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_CHANGE_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_EMAIL_SENT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_FORGOT_PASSWORD;
@@ -158,6 +160,8 @@ public class PasswordRecoveryController {
         LOGGER.info("sending email notification with recovery secret to reset password");
         userManagementClient.sendUserResetPasswordNotification(username, accountName);
         model.addAttribute(MESSAGE_LITERAL, IgniteOauth2CoreConstants.PASSWORD_RECOVERY_EMAIL_SENT);
+        // Add UI configuration attributes
+        uiAttributeUtils.addUiAttributes(model, tenantId);
         return new ModelAndView(RECOVERY_EMAIL_SENT).addObject(model);
     }
 
@@ -219,7 +223,7 @@ public class PasswordRecoveryController {
     @PostMapping("/reset")
     public ModelAndView updatePassword(@PathVariable(value = "tenantId", required = false) String tenantId,
                                        HttpServletRequest request, @RequestParam String password,
-                                       @RequestParam String confirmPassword, @RequestParam String secret)
+                                       @RequestParam String confirmPassword, @RequestParam String secret, Model model)
             throws JsonProcessingException {
         tenantId = TenantUtils.resolveTenantId(tenantId);
 
@@ -240,6 +244,11 @@ public class PasswordRecoveryController {
         if (!password.equals(confirmPassword)) {
             errorResult.addObject(CAPTCHA_FIELD_ENABLED, true);
             errorResult.addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
+            errorResult.addObject("issuer", tenantId);
+            // Add UI configuration attributes for password mismatch error
+            uiAttributeUtils.addUiAttributes(model, tenantId);
+            passwordPolicyService.setupPasswordPolicy(model, true);
+            errorResult.addAllObjects(model.asMap());
 
             return errorResult.addObject(ERROR_LITERAL, IgniteOauth2CoreConstants.PASSWORD_DID_NOT_MATCH);
         }
@@ -247,19 +256,34 @@ public class PasswordRecoveryController {
             userManagementClient.updateUserPasswordUsingRecoverySecret(UpdatePasswordData.of(secret, confirmPassword));
         } catch (Exception ex) {
             if (ex.getMessage().contains(BAD_REQUEST_LITERAL)) {
-                return new ModelAndView(RECOVERY_CHANGE_PASSWORD, SECRET_LITERAL, secret)
-                        .addObject(ERROR_LITERAL,
-                                getErrorMessage(ex))
+                ModelAndView changePasswordError = new ModelAndView(RECOVERY_CHANGE_PASSWORD, SECRET_LITERAL, secret)
+                        .addObject(ERROR_LITERAL, getErrorMessage(ex))
                         .addObject(CAPTCHA_FIELD_ENABLED, true)
-                        .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
+                        .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite())
+                        .addObject("issuer", tenantId);
+                // Add UI configuration attributes for password change error
+                uiAttributeUtils.addUiAttributes(model, tenantId);
+                passwordPolicyService.setupPasswordPolicy(model, true);
+                changePasswordError.addAllObjects(model.asMap());
+                return changePasswordError;
             }
-            return new ModelAndView(RECOVERY_FORGOT_PASSWORD).addObject(ERROR_LITERAL, ex.getMessage())
+            ModelAndView forgotPasswordError = new ModelAndView(RECOVERY_FORGOT_PASSWORD)
+                    .addObject(ERROR_LITERAL, getErrorMessage(ex))
                     .addObject(CAPTCHA_FIELD_ENABLED, true)
-                    .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
-
+                    .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite())
+                    .addObject("issuer", tenantId);
+            // Add UI configuration attributes for forgot password error
+            uiAttributeUtils.addUiAttributes(model, tenantId);
+            forgotPasswordError.addAllObjects(model.asMap());
+            return forgotPasswordError;
         }
-        return new ModelAndView(RECOVERY_PASSWORD_CHANGED).addObject(MESSAGE_LITERAL,
-                IgniteOauth2CoreConstants.PASSWORD_UPDATED_SUCCESSFULLY);
+        ModelAndView successResult = new ModelAndView(RECOVERY_PASSWORD_CHANGED)
+                .addObject(MESSAGE_LITERAL, IgniteOauth2CoreConstants.PASSWORD_UPDATED_SUCCESSFULLY)
+                .addObject("issuer", tenantId);
+        // Add UI configuration attributes for password success page
+        uiAttributeUtils.addUiAttributes(model, tenantId);
+        successResult.addAllObjects(model.asMap());
+        return successResult;
 
     }
 
@@ -273,9 +297,20 @@ public class PasswordRecoveryController {
      * @throws JsonMappingException If there is a problem with the JSON mapping.
      */
     private String getErrorMessage(Exception ex) throws JsonProcessingException {
-        String message = OBJECT_MAPPER.readTree(ex.getMessage()).get(MESSAGE_LITERAL).asText();
-        String errorMessage = message.substring(ERROR_MESSAGE_KEY_LENGTH);
-        return errorMessage.split("'")[0];
+        String errorMessage;
+        try {
+            errorMessage = OBJECT_MAPPER.readTree(ex.getMessage()).get(MESSAGE_LITERAL).asText();
+        } catch (Exception parseEx) {
+            // Fallback to raw exception message if not JSON
+            errorMessage = ex.getMessage();
+        }
+        errorMessage = errorMessage.substring(ERROR_MESSAGE_KEY_LENGTH);
+        errorMessage = errorMessage.split("'")[0];
+
+        if (errorMessage.contains("invalid.input.password.cannot.contain.username")) {
+            return INVALID_PASSWORD;
+        }
+        return errorMessage;
     }
 
     /**
@@ -290,10 +325,14 @@ public class PasswordRecoveryController {
     @ExceptionHandler(UserNotFoundException.class)
     public ModelAndView handleUserNotFound(Model model) {
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        String tenantId = TenantContext.getCurrentTenant();
         
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
         model.addAttribute(ERROR_LITERAL, IgniteOauth2CoreConstants.USER_DETAILS_NOT_FOUND);
+        model.addAttribute("issuer", tenantId);
+        // Add UI configuration attributes
+        uiAttributeUtils.addUiAttributes(model, tenantId);
         return new ModelAndView(RECOVERY_FORGOT_PASSWORD);
     }
 
@@ -308,7 +347,12 @@ public class PasswordRecoveryController {
      */
     @ExceptionHandler(InvalidSecretException.class)
     public ModelAndView invalidSecretProvided(Model model) {
+        String tenantId = TenantContext.getCurrentTenant();
+        
         model.addAttribute(ERROR_LITERAL, IgniteOauth2CoreConstants.INVALID_SECRET_PROVIDED);
+        model.addAttribute("issuer", tenantId);
+        // Add UI configuration attributes
+        uiAttributeUtils.addUiAttributes(model, tenantId);
         return new ModelAndView(RECOVERY_INV_SECRET);
     }
     
@@ -321,12 +365,18 @@ public class PasswordRecoveryController {
      * @return A ModelAndView object that includes the view name and model attributes.
      */
     @ExceptionHandler(PasswordRecoveryException.class)
-    public ModelAndView passwordRecoveryException() {
+    public ModelAndView passwordRecoveryException(Model model) {
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        String tenantId = TenantContext.getCurrentTenant();
         
-        return new ModelAndView(RECOVERY_FORGOT_PASSWORD)
+        ModelAndView errorResult = new ModelAndView(RECOVERY_FORGOT_PASSWORD)
                 .addObject(ERROR_LITERAL, IgniteOauth2CoreConstants.PASSWORD_RECOVERY_EMAIL_SENT_FAILURE)
                 .addObject(CAPTCHA_FIELD_ENABLED, true)
-                .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
+                .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite())
+                .addObject("issuer", tenantId);
+        // Add UI configuration attributes
+        uiAttributeUtils.addUiAttributes(model, tenantId);
+        errorResult.addAllObjects(model.asMap());
+        return errorResult;
     }
 }
