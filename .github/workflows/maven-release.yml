@@ -19,7 +19,7 @@ jobs:
 
   extract_version:
     runs-on: ubuntu-latest
-    needs: licence_compliance_status
+    needs: sonar_analysis
     name: Extract release version without v prefix
     outputs:
       release_version: ${{ steps.set_version.outputs.release_version }}
