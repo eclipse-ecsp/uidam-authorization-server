@@ -96,6 +96,16 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @EnableMethodSecurity
 public class IgniteSecurityConfig {
 
+    // Security matcher patterns
+    private static final String OAUTH2_PATTERN = "/oauth2/**";
+    private static final String TENANT_OAUTH2_PATTERN = "/*/oauth2/**";
+    private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server/";
+    private static final String WELL_KNOWN_OAUTH_SERVER_TENANT = "/.well-known/oauth-authorization-server/*/";
+    private static final String OAUTH2_CALLBACK_PATTERN = "/*/login/oauth2/code/**";
+    private static final String OAUTH2_AUTHORIZATION_PATTERN = "/*/oauth2/authorization/**";
+    private static final String OAUTH2_LOGOUT_ENDPOINT = "/oauth2/logout";
+    private static final String POST_METHOD = "POST";
+
     @Value("${server.servlet.session.timeout}")
     private String sessionTimeout;
 
@@ -244,15 +254,17 @@ public class IgniteSecurityConfig {
         // Configure security matchers for ALL OAuth2 patterns (authorization server + external IDP)
         http.securityMatchers(matchers -> matchers.requestMatchers(
                 DEFAULT_LOGIN_MATCHER_PATTERN,
-                "/*/oauth2/**", "/oauth2/**", // Tenant-prefixed OAuth2 URLs
-                "/*/login/oauth2/code/**", // Tenant-prefixed OAuth2 callback URLs
+                TENANT_OAUTH2_PATTERN, OAUTH2_PATTERN, WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT, // Tenant-prefixed OAuth2 URLs
+                OAUTH2_CALLBACK_PATTERN, // Tenant-prefixed OAuth2 callback URLs
                 LOGIN_MATCHER_PATTERN, 
                 LOGOUT_MATCHER_PATTERN))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(DEFAULT_LOGIN_MATCHER_PATTERN, LOGIN_MATCHER_PATTERN).permitAll()
                         .requestMatchers(LOGOUT_MATCHER_PATTERN).permitAll()
-                        .requestMatchers("/*/oauth2/authorization/**", "/*/login/oauth2/code/**")
+                        .requestMatchers(OAUTH2_AUTHORIZATION_PATTERN, OAUTH2_CALLBACK_PATTERN)
                             .permitAll() // Tenant-prefixed
+                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT)
+                            .permitAll() // Well-known endpoints (both root and tenant-prefixed)
                         .anyRequest()
                         .authenticated())
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
@@ -268,9 +280,9 @@ public class IgniteSecurityConfig {
                             String method = request.getMethod();
                             // Only disable CSRF for POST requests to logout endpoints
                             // Using safe string operations instead of regex to prevent ReDoS vulnerability
-                            return "POST".equals(method) 
-                                   && (requestUri.endsWith("/oauth2/logout") 
-                                    || requestUri.contains("/oauth2/logout/"));
+                            return POST_METHOD.equals(method) 
+                                   && (requestUri.endsWith(OAUTH2_LOGOUT_ENDPOINT) 
+                                    || requestUri.contains(OAUTH2_LOGOUT_ENDPOINT + "/"));
                         }));
     }
 
