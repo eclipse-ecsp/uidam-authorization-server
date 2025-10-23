@@ -83,15 +83,6 @@ public class TenantResolutionFilter implements Filter {
     private static final String WELL_KNOWN_PATH = "/.well-known/";
     private static final int NOT_FOUND_INDEX = -1;
     
-    // Error messages
-    private static final String ERROR_MULTITENANCY_DISABLED = 
-            "Multitenancy is disabled. Use /.well-known/oauth-authorization-server without tenant suffix.";
-    private static final String ERROR_INVALID_TENANT = "Invalid tenant ID: '%s'. Tenant does not exist.";
-    private static final String ERROR_TYPE_INVALID_REQUEST = "invalid_request";
-    private static final String ERROR_DESCRIPTION_KEY = "error_description";
-    private static final String ERROR_KEY = "error";
-    private static final String STATUS_KEY = "status";
-    
     // Whitelist of path segments that should trigger tenant resolution
     private static final Set<String> TENANT_AWARE_PATHS = Set.of(
         "oauth2",           // /{tenant}/oauth2/authorize, /{tenant}/oauth2/token, etc.
