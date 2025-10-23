@@ -81,6 +81,7 @@ public class TenantResolutionFilter implements Filter {
     private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server/";
     private static final String WELL_KNOWN_OPENID_CONFIG = "/.well-known/openid-configuration/";
     private static final String WELL_KNOWN_PATH = "/.well-known/";
+    private static final int NOT_FOUND_INDEX = -1;
     
     // Error messages
     private static final String ERROR_MULTITENANCY_DISABLED = 
@@ -147,18 +148,18 @@ public class TenantResolutionFilter implements Filter {
             return;
         }
         
-        // Validate well-known endpoint postfix before processing tenant resolution
-        if (requestUri != null && requestUri.contains(WELL_KNOWN_PATH)) {
-            if (!validateWellKnownPostfix(httpRequest, httpResponse)) {
-                return; // Validation failed, error response already sent
-            }
-        }
-        
         String tenantId = null;
         
         LOGGER.debug("Processing tenant resolution for request: {}", requestUri);
 
         try {
+            // Validate well-known endpoint postfix before processing tenant resolution
+            if (requestUri != null && requestUri.contains(WELL_KNOWN_PATH)) {
+                if (!validateWellKnownPostfix(httpRequest, httpResponse)) {
+                    return; // Validation failed, error response already sent
+                }
+            }
+            
             // First, try to resolve tenant from request (path, header, parameter)
             tenantId = resolveTenantFromRequest(httpRequest);
             if (StringUtils.hasText(tenantId)) {
@@ -440,8 +441,7 @@ public class TenantResolutionFilter implements Filter {
                 if (!tenantIdFromPostfix.equals(defaultTenant)) {
                     LOGGER.warn("Multitenancy is disabled but non-default tenant postfix '{}' provided in: {}", 
                             tenantIdFromPostfix, requestUri);
-                    TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
-                    return false;
+                    throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
                 }
                 LOGGER.debug("Multitenancy disabled, but default tenant '{}' postfix is allowed", tenantIdFromPostfix);
             }
@@ -449,8 +449,7 @@ public class TenantResolutionFilter implements Filter {
             // Validate that the tenant exists in configuration
             if (!isValidConfiguredTenant(tenantIdFromPostfix)) {
                 LOGGER.warn("Invalid tenant ID '{}' in well-known postfix: {}", tenantIdFromPostfix, requestUri);
-                TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
-                return false;
+                throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
             }
 
             LOGGER.debug("Valid tenant ID '{}' in well-known postfix", tenantIdFromPostfix);
@@ -487,7 +486,7 @@ public class TenantResolutionFilter implements Filter {
 
         for (String wellKnownPath : wellKnownPaths) {
             int wellKnownIndex = requestUri.indexOf(wellKnownPath);
-            if (wellKnownIndex != -1) {
+            if (wellKnownIndex != NOT_FOUND_INDEX) {
                 // Extract everything after the well-known path
                 String afterWellKnown = requestUri.substring(wellKnownIndex + wellKnownPath.length());
                 
