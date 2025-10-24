@@ -76,12 +76,29 @@ class TenantResolutionFilterTest {
         tenantResolutionFilter = new TenantResolutionFilter(tenantConfigurationService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
+        // Set default property values for @Value fields
+        setSpringProperties(true, "ecsp");
     }
 
     @AfterEach
     void tearDown() {
         // Ensure tenant context is cleared after each test
         TenantContext.clear();
+    }
+
+    private void setSpringProperties(boolean multiTenantEnabled, String defaultTenant) {
+        // Simulate Spring @Value injection for test
+        try {
+            java.lang.reflect.Field multiTenantField = TenantResolutionFilter.class
+                .getDeclaredField("multiTenantEnabled");
+            multiTenantField.setAccessible(true);
+            multiTenantField.set(tenantResolutionFilter, multiTenantEnabled);
+            java.lang.reflect.Field defaultTenantField = TenantResolutionFilter.class.getDeclaredField("defaultTenant");
+            defaultTenantField.setAccessible(true);
+            defaultTenantField.set(tenantResolutionFilter, defaultTenant);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -149,7 +166,7 @@ class TenantResolutionFilterTest {
     @Test
     void tenantResolutionFromParameterShouldExtractTenantFromParameter() throws IOException, ServletException {
         // Given
-        request.addParameter("tenant", "param-tenant");
+        request.addParameter("tenantId", "param-tenant");
         request.setRequestURI("/oauth2/authorize");
         when(tenantConfigurationService.tenantExists("param-tenant")).thenReturn(true);
 
@@ -169,7 +186,7 @@ class TenantResolutionFilterTest {
         // Given - Set all possible tenant sources
         request.addHeader("tenantId", "header-tenant");
         request.setRequestURI("/tenant/path-tenant/oauth2/authorize");
-        request.addParameter("tenant", "param-tenant");
+        request.addParameter("tenantId", "param-tenant");
         when(tenantConfigurationService.tenantExists("header-tenant")).thenReturn(true);
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -330,7 +347,7 @@ class TenantResolutionFilterTest {
     @Test
     void parameterExtractionWithEmptyParameterShouldBeIgnored() throws IOException, ServletException {
         // Given
-        request.addParameter("tenant", "");
+        request.addParameter("tenantId", "");
         request.setRequestURI("/oauth2/authorize");
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -354,7 +371,7 @@ class TenantResolutionFilterTest {
     @Test
     void parameterExtractionWithNullParameterShouldBeIgnored() throws IOException, ServletException {
         // Given
-        request.addParameter("tenant", (String) null);
+        request.addParameter("tenantId", (String) null);
         request.setRequestURI("/oauth2/authorize");
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -419,7 +436,7 @@ class TenantResolutionFilterTest {
     void tenantResolutionFallbackChainShouldTestFallbackOrder() throws IOException, ServletException {
         // Given - Only parameter is available
         request.setRequestURI("/oauth2/authorize"); // No tenant path
-        request.addParameter("tenant", "fallback-tenant");
+        request.addParameter("tenantId", "fallback-tenant");
         when(tenantConfigurationService.tenantExists("fallback-tenant")).thenReturn(true);
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -585,6 +602,24 @@ class TenantResolutionFilterTest {
                 tenantContextMock.verify(TenantContext::clear);
                 verify(filterChain, never()).doFilter(request, response);
             }
+        }
+    }
+
+    @Test
+    void whenMultiTenantDisabledShouldSetTenantToDefault() throws IOException, ServletException {
+        // Given
+        setSpringProperties(false, "default-tenant");
+        request.setRequestURI("/oauth2/authorize");
+        when(tenantConfigurationService.tenantExists("default-tenant")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("default-tenant"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
         }
     }
 }

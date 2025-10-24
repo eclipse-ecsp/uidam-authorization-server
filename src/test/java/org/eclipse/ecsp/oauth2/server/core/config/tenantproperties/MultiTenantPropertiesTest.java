@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.Assert.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -80,16 +81,14 @@ class MultiTenantPropertiesTest {
     void testGetTenantPropertiesWithInvalidTenantId() {
         TenantProperties result = multiTenantProperties.getTenantProperties("nonexistent");
         
-        assertNotNull(result);
-        assertEquals(ecspTenantProps, result); // Should return default tenant
+        assertNull(result);
     }
     
     @Test
     void testGetTenantPropertiesWithNullTenantId() {
         TenantProperties result = multiTenantProperties.getTenantProperties(null);
         
-        assertNotNull(result);
-        assertEquals(ecspTenantProps, result); // Should return default tenant
+        assertNull(result);
     }
     
     @Test
