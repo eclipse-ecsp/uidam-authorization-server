@@ -52,6 +52,10 @@ class CleanupJobTest {
     private static final int VERIFY_COUNT_ONE = 1;
     private static final int BATCH_SIZE = 100;
     private static final int EXPIRES_BEFORE_DAYS = 7;
+    private static final long TOKEN_COUNT_FIVE = 5L;
+    private static final long TOKEN_COUNT_TWO = 2L;
+    private static final long TOKEN_COUNT_ONE = 1L;
+    private static final long TOKEN_COUNT_ZERO = 0L;
 
     @Mock
     AuthorizationRepository authorizationRepository;
@@ -77,9 +81,9 @@ class CleanupJobTest {
         Set<String> tenants = new HashSet<>();
         tenants.add("ecsp");
         when(tenantConfigurationService.getAllTenants()).thenReturn(tenants);
-        when(authorizationRepository.count()).thenReturn(1L);
+        when(authorizationRepository.count()).thenReturn(TOKEN_COUNT_ONE);
         when(authorizationRepository.countByTokenOrCodeExpiresBefore(any(Instant.class)))
-            .thenReturn(1L);
+            .thenReturn(TOKEN_COUNT_ONE);
         List<String> ids = List.of("token-id-1");
         when(authorizationRepository.findByTokenOrCodeExpiresBefore(any(Instant.class), anyInt()))
             .thenReturn(ids)
@@ -100,9 +104,9 @@ class CleanupJobTest {
         Set<String> tenants = new HashSet<>();
         tenants.add("ecsp");
         when(tenantConfigurationService.getAllTenants()).thenReturn(tenants);
-        when(authorizationRepository.count()).thenReturn(0L);
+        when(authorizationRepository.count()).thenReturn(TOKEN_COUNT_ZERO);
         when(authorizationRepository.countByTokenOrCodeExpiresBefore(any(Instant.class)))
-            .thenReturn(0L);
+            .thenReturn(TOKEN_COUNT_ZERO);
         List<String> ids = Collections.emptyList();
         when(authorizationRepository.findByTokenOrCodeExpiresBefore(any(Instant.class), anyInt()))
             .thenReturn(ids);
@@ -121,7 +125,7 @@ class CleanupJobTest {
         Set<String> tenants = new HashSet<>();
         tenants.add("ecsp");
         when(tenantConfigurationService.getAllTenants()).thenReturn(tenants);
-        when(authorizationRepository.count()).thenReturn(1L);
+        when(authorizationRepository.count()).thenReturn(TOKEN_COUNT_ONE);
         when(authorizationRepository.countByTokenOrCodeExpiresBefore(any(Instant.class)))
             .thenReturn(1L);
         when(authorizationRepository.findByTokenOrCodeExpiresBefore(any(Instant.class), anyInt()))
@@ -136,4 +140,29 @@ class CleanupJobTest {
         verify(tenantConfigurationService, times(VERIFY_COUNT_ONE)).getAllTenants();
     }
 
+    @Test
+    void testTokenCleanupJobWithMultiTenancyDisabled() {
+        // When multi-tenancy is disabled, only default tenant should be processed
+        Set<String> tenants = new HashSet<>();
+        tenants.add("ecsp"); // Only default tenant
+        when(tenantConfigurationService.getAllTenants()).thenReturn(tenants);
+        when(authorizationRepository.count()).thenReturn(TOKEN_COUNT_FIVE);
+        when(authorizationRepository.countByTokenOrCodeExpiresBefore(any(Instant.class)))
+            .thenReturn(TOKEN_COUNT_TWO);
+        List<String> ids = List.of("token-1", "token-2");
+        when(authorizationRepository.findByTokenOrCodeExpiresBefore(any(Instant.class), anyInt()))
+            .thenReturn(ids)
+            .thenReturn(Collections.emptyList());
+        when(cleanupJobAuditRepository.save(any()))
+            .thenReturn(new org.eclipse.ecsp.oauth2.server.core.entities.CleanupJobAudit());
+        
+        // Test should complete without throwing exception
+        cleanupJob.executeCleanupTasks();
+        
+        // Verify cleanup runs for only the default tenant
+        verify(tenantConfigurationService, times(VERIFY_COUNT_ONE)).getAllTenants();
+        verify(authorizationRepository, times(VERIFY_COUNT_ONE)).count();
+    }
+
 }
+

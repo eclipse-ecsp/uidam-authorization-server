@@ -332,6 +332,9 @@ class TenantConfigurationServiceTest {
      */
     @Test
     void getAllTenantsTest() {
+        // Enable multi-tenancy
+        ReflectionTestUtils.setField(tenantConfigurationService, "multitenantEnabled", true);
+        
         // Setup mock tenants
         Set<String> availableTenants = new HashSet<>();
         availableTenants.add(ECSP);
@@ -369,6 +372,25 @@ class TenantConfigurationServiceTest {
         // Verify the result is empty set when tenants is null
         assertNotNull(result);
         assertTrue(result.isEmpty());
+    }
+
+    /**
+     * Test the getAllTenants method when multi-tenancy is disabled.
+     */
+    @Test
+    void getAllTenantsWhenMultiTenancyDisabledTest() {
+        // Set multi-tenancy disabled and default tenant
+        ReflectionTestUtils.setField(tenantConfigurationService, "multitenantEnabled", false);
+        ReflectionTestUtils.setField(tenantConfigurationService, "defaultTenantId", ECSP);
+        
+        // Execute the method under test
+        Set<String> result = tenantConfigurationService.getAllTenants();
+        
+        // Verify the result contains only the default tenant
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertTrue(result.contains(ECSP));
+        assertFalse(result.contains("sdp"));
     }
 
     /**
