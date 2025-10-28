@@ -52,9 +52,10 @@ import java.util.regex.Pattern;
  * Filter to resolve and set the tenant context from HTTP request. This filter runs early in the Spring Security filter
  * chain, before OAuth2 processing. It supports multiple tenant resolution strategies: 
  * 1. tenantId header 
- * 2. Path-based tenant resolution (/tenant/{tenantId}/... or /{tenantId}/oauth2/...)
- * 3. Request parameter
- * 4. Authorization header (JWT token with tenantID claim)
+ * 2. Well-known endpoint postfix (/.well-known/oauth-authorization-server/{tenantId})
+ * 3. Path-based tenant resolution (/tenant/{tenantId}/... or /{tenantId}/oauth2/...)
+ * 4. Request parameter
+ * 5. Authorization header (JWT token with tenantID claim)
  * Static resources (CSS, JS, images, etc.) are bypassed and served without tenant resolution.
  */
 @Component 
@@ -80,6 +81,12 @@ public class TenantResolutionFilter implements Filter {
     private static final int JWT_PARTS_COUNT = 3; // JWT has 3 parts: header.payload.signature
     private static final String TENANT_PARAM = "tenant";
     private static final String TENANT_SESSION_KEY = "RESOLVED_TENANT_ID";
+    
+    // Well-known endpoint paths
+    private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server/";
+    private static final String WELL_KNOWN_OPENID_CONFIG = "/.well-known/openid-configuration/";
+    private static final String WELL_KNOWN_PATH = "/.well-known/";
+    private static final int NOT_FOUND_INDEX = -1;
     
     // Whitelist of path segments that should trigger tenant resolution
     private static final Set<String> TENANT_AWARE_PATHS = Set.of(
@@ -142,6 +149,13 @@ public class TenantResolutionFilter implements Filter {
         LOGGER.debug("Processing tenant resolution for request: {}", requestUri);
 
         try {
+            // Validate well-known endpoint postfix if present
+            if (requestUri != null && requestUri.contains(WELL_KNOWN_PATH)) {
+                if (!validateWellKnownPostfix(httpRequest, httpResponse)) {
+                    return; // Validation failed, error response already sent
+                }
+            }
+            
             // First, try to resolve tenant from request (path, header, parameter)
             tenantId = resolveTenantFromRequest(httpRequest);
             if (StringUtils.hasText(tenantId)) {
@@ -245,7 +259,18 @@ public class TenantResolutionFilter implements Filter {
             return tenantId;
         }
 
-        // Strategy 2: Extract from path (/{tenantId}/oauth2/...)
+        // Strategy 2: Extract from well-known postfix (/.well-known/oauth-authorization-server/tenant)
+        String path = request.getRequestURI();
+        if (path != null && path.contains(WELL_KNOWN_PATH)) {
+            tenantId = extractTenantFromWellKnownPostfix(path);
+            if (StringUtils.hasText(tenantId)) {
+                LOGGER.debug("Tenant resolved from well-known postfix: {}", tenantId);
+                storeTenantInSession(request, tenantId);
+                return tenantId;
+            }
+        }
+
+        // Strategy 3: Extract from path (/{tenantId}/oauth2/...)
         tenantId = extractTenantFromPathPrefix(request);
         if (StringUtils.hasText(tenantId)) {
             LOGGER.debug("Tenant resolved from path prefix: {}", tenantId);
@@ -253,8 +278,8 @@ public class TenantResolutionFilter implements Filter {
             return tenantId;
         }
 
-        // Strategy 3: Generic path prefix (/{tenantId}/...) - fallback when whitelist misses
-        String path = request.getRequestURI();
+        // Strategy 4: Generic path prefix (/{tenantId}/...) - fallback when whitelist misses
+        path = request.getRequestURI();
         if (path != null) {
             String[] genericParts = path.split("/");
             if (genericParts.length > 1) {
@@ -266,7 +291,8 @@ public class TenantResolutionFilter implements Filter {
                 }
             }
         }
-        // Strategy 4: Check request parameter tenantId
+        
+        // Strategy 5: Check request parameter tenantId
         tenantId = request.getParameter(TENANT_HEADER);
         if (StringUtils.hasText(tenantId)) {
             LOGGER.debug("Tenant resolved from parameter: {}", tenantId);
@@ -274,7 +300,7 @@ public class TenantResolutionFilter implements Filter {
             return tenantId;
         }
 
-        // Strategy 5: Check Authorization header for JWT token with tenantID claim
+        // Strategy 6: Check Authorization header for JWT token with tenantID claim
         String tenantFromAuth = extractTenantFromAuthorizationHeader(request);
         if (StringUtils.hasText(tenantFromAuth)) {
             LOGGER.debug("Tenant resolved from Authorization header: {}", tenantFromAuth);
@@ -467,6 +493,95 @@ public class TenantResolutionFilter implements Filter {
             LOGGER.error("Error validating tenant '{}': {}", tenantId, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Validates well-known endpoint postfix tenant ID against configuration.
+     *
+     * @param request the HTTP request
+     * @param response the HTTP response
+     * @return true if validation passes or no postfix present, false if validation fails
+     * @throws IOException if writing error response fails
+     */
+    private boolean validateWellKnownPostfix(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+        String requestUri = request.getRequestURI();
+        
+        // Extract tenant ID from postfix if present
+        String tenantIdFromPostfix = extractTenantFromWellKnownPostfix(requestUri);
+        
+        if (tenantIdFromPostfix != null) {
+            LOGGER.debug("Tenant ID found in well-known postfix: {}", tenantIdFromPostfix);
+            
+            // If multitenancy is disabled, only allow default tenant or reject
+            if (!multiTenantEnabled) {
+                if (!tenantIdFromPostfix.equals(defaultTenant)) {
+                    LOGGER.warn("Multitenancy is disabled but non-default tenant postfix '{}' provided in: {}",
+                            tenantIdFromPostfix, requestUri);
+                    throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
+                }
+                LOGGER.debug("Multitenancy disabled, but default tenant '{}' postfix is allowed", tenantIdFromPostfix);
+            }
+
+            // Validate that the tenant exists in configuration
+            if (!isValidConfiguredTenant(tenantIdFromPostfix)) {
+                LOGGER.warn("Invalid tenant ID '{}' in well-known postfix: {}", tenantIdFromPostfix, requestUri);
+                throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
+            }
+
+            LOGGER.debug("Valid tenant ID '{}' in well-known postfix", tenantIdFromPostfix);
+        }
+
+        return true;
+    }
+
+    /**
+     * Extracts tenant ID from well-known endpoint postfix.
+     *
+     * <p>Examples:
+     * - /.well-known/oauth-authorization-server → null
+     * - /.well-known/oauth-authorization-server/ → null
+     * - /.well-known/oauth-authorization-server/ecsp → "ecsp"
+     * - /.well-known/oauth-authorization-server/ecsp/ → "ecsp"
+     * - /.well-known/openid-configuration/demo → "demo"
+     *
+     * @param requestUri the request URI
+     * @return the tenant ID from postfix, or null if not present
+     */
+    private String extractTenantFromWellKnownPostfix(String requestUri) {
+        if (!StringUtils.hasText(requestUri)) {
+            return null;
+        }
+
+        // Match patterns like:
+        // /.well-known/oauth-authorization-server/ecsp
+        // /.well-known/openid-configuration/demo
+        
+        int oauthServerIndex = requestUri.indexOf(WELL_KNOWN_OAUTH_SERVER);
+        int openidConfigIndex = requestUri.indexOf(WELL_KNOWN_OPENID_CONFIG);
+        
+        String postfix = null;
+        
+        if (oauthServerIndex != NOT_FOUND_INDEX) {
+            postfix = requestUri.substring(oauthServerIndex + WELL_KNOWN_OAUTH_SERVER.length());
+        } else if (openidConfigIndex != NOT_FOUND_INDEX) {
+            postfix = requestUri.substring(openidConfigIndex + WELL_KNOWN_OPENID_CONFIG.length());
+        }
+        
+        if (postfix != null) {
+            // Remove trailing slash if present
+            if (postfix.endsWith("/")) {
+                postfix = postfix.substring(0, postfix.length() - 1);
+            }
+            
+            // Return tenant ID if postfix is not empty
+            if (StringUtils.hasText(postfix)) {
+                LOGGER.debug("Extracted tenant postfix '{}' from well-known endpoint", postfix);
+                return postfix;
+            }
+        }
+        
+        return null;
     }
 
     /**

@@ -921,5 +921,194 @@ class TenantResolutionFilterTest {
             verify(filterChain).doFilter(request, response);
         }
     }
+
+    // ========================================
+    // Well-Known Endpoint Tests
+    // ========================================
+
+    @Test
+    void wellKnownServerRootEndpointShouldWorkWhenMultitenancyEnabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(true, "ecsp");
+        request.setRequestURI("/.well-known/oauth-authorization-server");
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Root well-known endpoint without tenant should fail when multitenancy enabled
+            // because no tenant can be resolved from the path
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("ecsp"), never());
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+            assertEquals(HttpStatus.BAD_REQUEST.value(), response.getStatus());
+            String responseContent = response.getContentAsString();
+            assertTrue(responseContent.contains("TENANT_NOT_FOUND_IN_REQUEST"));
+        }
+    }
+
+    @Test
+    void wellKnownServerRootEndpointShouldWorkWhenMultitenancyDisabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(false, "ecsp");
+        request.setRequestURI("/.well-known/oauth-authorization-server");
+        when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should use default tenant when multitenancy is disabled
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("ecsp"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+            assertEquals(HttpStatus.OK.value(), response.getStatus());
+        }
+    }
+
+    @Test
+    void wellKnownServerWithValidTenantPostfixShouldWorkWhenMultitenancyEnabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(true, "ecsp");
+        request.setRequestURI("/.well-known/oauth-authorization-server/ecsp");
+        when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should extract and validate tenant from postfix
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("ecsp"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void wellKnownServerWithDefaultTenantPostfixShouldWorkWhenMultitenancyDisabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(false, "ecsp");
+        request.setRequestURI("/.well-known/oauth-authorization-server/ecsp");
+        when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should allow default tenant postfix even when multitenancy is disabled
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("ecsp"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void wellKnownServerWithNonDefaultTenantPostfixShouldFailWhenMultitenancyDisabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(false, "ecsp");
+        request.setRequestURI("/.well-known/oauth-authorization-server/sdp");
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should reject non-default tenant when multitenancy is disabled
+            // Validation throws exception, so tenant is never set
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("sdp"), never());
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+            assertEquals(HttpStatus.BAD_REQUEST.value(), response.getStatus());
+            assertEquals(MediaType.APPLICATION_JSON_VALUE, response.getContentType());
+            String responseContent = response.getContentAsString();
+            assertTrue(responseContent.contains("TENANT_RESOLUTION_FAILED"));
+        }
+    }
+
+    @Test
+    void wellKnownServerWithInvalidTenantPostfixShouldFailWhenMultitenancyEnabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(true, "ecsp");
+        request.setRequestURI("/.well-known/oauth-authorization-server/invalid-tenant");
+        when(tenantConfigurationService.tenantExists("invalid-tenant")).thenReturn(false);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should reject invalid tenant
+            // Validation throws exception, so tenant is never set
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("invalid-tenant"), never());
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+            // TenantResolutionException.invalidTenant returns BAD_REQUEST by default
+            assertEquals(HttpStatus.BAD_REQUEST.value(), response.getStatus());
+            assertEquals(MediaType.APPLICATION_JSON_VALUE, response.getContentType());
+            String responseContent = response.getContentAsString();
+            assertTrue(responseContent.contains("TENANT_RESOLUTION_FAILED"));
+        }
+    }
+
+    @Test
+    void wellKnownOpenIdConfigurationWithValidTenantPostfixShouldWork() throws IOException, ServletException {
+        // Given
+        setSpringProperties(true, "ecsp");
+        request.setRequestURI("/.well-known/openid-configuration/demo");
+        when(tenantConfigurationService.tenantExists("demo")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("demo"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void wellKnownServerWithMultipleTenantsShouldWorkWhenMultitenancyEnabled()
+            throws IOException, ServletException {
+        // Given
+        setSpringProperties(true, "ecsp");
+        String[] tenants = {"ecsp", "sdp", "demo"};
+
+        for (String tenant : tenants) {
+            request = new MockHttpServletRequest();
+            response = new MockHttpServletResponse();
+            request.setRequestURI("/.well-known/oauth-authorization-server/" + tenant);
+            when(tenantConfigurationService.tenantExists(tenant)).thenReturn(true);
+
+            try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+                tenantResolutionFilter.doFilter(request, response, filterChain);
+                tenantContextMock.verify(() -> TenantContext.setCurrentTenant(tenant));
+                tenantContextMock.verify(TenantContext::clear);
+            }
+        }
+    }
+
+    @Test
+    void tenantPrefixPatternShouldWorkWithWellKnownInPath() throws IOException, ServletException {
+        // Given - Test pattern like /demo/.well-known/...
+        setSpringProperties(true, "ecsp");
+        request.setRequestURI("/demo/.well-known/oauth-authorization-server");
+        when(tenantConfigurationService.tenantExists("demo")).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should extract tenant from prefix pattern
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant("demo"));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
 }
 
