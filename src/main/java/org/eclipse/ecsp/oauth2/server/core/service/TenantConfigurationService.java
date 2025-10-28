@@ -141,6 +141,8 @@ public class TenantConfigurationService {
 
     /**
      * Get all available tenant IDs.
+     * If multi-tenancy is disabled, returns only the default tenant.
+     * If multi-tenancy is enabled, returns all configured tenants.
      *
      * @return a set of all configured tenant IDs, or empty set if no tenants are configured
      */
@@ -150,6 +152,14 @@ public class TenantConfigurationService {
             LOGGER.error("Multi-tenant properties not loaded - cannot retrieve tenant list");
             return Collections.emptySet();
         }
+        
+        // If multi-tenancy is disabled, return only the default tenant
+        if (!multitenantEnabled) {
+            LOGGER.debug("Multi-tenancy is disabled, returning only default tenant: {}", defaultTenantId);
+            return Collections.singleton(defaultTenantId);
+        }
+        
+        // If multi-tenancy is enabled, return all available tenants
         return multiTenantProperties.getAvailableTenants();
     }
 }
