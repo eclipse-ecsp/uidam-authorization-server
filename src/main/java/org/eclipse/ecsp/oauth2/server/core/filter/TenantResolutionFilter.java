@@ -54,6 +54,7 @@ import java.util.regex.Pattern;
  * 1. tenantId header 
  * 2. Path-based tenant resolution (/tenant/{tenantId}/... or /{tenantId}/oauth2/...)
  * 3. Request parameter
+ * 4. Authorization header (JWT token with tenantID claim)
  * Static resources (CSS, JS, images, etc.) are bypassed and served without tenant resolution.
  */
 @Component 
@@ -74,6 +75,9 @@ public class TenantResolutionFilter implements Filter {
     private static final int TENANT_PREFIX_POSITION = 1;
 
     private static final String TENANT_HEADER = "tenantId";
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final int BEARER_PREFIX_LENGTH = 7; // Length of "Bearer "
+    private static final int JWT_PARTS_COUNT = 3; // JWT has 3 parts: header.payload.signature
     private static final String TENANT_PARAM = "tenant";
     private static final String TENANT_SESSION_KEY = "RESOLVED_TENANT_ID";
     
@@ -236,7 +240,7 @@ public class TenantResolutionFilter implements Filter {
         // Strategy 1: Check header
         tenantId = request.getHeader(TENANT_HEADER);
         if (StringUtils.hasText(tenantId)) {
-            LOGGER.debug("Tenant resolved from header: {}", tenantId);
+            LOGGER.debug("Tenant resolved from tenantId header: {}", tenantId);
             storeTenantInSession(request, tenantId);
             return tenantId;
         }
@@ -268,6 +272,14 @@ public class TenantResolutionFilter implements Filter {
             LOGGER.debug("Tenant resolved from parameter: {}", tenantId);
             storeTenantInSession(request, tenantId);
             return tenantId;
+        }
+
+        // Strategy 5: Check Authorization header for JWT token with tenantID claim
+        String tenantFromAuth = extractTenantFromAuthorizationHeader(request);
+        if (StringUtils.hasText(tenantFromAuth)) {
+            LOGGER.debug("Tenant resolved from Authorization header: {}", tenantFromAuth);
+            storeTenantInSession(request, tenantFromAuth);
+            return tenantFromAuth;
         }
 
         return null;
@@ -330,6 +342,110 @@ public class TenantResolutionFilter implements Filter {
      */
     private boolean isValidTenantId(String tenantId) {
         return StringUtils.hasText(tenantId) && !INVALID_TENANT_IDS.contains(tenantId);
+    }
+
+    /**
+     * Extract tenant ID from Authorization header.
+     * Supports JWT tokens with tenantId claim in the payload.
+     * Expected format: Bearer JWT-TOKEN
+     * The JWT payload should contain a "tenantId" claim.
+     *
+     * <p>Example JWT payload:
+     * <pre>
+     * {
+     *   "sub": "admin",
+     *   "accountName": "sdp",
+     *   "tenantId": "sdp",
+     *   "user_id": "33332547171543448520109731243641",
+     *   ...
+     * }
+     * </pre>
+     *
+     * @param request The HTTP request containing the Authorization header
+     * @return The tenant ID if found in the token, null otherwise
+     */
+    private String extractTenantFromAuthorizationHeader(HttpServletRequest request) {
+        String authHeader = request.getHeader(AUTHORIZATION_HEADER);
+        
+        if (!StringUtils.hasText(authHeader)) {
+            LOGGER.debug("No Authorization header found in request");
+            return null;
+        }
+        
+        // Check if it's a Bearer token
+        if (!authHeader.startsWith("Bearer ")) {
+            LOGGER.debug("Authorization header is not a Bearer token");
+            return null;
+        }
+        
+        try {
+            // Extract the JWT token (remove "Bearer " prefix)
+            String token = authHeader.substring(BEARER_PREFIX_LENGTH);
+            
+            // Parse JWT token to extract tenantId claim
+            // JWT format: header.payload.signature
+            String[] parts = token.split("\\.");
+            if (parts.length != JWT_PARTS_COUNT) {
+                LOGGER.warn("Invalid JWT token format in Authorization header");
+                return null;
+            }
+            
+            // Decode the payload (second part)
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]));
+            
+            // Parse JSON payload to extract tenantId
+            String tenantId = extractTenantIdFromPayload(payload);
+            
+            if (StringUtils.hasText(tenantId)) {
+                LOGGER.debug("Extracted tenant '{}' from Authorization header JWT token", tenantId);
+                return tenantId;
+            } else {
+                LOGGER.debug("No tenantId claim found in JWT token payload");
+                return null;
+            }
+            
+        } catch (IllegalArgumentException e) {
+            LOGGER.warn("Failed to decode JWT token from Authorization header: {}", e.getMessage());
+            return null;
+        } catch (Exception e) {
+            LOGGER.error("Error extracting tenant from Authorization header: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * Extract tenantId value from JWT payload JSON.
+     * The primary claim name is "tenantId" as per UIDAM token structure.
+     *
+     * @param payload The JWT payload JSON string
+     * @return The tenant ID if found, null otherwise
+     */
+    private String extractTenantIdFromPayload(String payload) {
+        if (!StringUtils.hasText(payload)) {
+            return null;
+        }
+        
+        try {
+            // Use Jackson ObjectMapper to parse the JSON payload
+            ObjectMapper objectMapper = new ObjectMapper();
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> claims = objectMapper.readValue(payload, java.util.Map.class);
+            
+            // Check for "tenantId" claim (standard UIDAM claim name)
+            Object tenantId = claims.get(TENANT_HEADER);
+            if (tenantId != null) {
+                LOGGER.debug("Found '{}' claim in JWT payload: {}", TENANT_HEADER, tenantId);
+                return tenantId.toString();
+            }
+            
+            LOGGER.debug("JWT payload does not contain '{}' claim. Available claims: {}", 
+                TENANT_HEADER, claims.keySet());
+            return null;
+            
+        } catch (Exception e) {
+            LOGGER.warn("Failed to parse JWT payload JSON: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

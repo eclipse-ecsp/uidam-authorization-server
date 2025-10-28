@@ -622,4 +622,304 @@ class TenantResolutionFilterTest {
             verify(filterChain).doFilter(request, response);
         }
     }
+
+    @Test
+    void testTenantResolutionFromAuthorizationHeaderWithValidJwt() throws IOException, ServletException {
+        // Arrange
+        String expectedTenant = "sdp";
+        // Create a valid JWT token with tenantId claim
+        // JWT format: header.payload.signature (Base64 URL encoded)
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"RS256\",\"typ\":\"JWT\"}".getBytes());
+        String payloadJson = "{\"sub\":\"admin\",\"tenantId\":\""
+            + expectedTenant + "\",\"user_id\":\"12345\"}";
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payloadJson.getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("fake-signature".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+
+        String authHeader = "Bearer " + jwtToken;
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", authHeader);
+        when(tenantConfigurationService.tenantExists(expectedTenant)).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant(expectedTenant));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testTenantResolutionFromAuthorizationHeaderWithDifferentTenant() throws IOException, ServletException {
+        // Arrange
+        String expectedTenant = "ecsp";
+        String payloadJson = "{\"sub\":\"testuser\",\"tenantId\":\""
+            + expectedTenant + "\",\"accountName\":\"Engineering\"}";
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payloadJson.getBytes());
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"HS256\"}".getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("signature".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+
+        String authHeader = "Bearer " + jwtToken;
+        request.setRequestURI("/oauth2/token");
+        request.addHeader("Authorization", authHeader);
+        when(tenantConfigurationService.tenantExists(expectedTenant)).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant(expectedTenant));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testAuthorizationHeaderIgnoredWhenTenantIdHeaderPresent() throws IOException, ServletException {
+        // Arrange - header should take precedence over Authorization
+        String headerTenant = "ecsp";
+        String authTenant = "sdp";
+
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(("{\"tenantId\":\"" + authTenant + "\"}").getBytes());
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"HS256\"}".getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("sig".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("tenantId", headerTenant);
+        request.addHeader("Authorization", "Bearer " + jwtToken);
+        when(tenantConfigurationService.tenantExists(headerTenant)).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should use tenantId header, not Authorization
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant(headerTenant));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testAuthorizationHeaderIgnoredWhenPathContainsTenant() throws IOException, ServletException {
+        // Arrange - path should take precedence over Authorization
+        String pathTenant = "ecsp";
+        String authTenant = "sdp";
+
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(("{\"tenantId\":\"" + authTenant + "\"}").getBytes());
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"HS256\"}".getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("sig".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+        String requestUri = "/tenant/" + pathTenant + "/oauth2/authorize";
+
+        request.setRequestURI(requestUri);
+        request.addHeader("Authorization", "Bearer " + jwtToken);
+        when(tenantConfigurationService.tenantExists(pathTenant)).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should use path tenant, not Authorization
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant(pathTenant));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testInvalidJwtFormatIgnored() throws IOException, ServletException {
+        // Arrange - invalid JWT (only 2 parts instead of 3)
+        String invalidJwt = "header.payload"; // Missing signature
+        String authHeader = "Bearer " + invalidJwt;
+
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", authHeader);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should fail to resolve tenant
+            assertTenantNotFoundErrorResponse();
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testNonBearerTokenIgnored() throws IOException, ServletException {
+        // Arrange - Authorization header without Bearer prefix
+        String authHeader = "Basic dXNlcjpwYXNzd29yZA=="; // Basic auth
+
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", authHeader);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should fail to resolve tenant
+            assertTenantNotFoundErrorResponse();
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testJwtWithoutTenantIdClaimIgnored() throws IOException, ServletException {
+        // Arrange - JWT without tenantId claim
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"sub\":\"user\",\"role\":\"admin\"}".getBytes()); // No tenantId
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"HS256\"}".getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("sig".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", "Bearer " + jwtToken);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should fail to resolve tenant
+            assertTenantNotFoundErrorResponse();
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testMalformedBase64InJwtIgnored() throws IOException, ServletException {
+        // Arrange - JWT with invalid Base64 encoding
+        String invalidJwt = "header.invalid-base64-!!!.signature";
+        String authHeader = "Bearer " + invalidJwt;
+
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", authHeader);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should fail to resolve tenant
+            assertTenantNotFoundErrorResponse();
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testEmptyAuthorizationHeaderIgnored() throws IOException, ServletException {
+        // Arrange
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", "");
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should fail to resolve tenant
+            assertTenantNotFoundErrorResponse();
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testBearerTokenWithOnlyPrefixIgnored() throws IOException, ServletException {
+        // Arrange - "Bearer " with no token
+        request.setRequestURI("/oauth2/authorize");
+        request.addHeader("Authorization", "Bearer ");
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should fail to resolve tenant
+            assertTenantNotFoundErrorResponse();
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testAuthorizationHeaderWithValidJwtFromUserinfoEndpoint() throws IOException, ServletException {
+        // Arrange
+        String expectedTenant = "demo";
+        String payloadJson = "{\"sub\":\"john.doe\",\"tenantId\":\""
+            + expectedTenant + "\",\"email\":\"john@example.com\"}";
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payloadJson.getBytes());
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"RS256\"}".getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("valid-signature".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+
+        request.setRequestURI("/oauth2/userinfo");
+        request.addHeader("Authorization", "Bearer " + jwtToken);
+        when(tenantConfigurationService.tenantExists(expectedTenant)).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant(expectedTenant));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void testAuthorizationHeaderFallbackWhenOtherStrategiesFail() throws IOException, ServletException {
+        // Arrange - Only Authorization header provides tenant
+        String expectedTenant = "issuer1";
+        String payloadJson = "{\"sub\":\"api-client\",\"tenantId\":\"" + expectedTenant + "\"}";
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(payloadJson.getBytes());
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"RS256\"}".getBytes());
+        String signature = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("sig".getBytes());
+        String jwtToken = header + "." + payload + "." + signature;
+
+        request.setRequestURI("/oauth2/introspect"); // No tenant in path
+        // No tenantId header
+        // No tenant parameter
+        request.addHeader("Authorization", "Bearer " + jwtToken);
+        when(tenantConfigurationService.tenantExists(expectedTenant)).thenReturn(true);
+
+        try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
+            // When
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            // Then - Should use Authorization header as fallback
+            tenantContextMock.verify(() -> TenantContext.setCurrentTenant(expectedTenant));
+            tenantContextMock.verify(TenantContext::clear);
+            verify(filterChain).doFilter(request, response);
+        }
+    }
 }
+
