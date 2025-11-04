@@ -87,6 +87,6 @@ public class EmailVerificationController {
         // Add UI configuration attributes based on tenant properties
         uiAttributeUtils.addUiAttributes(model, tenantId);
         
-        return new ModelAndView("/emailVerify/email-verification").addObject(model);
+        return new ModelAndView("emailVerify/email-verification").addObject(model);
     }
 }
