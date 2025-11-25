@@ -18,6 +18,7 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config;
 
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

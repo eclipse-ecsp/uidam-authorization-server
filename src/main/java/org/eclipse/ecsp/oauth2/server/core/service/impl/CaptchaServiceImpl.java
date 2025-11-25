@@ -20,7 +20,6 @@ package org.eclipse.ecsp.oauth2.server.core.service.impl;
 
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.ReCaptchaInvalidException;
 import org.eclipse.ecsp.oauth2.server.core.exception.ReCaptchaUnavailableException;
@@ -29,6 +28,7 @@ import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.response.GoogleResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.CaptchaService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;

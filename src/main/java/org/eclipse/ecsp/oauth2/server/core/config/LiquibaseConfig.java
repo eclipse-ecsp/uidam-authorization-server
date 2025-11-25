@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.config;
 
 import liquibase.integration.spring.SpringLiquibase;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -26,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 
@@ -78,6 +80,7 @@ public class LiquibaseConfig  {
      */
     @Bean
     @Primary
+    @DependsOn({"multitenancySystemPropertyConfig", "tenantAwareDataSource"})
     @ConditionalOnProperty(name = "spring.liquibase.enabled", havingValue = "true")
     @SuppressWarnings("java:S2077") // SQL injection prevented by strict schema name validation
     // Bean creation will be skipped when spring.liquibase.enabled=false (e.g., in tests)

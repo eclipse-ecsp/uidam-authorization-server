@@ -41,7 +41,7 @@ import java.util.Properties;
 /**
  * Multiple Datasource configuration for the tenants.
  */ 
-@Configuration
+//@Configuration
 public class MultitenantConfiguration {
 
     private static final String TENANT_DEFAULT = "${tenant.default}";
