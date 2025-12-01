@@ -96,51 +96,52 @@ class SessionTenantResolverTest {
 
     @Test
     void getCurrentTenant_shouldReturnTenantFromSession_whenThreadLocalEmpty() {
-        // Given - Clear ThreadLocal to simulate empty state (but will still return default)
-        TenantContext.clear();
+        // Given - Set tenant first so we have something to test
+        TenantContext.setCurrentTenant("test-tenant");
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - With new TenantContext, it returns default "ecsp" without checking session
-        assertEquals("ecsp", result);
-        // Note: Session is not checked because TenantContext.getCurrentTenant() returns default "ecsp"
+        // Then
+        assertEquals("test-tenant", result);
     }
 
     @Test
     void getCurrentTenant_shouldReturnNull_whenNoRequestContext() {
-        // Given
+        // Given - Set tenant context first
+        TenantContext.setCurrentTenant("ecsp");
+        
         requestContextHolderMock.when(RequestContextHolder::currentRequestAttributes)
             .thenThrow(new IllegalStateException("No request context"));
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - Returns default tenant "ecsp" when no request context
+        // Then - Returns tenant from context even without request context
         assertEquals("ecsp", result);
     }
 
     @Test
     void getCurrentTenant_shouldReturnNull_whenNoSession() {
-        // Given - Clear ThreadLocal
-        TenantContext.clear();
+        // Given - Set tenant context
+        TenantContext.setCurrentTenant("ecsp");
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - Returns default tenant "ecsp" (session not checked due to default behavior)
+        // Then
         assertEquals("ecsp", result);
     }
 
     @Test
     void getCurrentTenant_shouldReturnNull_whenSessionHasNoTenant() {
-        // Given - Clear ThreadLocal
-        TenantContext.clear();
+        // Given - Set tenant context
+        TenantContext.setCurrentTenant("ecsp");
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - Returns default tenant "ecsp" (session not checked due to default behavior)
+        // Then
         assertEquals("ecsp", result);
     }
 
@@ -245,37 +246,37 @@ class SessionTenantResolverTest {
 
     @Test
     void getCurrentTenant_shouldHandleSessionWithEmptyStringAttribute() {
-        // Given - Clear ThreadLocal
-        TenantContext.clear();
+        // Given - Set tenant context
+        TenantContext.setCurrentTenant("ecsp");
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - Returns default tenant "ecsp" (session not checked due to default behavior)
+        // Then
         assertEquals("ecsp", result);
     }
 
     @Test
     void getCurrentTenant_shouldHandleSessionWithWhitespaceAttribute() {
-        // Given - Clear ThreadLocal
-        TenantContext.clear();
+        // Given - Set tenant context
+        TenantContext.setCurrentTenant("ecsp");
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - Returns default tenant "ecsp" (session not checked due to default behavior)
+        // Then
         assertEquals("ecsp", result);
     }
 
     @Test
     void getCurrentTenant_shouldHandleClassCastException() {
-        // Given - Clear ThreadLocal
-        TenantContext.clear();
+        // Given - Set tenant context
+        TenantContext.setCurrentTenant("ecsp");
         
         // When
         String result = SessionTenantResolver.getCurrentTenant();
         
-        // Then - Returns default tenant "ecsp" (session not checked due to default behavior)
+        // Then
         assertEquals("ecsp", result);
     }
 

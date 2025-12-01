@@ -45,6 +45,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -75,6 +76,12 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT) 
 @AutoConfigureWebTestClient(timeout = "3600000")
 @ContextConfiguration(classes = {AuthorizationControllerTest.TestConfig.class})
+@TestExecutionListeners(listeners = {
+    org.eclipse.ecsp.oauth2.server.core.common.test
+        .TenantContextTestExecutionListener.class
+}, mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
+@org.springframework.context.annotation.Import(
+    org.eclipse.ecsp.oauth2.server.core.common.test.TestTenantConfiguration.class)
 class AuthorizationControllerTest {
     
     // Static initializer to set system property before Spring context loads
@@ -100,6 +107,14 @@ class AuthorizationControllerTest {
 
     @Autowired
     private WebTestClient webTestClient;
+
+    @BeforeEach
+    public void setup() {
+        // Configure WebTestClient with default tenantId header for all requests
+        webTestClient = webTestClient.mutate()
+                .defaultHeader("tenantId", "ecsp")
+                .build();
+    }
 
     /**
      * This method is executed before and after each test. It clears the default registry of the CollectorRegistry.
