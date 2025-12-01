@@ -108,6 +108,9 @@ class LogoutHandlerTest {
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         
+        // Initialize and enable multitenancy for tests
+        TenantContext.initialize(true);
+        
         // Set up tenant context for multi-tenancy tests
         TenantContext.setCurrentTenant("uidam");
     }

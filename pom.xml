@@ -576,6 +576,9 @@
                         <include>**/*Test*.java</include>
                         <threadCount>1</threadCount>
                     </includes>
+                    <systemPropertyVariables>
+                        <tenant.default>ecsp</tenant.default>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>
