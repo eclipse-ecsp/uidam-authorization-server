@@ -44,11 +44,31 @@ import javax.annotation.PostConstruct;
 public class MultitenancySystemPropertyConfig {
 
     @Value("${multitenancy.enabled:true}")
-    private boolean multitenancyEnabled;
+    private boolean sqlMultitenancyEnabled;
 
+    @Value("${tenant.multitenant.enabled:false}")
+    private boolean tenantMultitenancyEnabled;
+
+    @Value("${tenant.ids:}")
+    private String tenantIds;
+
+    @Value("${tenant.default:default}")
+    private String defaultTenantId;
+
+    /**
+     * Initializes system properties for multitenancy configuration.
+     * This method is called after dependency injection to set system properties
+     * that are read by the sql-dao library for tenant-based data source routing.
+     * Sets multi.tenant.ids based on whether multitenancy is enabled or disabled.
+     */
     @PostConstruct
     public void init() {
         // Set the system property so that sql-dao's TenantRoutingDataSource can read it
-        System.setProperty("multitenancy.enabled", String.valueOf(multitenancyEnabled));
+        System.setProperty("multitenancy.enabled", String.valueOf(sqlMultitenancyEnabled));
+        if (tenantMultitenancyEnabled) {
+            System.setProperty("multi.tenant.ids", tenantIds);
+        } else {
+            System.setProperty("multi.tenant.ids", defaultTenantId);
+        }
     }
 }
