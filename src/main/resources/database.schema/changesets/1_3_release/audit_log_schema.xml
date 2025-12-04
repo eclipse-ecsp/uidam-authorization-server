@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ~ Copyright (c) 2024-25 Harman International
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~  http://www.apache.org/licenses/LICENSE-2.0
+  ~      
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  ~
+  ~ SPDX-License-Identifier: Apache-2.0
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <changeSet id="audit-log" author="UIDAM Team">
+        <createTable tableName="audit_log">
+            <column name="ID" type="${BIG_INTEGER}" defaultValueComputed="${UUID_FUNCTION}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="EVENT_TYPE" type="${STRING_SMALL}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="COMPONENT" type="${STRING_SMALL}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RESULT" type="${STRING_TINY}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TIMESTAMP" type="${DATE_TIME_TZ}" defaultValueComputed="${SYSTEM_DATETIME}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="${STRING_SMALL}"/>
+            <column name="ACTOR_ID" type="${STRING_SMALL}"/>
+            <column name="ACTOR_TYPE" type="${STRING_TINY}"/>
+            <column name="TARGET_ID" type="${STRING_SMALL}"/>
+            <column name="TARGET_TYPE" type="${STRING_SMALL}"/>
+            <column name="SOURCE_IP_ADDRESS" type="${STRING_TINY}"/>
+            <column name="CORRELATION_ID" type="${STRING_SMALL}"/>
+            <column name="ACTOR_CONTEXT" type="JSONB"/>
+            <column name="TARGET_CONTEXT" type="JSONB"/>
+            <column name="REQUEST_CONTEXT" type="JSONB"/>
+            <column name="AUTHENTICATION_CONTEXT" type="JSONB"/>
+            <column name="FAILURE_CODE" type="${STRING_TINY}"/>
+            <column name="FAILURE_REASON" type="${STRING_SMALL}"/>
+            <column name="BEFORE_VALUE" type="JSONB"/>
+            <column name="AFTER_VALUE" type="JSONB"/>
+            <column name="ADDITIONAL_DATA" type="JSONB"/>
+            <column name="MESSAGE" type="${CLOB}"/>
+        </createTable>
+        <addPrimaryKey columnNames="ID" constraintName="audit_log_pkey" tableName="audit_log"/>
+        <createIndex indexName="IDX_AUDIT_LOG_EVENT_TYPE" tableName="audit_log">
+            <column name="EVENT_TYPE"/>
+        </createIndex>
+        <createIndex indexName="IDX_AUDIT_LOG_COMPONENT" tableName="audit_log">
+            <column name="COMPONENT"/>
+        </createIndex>
+        <createIndex indexName="IDX_AUDIT_LOG_RESULT" tableName="audit_log">
+            <column name="RESULT"/>
+        </createIndex>
+        <createIndex indexName="IDX_AUDIT_LOG_TIMESTAMP" tableName="audit_log">
+            <column name="TIMESTAMP" descending="true"/>
+        </createIndex>
+        <createIndex indexName="IDX_AUDIT_LOG_ACTOR_ID" tableName="audit_log">
+            <column name="ACTOR_ID"/>
+        </createIndex>
+        <createIndex indexName="IDX_AUDIT_LOG_TARGET_ID" tableName="audit_log">
+            <column name="TARGET_ID"/>
+        </createIndex>
+        <createIndex indexName="IDX_AUDIT_LOG_CORRELATION_ID" tableName="audit_log">
+            <column name="CORRELATION_ID"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="audit-log-check-constraint" author="UIDAM Team">
+        <sql>
+            ALTER TABLE audit_log ADD CONSTRAINT chk_result CHECK (RESULT IN ('SUCCESS', 'FAILURE', 'PARTIAL'));
+        </sql>
+        <rollback>
+            ALTER TABLE audit_log DROP CONSTRAINT chk_result;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

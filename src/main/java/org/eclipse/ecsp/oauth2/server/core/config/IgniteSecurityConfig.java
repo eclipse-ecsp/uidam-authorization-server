@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.config;
 
 import jakarta.servlet.http.HttpSession;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.filters.CustomUserPwdAuthenticationFilter;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.CustomAccessTokenFailureHandler;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.CustomAuthCodeFailureHandler;
@@ -125,18 +126,23 @@ public class IgniteSecurityConfig {
 
     private final TenantConfigurationService tenantConfigurationService;
     private final AuthorizationMetricsService authorizationMetricsService;
+    private final AuditLogger auditLogger;
 
     /**
-     * Constructor for the IgniteSecurityConfig class. It stores the TenantConfigurationService
-     * and AuthorizationMetricsService for dynamic tenant property resolution and metrics collection.
+     * Constructor for the IgniteSecurityConfig class. It stores the TenantConfigurationService,
+     * AuthorizationMetricsService, and AuditLogger for dynamic tenant property resolution,
+     * metrics collection, and audit logging.
      *
      * @param tenantConfigurationService Service for managing tenant configurations.
      * @param authorizationMetricsService Service for collecting authorization metrics.
+     * @param auditLogger Service for logging audit events.
      */
     public IgniteSecurityConfig(TenantConfigurationService tenantConfigurationService,
-                               AuthorizationMetricsService authorizationMetricsService) {
+                               AuthorizationMetricsService authorizationMetricsService,
+                               AuditLogger auditLogger) {
         this.tenantConfigurationService = tenantConfigurationService;
         this.authorizationMetricsService = authorizationMetricsService;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -225,7 +231,7 @@ public class IgniteSecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(withDefaults()));
         CustomUserPwdAuthenticationFilter customUserPwdAuthenticationFilter = new CustomUserPwdAuthenticationFilter(
                 authenticationConfiguration.getAuthenticationManager(), this.tenantConfigurationService,
-                this.authorizationMetricsService);
+                this.authorizationMetricsService, this.auditLogger);
         customUserPwdAuthenticationFilter.setSecurityContextRepository(databaseSecurityContextRepository);
         customUserPwdAuthenticationFilter
                 .setAuthenticationSuccessHandler(savedRequestAwareAuthenticationSuccessHandler);

@@ -20,6 +20,11 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.providers;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.eclipse.ecsp.audit.context.ActorContext;
+import org.eclipse.ecsp.audit.context.RequestContext;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
@@ -30,6 +35,7 @@ import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -45,9 +51,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -70,13 +81,16 @@ class CustomUserPwdAuthenticationProviderTest {
     
     @Mock
     private AuthorizationMetricsService authorizationMetricsService;
+    
+    @Mock
+    private AuditLogger auditLogger;
 
     private CustomUserPwdAuthenticationProvider customUserPwdAuthenticationProvider;
 
     @BeforeEach
     void setUp() {
         customUserPwdAuthenticationProvider = new CustomUserPwdAuthenticationProvider(
-            userManagementClient, tenantConfigurationService, request, authorizationMetricsService);
+            userManagementClient, tenantConfigurationService, request, authorizationMetricsService, auditLogger);
     }
 
     /**
@@ -172,6 +186,107 @@ class CustomUserPwdAuthenticationProviderTest {
         assertFalse(customUserPwdAuthenticationProvider.supports(UsernamePasswordAuthenticationToken.class));
         assertFalse(
             customUserPwdAuthenticationProvider.supports(OAuth2AuthorizationCodeRequestAuthenticationToken.class));
+    }
+
+    /**
+     * This method tests that the AUTH_SUCCESS_PASSWORD audit event is logged correctly
+     * when authentication is successful. It verifies:
+     * 1) AuditLogger is called exactly once
+     * 2) Event type is "AUTH_SUCCESS_PASSWORD"
+     * 3) Component name is "UIDAM_AUTHORIZATION_SERVER"
+     * 4) Result is SUCCESS
+     * 5) Message indicates successful authentication
+     * 6) Actor context contains user information
+     * 7) Request context is populated
+     */
+    @Test
+    void testAuthenticateSuccess_AuditsAuthSuccessPassword() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        
+        // Setup user management client mock
+        doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Perform authentication
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
+            TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
+        CustomUserPwdAuthenticationToken authenticationToken =
+            (CustomUserPwdAuthenticationToken) customUserPwdAuthenticationProvider.authenticate(authentication);
+        
+        // Verify authentication succeeded
+        assertNotNull(authenticationToken);
+        
+        // Verify audit logger was called with correct parameters
+        ArgumentCaptor<String> eventTypeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> componentCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<AuditEventResult> resultCaptor = ArgumentCaptor.forClass(AuditEventResult.class);
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<ActorContext> actorContextCaptor = ArgumentCaptor.forClass(ActorContext.class);
+        ArgumentCaptor<RequestContext> requestContextCaptor = ArgumentCaptor.forClass(RequestContext.class);
+        
+        verify(auditLogger, times(1)).log(
+            eventTypeCaptor.capture(),
+            componentCaptor.capture(),
+            resultCaptor.capture(),
+            messageCaptor.capture(),
+            actorContextCaptor.capture(),
+            requestContextCaptor.capture()
+        );
+        
+        // Verify captured values
+        assertEquals(AuditEventType.AUTH_SUCCESS_PASSWORD.getType(), eventTypeCaptor.getValue(), 
+            "Event type should be AUTH_SUCCESS_PASSWORD");
+        assertEquals("UIDAM_AUTHORIZATION_SERVER", componentCaptor.getValue(), 
+            "Component should be UIDAM_AUTHORIZATION_SERVER");
+        assertEquals(AuditEventResult.SUCCESS, resultCaptor.getValue(), 
+            "Result should be SUCCESS");
+        assertEquals("User authenticated successfully via password", messageCaptor.getValue(), 
+            "Message should indicate successful authentication");
+        assertNotNull(actorContextCaptor.getValue(), "Actor context should not be null");
+        assertNotNull(requestContextCaptor.getValue(), "Request context should not be null");
+    }
+
+    /**
+     * This method tests that audit logger is NOT called when authentication fails.
+     * Only successful authentications should be audited with AUTH_SUCCESS_PASSWORD.
+     */
+    @Test
+    void testAuthenticateFail_NoAuditLogForAuthSuccessPassword() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        
+        // Setup session mock for failure case (needed for setRecaptchaSession)
+        when(request.getSession()).thenReturn(session);
+        
+        // Setup user with wrong password
+        UserDetailsResponse userDetailsResponse = getUser();
+        userDetailsResponse.setPassword(TEST_PASSWORD);
+        doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
+            TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
+        
+        // Verify authentication fails
+        assertThrows(BadCredentialsException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        // Verify audit logger was NOT called for AUTH_SUCCESS_PASSWORD (since authentication failed)
+        verify(auditLogger, never()).log(
+            eq(AuditEventType.AUTH_SUCCESS_PASSWORD.getType()),
+            anyString(),
+            any(AuditEventResult.class),
+            anyString(),
+            any(ActorContext.class),
+            any(RequestContext.class)
+        );
     }
 
 }

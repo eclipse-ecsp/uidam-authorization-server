@@ -20,6 +20,11 @@ package org.eclipse.ecsp.oauth2.server.core.service.impl;
 
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.ReCaptchaInvalidException;
@@ -57,19 +62,25 @@ import static org.eclipse.ecsp.oauth2.server.core.utils.RequestResponseLogger.lo
 public class CaptchaServiceImpl implements CaptchaService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CaptchaServiceImpl.class);
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private final TenantConfigurationService tenantConfigurationService;
     private final AuthorizationMetricsService metricsService;
+    private final AuditLogger auditLogger;
 
     /**
      * Constructor that initializes the tenantConfigurationService.
      *
      * @param tenantConfigurationService the service to retrieve tenant properties.
+     * @param metricsService the metrics service for tracking CAPTCHA failures.
+     * @param auditLogger the audit logger for logging authentication events.
      */
     public CaptchaServiceImpl(TenantConfigurationService tenantConfigurationService,
-                             AuthorizationMetricsService metricsService) {
+                             AuthorizationMetricsService metricsService,
+                             AuditLogger auditLogger) {
         this.tenantConfigurationService = tenantConfigurationService;
         this.metricsService = metricsService;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -126,6 +137,10 @@ public class CaptchaServiceImpl implements CaptchaService {
                                                             MetricType.FAILURE_LOGIN_CAPTCHA,
                                                             MetricType.FAILURE_LOGIN_ATTEMPTS,
                                                             MetricType.TOTAL_LOGIN_ATTEMPTS);
+                    
+                    // Log CAPTCHA failure audit event
+                    logCaptchaFailure(request, "reCaptcha validation failed");
+                    
                     throw new ReCaptchaInvalidException("reCaptcha was not successfully validated");
                 }
             }
@@ -134,6 +149,10 @@ public class CaptchaServiceImpl implements CaptchaService {
                                                     MetricType.FAILURE_LOGIN_CAPTCHA,
                                                     MetricType.FAILURE_LOGIN_ATTEMPTS,
                                                     MetricType.TOTAL_LOGIN_ATTEMPTS);
+            
+            // Log CAPTCHA failure audit event
+            logCaptchaFailure(request, "reCaptcha service unavailable");
+            
             throw new ReCaptchaUnavailableException("ReCaptcha service unavailable at this time. "
                 + "Please try again later.", rce);
         } finally {
@@ -210,5 +229,41 @@ public class CaptchaServiceImpl implements CaptchaService {
             return request.getRemoteAddr();
         }
         return xfHeader.split(",")[0];
+    }
+    
+    /**
+     * Logs CAPTCHA validation failure audit event.
+     * Note: At this point, user hasn't been authenticated yet, so userId and accountId are not available.
+     *
+     * @param request HTTP servlet request
+     * @param failureReason reason for CAPTCHA failure
+     */
+    private void logCaptchaFailure(HttpServletRequest request, String failureReason) {
+        try {
+            // Extract username and accountName from request parameters
+            String username = request.getParameter("username");
+            String accountName = request.getParameter("accountName");
+            
+            // Build actor context with available information (no userId since CAPTCHA fails before user lookup)
+            UserActorContext actorContext = UserActorContext.builder()
+                .username(username != null ? username : "unknown")
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            auditLogger.log(
+                AuditEventType.AUTH_FAILURE_CAPTCHA.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                "CAPTCHA validation failed: " + failureReason,
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for AUTH_FAILURE_CAPTCHA: username={}", username);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for AUTH_FAILURE_CAPTCHA: {}", e.getMessage(), e);
+        }
     }
 }
