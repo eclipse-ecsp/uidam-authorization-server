@@ -45,6 +45,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -75,7 +76,20 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT) 
 @AutoConfigureWebTestClient(timeout = "3600000")
 @ContextConfiguration(classes = {AuthorizationControllerTest.TestConfig.class})
+@TestExecutionListeners(listeners = {
+    org.eclipse.ecsp.oauth2.server.core.common.test
+        .TenantContextTestExecutionListener.class
+}, mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
+@org.springframework.context.annotation.Import(
+    org.eclipse.ecsp.oauth2.server.core.common.test.TestTenantConfiguration.class)
 class AuthorizationControllerTest {
+    
+    // Static initializer to set system property before Spring context loads
+    static {
+        System.setProperty("multitenancy.enabled", "true");
+        System.setProperty("tenant.default", "ecsp");
+    }
+    
     @MockitoBean
     AuthorizationRepository authorizationRepository;
 
@@ -93,6 +107,14 @@ class AuthorizationControllerTest {
 
     @Autowired
     private WebTestClient webTestClient;
+
+    @BeforeEach
+    public void setup() {
+        // Configure WebTestClient with default tenantId header for all requests
+        webTestClient = webTestClient.mutate()
+                .defaultHeader("tenantId", "ecsp")
+                .build();
+    }
 
     /**
      * This method is executed before and after each test. It clears the default registry of the CollectorRegistry.
@@ -394,6 +416,31 @@ class AuthorizationControllerTest {
             when(mockService.tenantExists("testClient")).thenReturn(true);
 
             return mockService;
+        }
+
+        @Bean("targetDataSources")
+        public java.util.Map<Object, Object> targetDataSources() throws Exception {
+            // Provide mock targetDataSources bean required by TenantAwareDataSource
+            final java.util.Map<Object, Object> dataSources = new HashMap<>();
+            
+            // Create a mock datasource with proper connection mocking
+            javax.sql.DataSource mockDataSource = Mockito.mock(javax.sql.DataSource.class);
+            java.sql.Connection mockConnection = Mockito.mock(java.sql.Connection.class);
+            java.sql.DatabaseMetaData mockMetaData = Mockito.mock(java.sql.DatabaseMetaData.class);
+            java.sql.Statement mockStatement = Mockito.mock(java.sql.Statement.class);
+            
+            // Set up the mock to return a connection
+            when(mockDataSource.getConnection()).thenReturn(mockConnection);
+            when(mockConnection.getMetaData()).thenReturn(mockMetaData);
+            when(mockConnection.createStatement()).thenReturn(mockStatement);
+            when(mockMetaData.getDatabaseProductName()).thenReturn("H2");
+            when(mockStatement.execute(any(String.class))).thenReturn(true);
+            
+            // Add a default datasource entry with key "default" as per MultitenantConstants.DEFAULT_TENANT_ID
+            dataSources.put("default", mockDataSource);
+            // Also add ecsp tenant datasource
+            dataSources.put("ecsp", mockDataSource);
+            return dataSources;
         }
     }
 }

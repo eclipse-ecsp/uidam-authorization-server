@@ -73,7 +73,7 @@
         <spring-security-oauth2-version>1.4.2</spring-security-oauth2-version>
         <spring-security-oauth2-client-version>6.4.2</spring-security-oauth2-client-version>
         <spring-jdbc-version>6.0.11</spring-jdbc-version>
-        <sql.dao.version>1.1.2</sql.dao.version>
+        <sql.dao.version>1.9-feat-17-4-SNAPSHOT</sql.dao.version>
         <ecsp-utils.version>1.1.1</ecsp-utils.version>
         <org.mapstruct.version>1.5.5.Final</org.mapstruct.version>
         <org.projectlombok.version>1.18.20</org.projectlombok.version>
@@ -132,7 +132,29 @@
             </snapshots>
         </pluginRepository>
     </pluginRepositories>
+
+    <repositories>
+        <repository>
+            <id>central-snapshots</id>
+            <name>Sonatype Central Snapshot Repository</name>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+        </repository>
+    </repositories>
+
     <dependencies>
+        	<!-- https://mvnrepository.com/artifact/org.springframework.cloud/spring-cloud-starter-config -->
+	<dependency>
+	    <groupId>org.springframework.cloud</groupId>
+	    <artifactId>spring-cloud-starter-config</artifactId>
+	    <version>4.3.0</version>
+	</dependency>
         <!--required for idp integration-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -241,7 +263,7 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-datadog</artifactId>
         </dependency>
-        <!--
+        
         <dependency>
             <groupId>org.eclipse.ecsp</groupId>
             <artifactId>sql-dao</artifactId>
@@ -271,12 +293,12 @@
                     <groupId>org.eclipse.jetty</groupId>
                     <artifactId>jetty-util</artifactId>
                 </exclusion>
-                <exclusion>
+                <!--<exclusion>
                 	<groupId>org.postgresql</groupId>
                 	<artifactId>postgresql</artifactId>
-                </exclusion>				
+                </exclusion>-->				
             </exclusions>
-        </dependency>-->
+        </dependency>
         <dependency>
           	<groupId>javax.annotation</groupId>
             <artifactId>javax.annotation-api</artifactId>
@@ -560,6 +582,9 @@
                         <include>**/*Test*.java</include>
                         <threadCount>1</threadCount>
                     </includes>
+                    <systemPropertyVariables>
+                        <tenant.default>ecsp</tenant.default>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

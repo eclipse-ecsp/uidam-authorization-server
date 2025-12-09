@@ -19,10 +19,10 @@
 package org.eclipse.ecsp.oauth2.server.core.authentication.handlers;
 
 import jakarta.servlet.http.HttpSession;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.service.AuthorizationService;
 import org.eclipse.ecsp.oauth2.server.core.service.ClientRegistrationManager;
 import org.eclipse.ecsp.oauth2.server.core.service.DatabaseSecurityContextRepository;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -107,6 +107,9 @@ class LogoutHandlerTest {
                 databaseSecurityContextRepository, "localhost,127.0.0.1");
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
+        
+        // Initialize and enable multitenancy for tests
+        TenantContext.initialize(true);
         
         // Set up tenant context for multi-tenancy tests
         TenantContext.setCurrentTenant("uidam");
