@@ -152,4 +152,19 @@ class PasswordAuthenticationContextTest {
         // Then
         assertThat(map.get("failed_attempts")).isEqualTo(2);
     }
+
+    // Test getters work correctly
+
+    @Test
+    void gettershouldWork() {
+        // When
+        PasswordAuthenticationContext context = PasswordAuthenticationContext.builder()
+            .failedAttempts(2)
+            .authType("idp:google")
+            .build();
+
+        // Then
+        assertThat(context.getFailedAttempts()).isEqualTo(2);
+        assertThat(context.getAuthType()).isEqualTo("idp:google");
+    }
 }
