@@ -161,47 +161,75 @@ public class ClaimsConfigManager {
     @Primary
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(CacheClientUtils cacheClientUtils) {
         return context -> {
-            // Need to refactor
-            UserDetailsResponse userDetailsResponse = null;
-            if (AUTHORIZATION_CODE_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())
-                    || REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
-                if (context.getPrincipal() instanceof CustomUserPwdAuthenticationToken
-                    customUserPwdAuthenticationToken) {
-                    LOGGER.debug("Non Federated user authentication");
-                    userDetailsResponse = userManagementClient.getUserDetailsByUsername(
-                            customUserPwdAuthenticationToken.getName(),
-                            customUserPwdAuthenticationToken.getAccountName());
-                    authorizationMetricsService.incrementMetricsForTenant(
-                            getCurrentTenantProperties().getTenantId(),
-                            MetricType.SUCCESS_LOGIN_BY_INTERNAL_CREDENTIALS);
-                }
-                if (context.getPrincipal() instanceof OAuth2AuthenticationToken oauth2AuthenticationToken) {
-                    LOGGER.debug("Federated user authentication");
-                    userDetailsResponse = getUserDetailsForFederatedUser(oauth2AuthenticationToken);
-                }
-            }
+            UserDetailsResponse userDetailsResponse = retrieveUserDetails(context);
+            
             JwtClaimsSet.Builder claimsBuilder = context.getClaims();
             Set<String> scopeSet = claimsBuilder.build().getClaim(OAuth2ParameterNames.SCOPE);
+            
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
-
-                ClientCacheDetails clientDetails = cacheClientUtils.getClientDetails(
-                    context.getRegisteredClient().getClientId());
-                addClaimsForAccessToken(context, clientDetails, userDetailsResponse, claimsBuilder, scopeSet);
-                
-                String grantType = context.getAuthorizationGrantType().getValue();
-                
-                // Log TOKEN_REFRESHED audit event when access token is issued via refresh_token grant
-                if (REFRESH_TOKEN_GRANT_TYPE.equals(grantType)) {
-                    logTokenRefreshed(context, userDetailsResponse, clientDetails);
-                } else {
-                    // Log ACCESS_TOKEN_GENERATED for initial token issuance (authorization_code, client_credentials)
-                    logAccessTokenGenerated(context, userDetailsResponse, clientDetails, grantType);
-                }
-                
+                processAccessToken(context, cacheClientUtils, userDetailsResponse, claimsBuilder, scopeSet);
             } else if (context.getTokenType().getValue().equals(OidcParameterNames.ID_TOKEN)) {
                 addClaimsForIdToken(context, userDetailsResponse, claimsBuilder);
             }
         };
+    }
+
+    /**
+     * Retrieves user details based on the authentication context.
+     * Supports both internal password authentication and federated authentication.
+     *
+     * @param context The JWT encoding context
+     * @return UserDetailsResponse or null if not applicable
+     */
+    private UserDetailsResponse retrieveUserDetails(JwtEncodingContext context) {
+        String grantType = context.getAuthorizationGrantType().getValue();
+        
+        if (!AUTHORIZATION_CODE_GRANT_TYPE.equals(grantType) 
+                && !REFRESH_TOKEN_GRANT_TYPE.equals(grantType)) {
+            return null;
+        }
+        
+        if (context.getPrincipal() instanceof CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken) {
+            LOGGER.debug("Non Federated user authentication");
+            authorizationMetricsService.incrementMetricsForTenant(
+                    getCurrentTenantProperties().getTenantId(),
+                    MetricType.SUCCESS_LOGIN_BY_INTERNAL_CREDENTIALS);
+            return userManagementClient.getUserDetailsByUsername(
+                    customUserPwdAuthenticationToken.getName(),
+                    customUserPwdAuthenticationToken.getAccountName());
+        }
+        
+        if (context.getPrincipal() instanceof OAuth2AuthenticationToken oauth2AuthenticationToken) {
+            LOGGER.debug("Federated user authentication");
+            return getUserDetailsForFederatedUser(oauth2AuthenticationToken);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Processes access token by adding claims and logging audit events.
+     *
+     * @param context The JWT encoding context
+     * @param cacheClientUtils The cache client utilities
+     * @param userDetailsResponse The user details
+     * @param claimsBuilder The JWT claims builder
+     * @param scopeSet The set of scopes
+     */
+    private void processAccessToken(JwtEncodingContext context, CacheClientUtils cacheClientUtils,
+                                    UserDetailsResponse userDetailsResponse, 
+                                    JwtClaimsSet.Builder claimsBuilder, Set<String> scopeSet) {
+        ClientCacheDetails clientDetails = cacheClientUtils.getClientDetails(
+                context.getRegisteredClient().getClientId());
+        addClaimsForAccessToken(context, clientDetails, userDetailsResponse, claimsBuilder, scopeSet);
+        
+        String grantType = context.getAuthorizationGrantType().getValue();
+        
+        if (REFRESH_TOKEN_GRANT_TYPE.equals(grantType)) {
+            logTokenRefreshed(context, userDetailsResponse, clientDetails);
+        } else {
+            logAccessTokenGenerated(context, userDetailsResponse, clientDetails, grantType);
+        }
     }
 
     /**

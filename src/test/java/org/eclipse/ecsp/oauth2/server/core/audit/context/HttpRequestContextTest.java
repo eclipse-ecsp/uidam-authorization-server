@@ -18,11 +18,16 @@
 
 package org.eclipse.ecsp.oauth2.server.core.audit.context;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for HttpRequestContext.
@@ -152,5 +157,127 @@ class HttpRequestContextTest {
 
         // Then
         assertThat(map).containsEntry("sessionId", "JSESSIONID-xyz789");
+    }
+
+    @Test
+    void fromWithNullRequestShouldGenerateCorrelationId() {
+        // When
+        HttpRequestContext context = HttpRequestContext.from(null);
+
+        // Then
+        assertThat(context).isNotNull();
+        assertThat(context.getCorrelationId()).isNotNull();
+        assertThat(context.getCorrelationId()).isNotEmpty();
+        assertThat(context.getSourceIpAddress()).isNull();
+        assertThat(context.getUserAgent()).isNull();
+        assertThat(context.getSessionId()).isNull();
+    }
+
+    @Test
+    void fromWithCompleteRequestShouldExtractAllFields() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpSession session = mock(HttpSession.class);
+        
+        when(request.getHeader("User-Agent")).thenReturn("Mozilla/5.0");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.195");
+        when(request.getHeader("X-Correlation-ID")).thenReturn("test-correlation-id");
+        when(request.getSession(false)).thenReturn(session);
+        when(session.getId()).thenReturn("session-123");
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getRequestURI()).thenReturn("/api/login");
+
+        // When
+        HttpRequestContext context = HttpRequestContext.from(request);
+
+        // Then
+        assertThat(context).isNotNull();
+        assertThat(context.getSourceIpAddress()).isEqualTo("203.0.113.195");
+        assertThat(context.getUserAgent()).isEqualTo("Mozilla/5.0");
+        assertThat(context.getSessionId()).isEqualTo("session-123");
+        assertThat(context.getCorrelationId()).isEqualTo("test-correlation-id");
+        assertThat(context.getMethod()).isEqualTo("POST");
+        assertThat(context.getRequestUri()).isEqualTo("/api/login");
+    }
+
+    @Test
+    void fromWithRealIpHeader() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        
+        when(request.getHeader("X-Real-IP")).thenReturn("198.51.100.42");
+        when(request.getRemoteAddr()).thenReturn("10.0.0.1");
+        when(request.getSession(false)).thenReturn(null);
+
+        // When
+        HttpRequestContext context = HttpRequestContext.from(request);
+
+        // Then
+        assertThat(context.getSourceIpAddress()).isEqualTo("198.51.100.42");
+        assertThat(context.getSessionId()).isNull();
+    }
+
+    @Test
+    void fromWithRemoteAddrOnlyShouldUseRemoteAddr() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        
+        when(request.getRemoteAddr()).thenReturn("192.0.2.1");
+        when(request.getSession(false)).thenReturn(null);
+
+        // When
+        HttpRequestContext context = HttpRequestContext.from(request);
+
+        // Then
+        assertThat(context.getSourceIpAddress()).isEqualTo("192.0.2.1");
+    }
+
+    @Test
+    void fromWithRequestIdHeader() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        
+        when(request.getHeader("X-Request-ID")).thenReturn("request-id-456");
+        when(request.getRemoteAddr()).thenReturn("10.0.0.1");
+        when(request.getSession(false)).thenReturn(null);
+
+        // When
+        HttpRequestContext context = HttpRequestContext.from(request);
+
+        // Then
+        assertThat(context.getCorrelationId()).isEqualTo("request-id-456");
+    }
+
+    @Test
+    void fromWithMultipleIpsInForwardedFor() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.195, 192.168.1.1, 10.0.0.1");
+        when(request.getSession(false)).thenReturn(null);
+
+        // When
+        HttpRequestContext context = HttpRequestContext.from(request);
+
+        // Then
+        assertThat(context.getSourceIpAddress()).isEqualTo("203.0.113.195");
+    }
+
+    @Test
+    void fromWithoutCorrelationHeadersShouldGenerateUuid() {
+        // Given
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        
+        when(request.getRemoteAddr()).thenReturn("10.0.0.1");
+        when(request.getSession(false)).thenReturn(null);
+
+        // When
+        HttpRequestContext context = HttpRequestContext.from(request);
+
+        // Then
+        assertThat(context.getCorrelationId()).isNotNull();
+        assertThat(context.getCorrelationId()).isNotEmpty();
+        assertThat(context.getCorrelationId()).matches(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     }
 }

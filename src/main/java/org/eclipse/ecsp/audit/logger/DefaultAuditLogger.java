@@ -97,7 +97,33 @@ public class DefaultAuditLogger implements AuditLogger {
                     AuditEventResult result,
                     ActorContext actorContext,
                     RequestContext requestContext) {
-        log(eventType, component, result, null, actorContext, null, requestContext, null);
+        try {
+            AuditEvent event = AuditEvent.builder()
+                .eventType(eventType)
+                .component(component)
+                .result(result)
+                .message(null)
+                .actorId(extractActorId(actorContext))
+                .actorType(extractActorType(actorContext))
+                .actorContext(maskAndSerialize(actorContext))
+                .targetId(null)
+                .targetType(null)
+                .targetContext(null)
+                .sourceIpAddress(extractSourceIp(requestContext))
+                .correlationId(extractCorrelationId(requestContext))
+                .requestContext(maskAndSerialize(requestContext))
+                .authenticationContext(null)
+                .build();
+            
+            auditRepository.save(event);
+            
+            log.debug("Audit event saved: eventType={}, component={}, actorId={}", 
+                eventType, component, event.getActorId());
+                
+        } catch (Exception e) {
+            log.error("Failed to save audit log: eventType={}, component={}, error={}", 
+                eventType, component, e.getMessage(), e);
+        }
     }
     
     @Override
