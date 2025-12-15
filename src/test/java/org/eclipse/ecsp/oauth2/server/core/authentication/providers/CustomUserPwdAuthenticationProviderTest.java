@@ -30,6 +30,7 @@ import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UserProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,11 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationToken;
 
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.LOGIN_ATTEMPT;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_CAPTCHA_ENABLED;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_ENFORCE_AFTER_NO_OF_FAILURES;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.USER_CAPTCHA_REQUIRED;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.USER_ENFORCE_AFTER_NO_OF_FAILURES;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestCommonStaticData.getUser;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_ACCOUNT_NAME;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_PASSWORD;
@@ -66,6 +72,11 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class CustomUserPwdAuthenticationProviderTest {
+
+    private static final int MAX_ATTEMPTS_THREE = 3;
+    private static final int MAX_ATTEMPTS_FIVE = 5;
+    private static final int FAILURE_ATTEMPTS_TWO = 2;
+    private static final int FAILURE_ATTEMPTS_THREE = 3;
 
     @Mock
     private UserManagementClient userManagementClient;
@@ -287,6 +298,149 @@ class CustomUserPwdAuthenticationProviderTest {
             any(ActorContext.class),
             any(RequestContext.class)
         );
+    }
+
+    @Test
+    void testAuthenticateWithUserNotFoundException() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_THREE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup mock to throw OAuth2AuthenticationException with USER_NOT_FOUND error code
+        org.springframework.security.oauth2.core.OAuth2Error error = 
+            new org.springframework.security.oauth2.core.OAuth2Error("USER_NOT_FOUND", "User not found", null);
+        org.springframework.security.oauth2.core.OAuth2AuthenticationException exception = 
+            new org.springframework.security.oauth2.core.OAuth2AuthenticationException(error);
+        
+        when(userManagementClient.getUserDetailsByUsername(anyString(), anyString())).thenThrow(exception);
+        
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
+        
+        // Verify that OAuth2AuthenticationException is thrown
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        // Verify metrics were incremented for total login attempts
+        verify(authorizationMetricsService).incrementMetricsForTenant(eq("test-tenant"), 
+            eq(MetricType.TOTAL_LOGIN_ATTEMPTS));
+    }
+
+    @Test
+    void testAuthenticateWithGenericException() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_THREE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup mock to throw OAuth2AuthenticationException with generic error code
+        org.springframework.security.oauth2.core.OAuth2Error error = 
+            new org.springframework.security.oauth2.core.OAuth2Error("GENERIC_ERROR", "Generic error", null);
+        org.springframework.security.oauth2.core.OAuth2AuthenticationException exception = 
+            new org.springframework.security.oauth2.core.OAuth2AuthenticationException(error);
+        
+        when(userManagementClient.getUserDetailsByUsername(anyString(), anyString())).thenThrow(exception);
+        
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
+        
+        // Verify that OAuth2AuthenticationException is thrown
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+    }
+
+    @Test
+    void testAuthenticateFailureWithCaptchaSettings() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_FIVE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup session mock
+        when(request.getSession()).thenReturn(session);
+        when(request.getSession(false)).thenReturn(session);
+        
+        // Setup user with wrong password and captcha settings
+        UserDetailsResponse userDetailsResponse = getUser();
+        userDetailsResponse.setPassword("differentPassword");
+        userDetailsResponse.setFailureLoginAttempts(FAILURE_ATTEMPTS_TWO);
+        userDetailsResponse.getCaptcha().put(USER_CAPTCHA_REQUIRED, true);
+        userDetailsResponse.getCaptcha().put(USER_ENFORCE_AFTER_NO_OF_FAILURES, MAX_ATTEMPTS_THREE);
+        
+        doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, "wrongPassword", TEST_ACCOUNT_NAME, null);
+        
+        // Verify authentication fails
+        assertThrows(BadCredentialsException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        // Verify session attributes were set for captcha
+        verify(session).setAttribute(eq(SESSION_USER_RESPONSE_CAPTCHA_ENABLED), eq(true));
+        verify(session).setAttribute(eq(SESSION_USER_RESPONSE_ENFORCE_AFTER_NO_OF_FAILURES), 
+            eq(MAX_ATTEMPTS_THREE));
+        verify(session).setAttribute(eq(LOGIN_ATTEMPT), eq(MAX_ATTEMPTS_THREE));
+    }
+
+    @Test
+    void testAuthenticateFailureNearMaxAttempts() {
+        // Setup tenant properties mock
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_FIVE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup session mock
+        when(request.getSession()).thenReturn(session);
+        when(request.getSession(false)).thenReturn(session);
+        
+        // Setup user with wrong password and 4 previous failures (next will be 5th = max)
+        UserDetailsResponse userDetailsResponse = getUser();
+        userDetailsResponse.setPassword("differentPassword");
+        userDetailsResponse.setFailureLoginAttempts(FAILURE_ATTEMPTS_THREE); // Next attempt will be 4
+        userDetailsResponse.getCaptcha().put(USER_CAPTCHA_REQUIRED, false);
+        userDetailsResponse.getCaptcha().put(USER_ENFORCE_AFTER_NO_OF_FAILURES, MAX_ATTEMPTS_FIVE);
+        
+        doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, "wrongPassword", TEST_ACCOUNT_NAME, null);
+        
+        // Verify authentication fails (but not locked yet)
+        BadCredentialsException exception = assertThrows(BadCredentialsException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        assertEquals("Bad credentials", exception.getMessage());
+        
+        // Verify failure metrics were incremented
+        verify(authorizationMetricsService).incrementMetricsForTenant(eq("test-tenant"), 
+            eq(MetricType.FAILURE_LOGIN_WRONG_PASSWORD), eq(MetricType.FAILURE_LOGIN_ATTEMPTS));
+    }
+
+    @Test
+    void testSupportsCustomUserPwdAuthenticationToken() {
+        assertTrue(customUserPwdAuthenticationProvider.supports(CustomUserPwdAuthenticationToken.class));
+    }
+
+    @Test
+    void testDoesNotSupportOtherAuthenticationTypes() {
+        assertFalse(customUserPwdAuthenticationProvider.supports(
+            UsernamePasswordAuthenticationToken.class));
+        assertFalse(customUserPwdAuthenticationProvider.supports(
+            OAuth2AuthorizationCodeRequestAuthenticationToken.class));
     }
 
 }
