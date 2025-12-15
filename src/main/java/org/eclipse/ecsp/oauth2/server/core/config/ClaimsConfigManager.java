@@ -640,11 +640,13 @@ public class ClaimsConfigManager {
             LOGGER.debug("Scope and Scopes bifurcation not required - "
                     + "Single Role Client or tenant.client.oauth-scope-customization = false");
             addScopeAndScopesForSingleRoleClient(claimsBuilder, scopeSet);
-        } else {
+        } else if (clientDetails != null) {
             LOGGER.debug("Scope and Scopes bifurcation required - Multi Role Client"
                     + " or tenant.client.oauth-scope-customization = true");
             addScopeAndScopesForMultiRoleClient(clientDetails, userDetailsResponse, claimsBuilder,
                     scopeSet, isClientCredentialsGrantType);
+        } else {
+            LOGGER.warn("ClientDetails is null, skipping scope and scopes bifurcation for multi-role client");
         }
         LOGGER.debug("## addScopeAndScopes - END");
     }
