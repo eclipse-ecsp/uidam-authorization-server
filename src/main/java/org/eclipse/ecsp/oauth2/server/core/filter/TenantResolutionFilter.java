@@ -599,7 +599,13 @@ public class TenantResolutionFilter implements Filter {
                 String afterWellKnown = requestUri.substring(wellKnownIndex + wellKnownPath.length());
                 
                 // Remove trailing slashes and extract tenant ID
-                afterWellKnown = afterWellKnown.replaceAll("^/+|/+$", "").trim();
+                while (afterWellKnown.startsWith("/")) {
+                    afterWellKnown = afterWellKnown.substring(1);
+                }
+                while (afterWellKnown.endsWith("/")) {
+                    afterWellKnown = afterWellKnown.substring(0, afterWellKnown.length() - 1);
+                }
+                afterWellKnown = afterWellKnown.trim();
                 
                 if (StringUtils.hasText(afterWellKnown)) {
                     // Take only the first segment as tenant ID (in case there are more path segments)
