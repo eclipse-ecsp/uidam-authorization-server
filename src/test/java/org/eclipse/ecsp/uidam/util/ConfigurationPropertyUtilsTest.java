@@ -282,4 +282,182 @@ class ConfigurationPropertyUtilsTest {
         String result = ConfigurationPropertyUtils.constructTenantPropertyKey("tenant1", "jdbc-url");
         assertEquals("tenants.profile.tenant1.jdbc-url", result);
     }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_WithEmptyEnvVarAndProperty() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("TENANT1_POSTGRES_DATASOURCE")).thenReturn("");
+        when(environment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn("");
+        String templateUrl = "jdbc:postgresql://globalhost:5432/defaultdb";
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("tenant1", environment, templateUrl);
+        
+        // Then
+        assertEquals("jdbc:postgresql://globalhost:5432/tenant1", result);
+    }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_WithInvalidTemplateUrl() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("TENANT1_POSTGRES_DATASOURCE")).thenReturn(null);
+        when(environment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn(null);
+        String templateUrl = "invalid-url-format";
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("tenant1", environment, templateUrl);
+        
+        // Then
+        assertNull(result);
+    }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_WithComplexQueryParameters() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("TENANT1_POSTGRES_DATASOURCE")).thenReturn(null);
+        when(environment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn(null);
+        String templateUrl = "jdbc:postgresql://host:5432/db?ssl=true&sslmode=require&currentSchema=public";
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("tenant1", environment, templateUrl);
+        
+        // Then
+        assertEquals("jdbc:postgresql://host:5432/tenant1?ssl=true&sslmode=require&currentSchema=public", result);
+    }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_WithEmptyTemplateUrl() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("TENANT1_POSTGRES_DATASOURCE")).thenReturn(null);
+        when(environment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn(null);
+        String templateUrl = "";
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("tenant1", environment, templateUrl);
+        
+        // Then
+        assertNull(result);
+    }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_WhitespaceTenantId() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("   ", environment, null);
+        
+        // Then
+        assertNull(result);
+    }
+    
+    @Test
+    void testGetPropertyWithDefault_PropertyNotFound() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("missing.property", "default-value"))
+            .thenReturn("default-value");
+        
+        // When
+        String result = ConfigurationPropertyUtils.getPropertyWithDefault(
+            environment, "missing.property", "default-value");
+        
+        // Then
+        assertEquals("default-value", result);
+    }
+    
+    @Test
+    void testGetBooleanProperty_DefaultValue() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("missing.boolean", Boolean.class, true))
+            .thenReturn(true);
+        
+        // When
+        boolean result = ConfigurationPropertyUtils.getBooleanProperty(
+            environment, "missing.boolean", true);
+        
+        // Then
+        assertTrue(result);
+    }
+    
+    @Test
+    void testGetBooleanProperty_FalseValue() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("test.boolean", Boolean.class, true))
+            .thenReturn(false);
+        
+        // When
+        boolean result = ConfigurationPropertyUtils.getBooleanProperty(
+            environment, "test.boolean", true);
+        
+        // Then
+        assertFalse(result);
+    }
+    
+    @Test
+    void testConstructTenantPropertyKey_WithComplexSuffix() {
+        // When
+        String result = ConfigurationPropertyUtils.constructTenantPropertyKey(
+            "tenant1", "key-store.key-store-password");
+        
+        // Then
+        assertEquals("tenants.profile.tenant1.key-store.key-store-password", result);
+    }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_UrlWithPortOnly() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("TENANT1_POSTGRES_DATASOURCE")).thenReturn(null);
+        when(environment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn(null);
+        String templateUrl = "jdbc:postgresql://localhost/defaultdb";
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("tenant1", environment, templateUrl);
+        
+        // Then
+        assertEquals("jdbc:postgresql://localhost/tenant1", result);
+    }
+    
+    @Test
+    void testGenerateTenantJdbcUrl_UrlWithIpAddress() {
+        // Given
+        Environment environment = Mockito.mock(Environment.class);
+        when(environment.getProperty("TENANT1_POSTGRES_DATASOURCE")).thenReturn(null);
+        when(environment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn(null);
+        String templateUrl = "jdbc:postgresql://192.168.1.100:5432/defaultdb";
+        
+        // When
+        String result = ConfigurationPropertyUtils.generateTenantJdbcUrl("tenant1", environment, templateUrl);
+        
+        // Then
+        assertEquals("jdbc:postgresql://192.168.1.100:5432/tenant1", result);
+    }
+    
+    @Test
+    void testIsPropertyDefined_WithSpacesInValue() {
+        // When & Then
+        assertTrue(ConfigurationPropertyUtils.isPropertyDefined("  value with spaces  "));
+    }
+    
+    @Test
+    void testConstructorThrowsException() {
+        // When & Then
+        try {
+            java.lang.reflect.Constructor<ConfigurationPropertyUtils> constructor =
+                ConfigurationPropertyUtils.class.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            constructor.newInstance();
+            // Should not reach here
+            assertTrue(false, "Expected UnsupportedOperationException");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof UnsupportedOperationException);
+        }
+    }
 }
