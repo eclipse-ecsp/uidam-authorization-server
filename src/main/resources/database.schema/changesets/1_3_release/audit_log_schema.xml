@@ -1,0 +1,107 @@
+
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ~ Copyright (c) 2024-25 Harman International
+  ~ SPDX-License-Identifier: Apache-2.0
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+          http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+
+    <!-- 1) Create table only if it does NOT exist -->
+    <changeSet id="audit-log-table" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><tableExists tableName="audit_log"/></not>
+        </preConditions>
+
+        <createTable tableName="audit_log">
+            <column name="ID" type="${BIG_INTEGER}" defaultValueComputed="${UUID_FUNCTION}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="EVENT_TYPE" type="${STRING_SMALL}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="COMPONENT" type="${STRING_SMALL}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RESULT" type="${STRING_TINY}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TIMESTAMP" type="${DATE_TIME_TZ}" defaultValueComputed="${SYSTEM_DATETIME}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="TENANT_ID" type="${STRING_SMALL}"/>
+            <column name="ACTOR_ID" type="${STRING_SMALL}"/>
+            <column name="ACTOR_TYPE" type="${STRING_TINY}"/>
+            <column name="TARGET_ID" type="${STRING_SMALL}"/>
+            <column name="TARGET_TYPE" type="${STRING_SMALL}"/>
+            <column name="SOURCE_IP_ADDRESS" type="${STRING_TINY}"/>
+            <column name="CORRELATION_ID" type="${STRING_SMALL}"/>
+            <column name="ACTOR_CONTEXT" type="JSONB"/>
+            <column name="TARGET_CONTEXT" type="JSONB"/>
+            <column name="REQUEST_CONTEXT" type="JSONB"/>
+            <column name="AUTHENTICATION_CONTEXT" type="JSONB"/>
+            <column name="FAILURE_CODE" type="${STRING_TINY}"/>
+            <column name="FAILURE_REASON" type="${STRING_SMALL}"/>
+            <column name="BEFORE_VALUE" type="JSONB"/>
+            <column name="AFTER_VALUE" type="JSONB"/>
+            <column name="ADDITIONAL_DATA" type="JSONB"/>
+            <column name="MESSAGE" type="${CLOB}"/>
+        </createTable>
+    </changeSet>
+
+    <!-- 2) Add PK only if not present -->
+    <changeSet id="audit-log-pk" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><primaryKeyExists tableName="audit_log" primaryKeyName="audit_log_pkey"/></not>
+        </preConditions>
+        <addPrimaryKey columnNames="ID" constraintName="audit_log_pkey" tableName="audit_log"/>
+    </changeSet>
+
+    <!-- 3) Indexes, each guarded by its own changeSet -->
+    <changeSet id="idx-audit-log-event-type" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><indexExists tableName="audit_log" indexName="IDX_AUDIT_LOG_EVENT_TYPE"/></not>
+        </preConditions>
+        <createIndex indexName="IDX_AUDIT_LOG_EVENT_TYPE" tableName="audit_log">
+            <column name="EVENT_TYPE"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="idx-audit-log-component" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><indexExists tableName="audit_log" indexName="IDX_AUDIT_LOG_COMPONENT"/></not>
+        </preConditions>
+        <createIndex indexName="IDX_AUDIT_LOG_COMPONENT" tableName="audit_log">
+            <column name="COMPONENT"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="idx-audit-log-result" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><indexExists tableName="audit_log" indexName="IDX_AUDIT_LOG_RESULT"/></not>
+        </preConditions>
+        <createIndex indexName="IDX_AUDIT_LOG_RESULT" tableName="audit_log">
+            <column name="RESULT"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="idx-audit-log-actor-id" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><indexExists tableName="audit_log" indexName="IDX_AUDIT_LOG_ACTOR_ID"/></not>
+        </preConditions>
+        <createIndex indexName="IDX_AUDIT_LOG_ACTOR_ID" tableName="audit_log">
+            <column name="ACTOR_ID"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="idx-audit-log-target-id" author="UIDAM Team">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not><indexExists tableName="audit_log" indexName="IDX_AUDIT_LOG_TARGET_ID"/></not>
+        </preConditions>
+        <createIndex indexName="IDX_AUDIT_LOG_TARGET_ID" tableName="audit_log">
+            <column name="TARGET_ID"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

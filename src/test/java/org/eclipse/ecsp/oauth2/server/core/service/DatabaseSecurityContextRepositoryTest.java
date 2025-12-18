@@ -21,12 +21,12 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.SneakyThrows;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.AccountProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MultiTenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.entities.AuthorizationSecurityContext;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationSecurityContextRepository;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -125,10 +125,10 @@ class DatabaseSecurityContextRepositoryTest {
         when(accountProperties.getAccountName()).thenReturn(ACCOUNT_NAME);
         when(tenantProperties.getAccount()).thenReturn(accountProperties);
         
-        // Mock multiTenantProperties.getTenants() to return a map with the ecsp tenant
+        // Mock multiTenantProperties.getProfile() to return a map with the ecsp tenant
         Map<String, TenantProperties> tenantsMap = new HashMap<>();
         tenantsMap.put("ecsp", tenantProperties);
-        when(multiTenantProperties.getTenants()).thenReturn(tenantsMap);
+        when(multiTenantProperties.getProfile()).thenReturn(tenantsMap);
         
         // Set up tenant context for multi-tenancy tests
         TenantContext.setCurrentTenant("ecsp");
