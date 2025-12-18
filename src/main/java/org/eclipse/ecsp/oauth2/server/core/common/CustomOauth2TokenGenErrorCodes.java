@@ -46,6 +46,7 @@ public enum CustomOauth2TokenGenErrorCodes {
     MISSING_FIELD_IN_REQUEST_BODY("TG-015", "User/Client id is missing in request body!", 400),
     USER_NOT_FOUND("TG-016", "User not found", 404),
     USER_NOT_ACTIVE("TG-020", "User is not active", 403),
+    ACCOUNT_NOT_FOUND("TG-021", "Account not found or user not associated with account", 403),
     RECORD_ALREADY_EXISTS("TG-017", "Record already exists", 409),
     RESOURCE_NOT_FOUND("TG-018", "Resource not found", 404),
     BAD_REQUEST("TG-019", "Bad Request", 400);

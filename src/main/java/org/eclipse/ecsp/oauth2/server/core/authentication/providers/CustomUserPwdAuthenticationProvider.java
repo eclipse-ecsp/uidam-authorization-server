@@ -20,6 +20,12 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.providers;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.PasswordAuthenticationContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
@@ -38,6 +44,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -58,11 +65,13 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessa
 public class CustomUserPwdAuthenticationProvider implements AuthenticationProvider {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomUserPwdAuthenticationProvider.class);
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private final UserManagementClient userManagementClient;
     private final TenantConfigurationService tenantConfigurationService;
     private final HttpServletRequest request;
     private final AuthorizationMetricsService metricsService;
+    private final AuditLogger auditLogger;
 
     /**
      * Constructor for CustomUserPwdAuthenticationProvider.
@@ -70,15 +79,19 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
      * @param userManagementClient the user management client
      * @param tenantConfigurationService the tenant configuration service
      * @param request the HTTP servlet request
+     * @param metricsService the authorization metrics service
+     * @param auditLogger the audit logger
      */
     public CustomUserPwdAuthenticationProvider(UserManagementClient userManagementClient,
                                                TenantConfigurationService tenantConfigurationService,
                                                HttpServletRequest request,
-                                               AuthorizationMetricsService metricsService) {
+                                               AuthorizationMetricsService metricsService,
+                                               AuditLogger auditLogger) {
         this.userManagementClient = userManagementClient;
         this.tenantConfigurationService = tenantConfigurationService;
         this.request = request;
         this.metricsService = metricsService;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -104,11 +117,18 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
         int maxAllowedLoginAttempt = tenantProperties.getUser().getMaxAllowedLoginAttempts();
         String tenantId = tenantProperties.getTenantId();
         String username = customUserPwdAuthenticationToken.getPrincipal() + "";
-        String password = customUserPwdAuthenticationToken.getCredentials() + "";
         String accountName = customUserPwdAuthenticationToken.getAccountName();
         LOGGER.debug("Authenticating user details for username {}", username);
         metricsService.incrementMetricsForTenant(tenantId, MetricType.TOTAL_LOGIN_ATTEMPTS);
-        UserDetailsResponse userDetailsResponse = userManagementClient.getUserDetailsByUsername(username, accountName);
+        
+        UserDetailsResponse userDetailsResponse;
+        try {
+            userDetailsResponse = userManagementClient.getUserDetailsByUsername(username, accountName);
+        } catch (OAuth2AuthenticationException ex) {
+            logAuthenticationException(ex, username, accountName);
+            throw ex;
+        }
+        String password = customUserPwdAuthenticationToken.getCredentials() + "";
         String encryptedUserEnteredPassword = PasswordUtils.getSecurePassword(password,
             userDetailsResponse.getPasswordEncoder(), userDetailsResponse.getSalt());
         if (!encryptedUserEnteredPassword.equals(userDetailsResponse.getPassword())) {
@@ -120,6 +140,9 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
                 IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE_BAD_CREDENTIALS_MSG,
                 userDetailsResponse.getId());
             int loginAttempt = userDetailsResponse.getFailureLoginAttempts() + 1;
+            
+            logFailedAuthentication(userDetailsResponse, username, accountName, 
+                AuditEventType.AUTH_FAILURE_WRONG_PASSWORD, loginAttempt);
 
             setRecaptchaSession(loginAttempt, userDetailsResponse.getCaptcha().get(USER_CAPTCHA_REQUIRED),
                 userDetailsResponse.getCaptcha().get(USER_ENFORCE_AFTER_NO_OF_FAILURES));
@@ -128,6 +151,8 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
                 metricsService.incrementMetricsForTenant(tenantId,
                                                         MetricType.FAILURE_LOGIN_USER_BLOCKED,
                                                         MetricType.FAILURE_LOGIN_ATTEMPTS);
+                logFailedAuthentication(userDetailsResponse, username, accountName,
+                    AuditEventType.AUTH_FAILURE_ACCOUNT_LOCKED, loginAttempt);
                 throw new BadCredentialsException(USER_LOCKED_ERROR);
             }
             throw new BadCredentialsException("Bad credentials");
@@ -136,9 +161,123 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
         metricsService.incrementMetricsForTenant(tenantId, MetricType.SUCCESS_LOGIN_ATTEMPTS);
         addUserEvent(userEvent, IgniteOauth2CoreConstants.USER_EVENT_LOGIN_SUCCESS,
             IgniteOauth2CoreConstants.USER_EVENT_LOGIN_SUCCESS_MSG, userDetailsResponse.getId());
+        
+        logSuccessfulAuthentication(userDetailsResponse, username, accountName);
+        
         List<GrantedAuthority> grantedAuthorities = userDetailsResponse.getScopes().stream()
             .map(SimpleGrantedAuthority::new).collect(Collectors.toList());
         return CustomUserPwdAuthenticationToken.authenticated(username, password, accountName, grantedAuthorities);
+    }
+    
+    private void logSuccessfulAuthentication(UserDetailsResponse userDetailsResponse,
+                                            String username,
+                                            String accountName) {
+        try {
+            String accountIdStr = userDetailsResponse.getAccountId();
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(userDetailsResponse.getId())
+                .username(username)
+                .accountId(accountIdStr)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            auditLogger.log(
+                AuditEventType.AUTH_SUCCESS_PASSWORD.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.SUCCESS,
+                AuditEventType.AUTH_SUCCESS_PASSWORD.getDescription(),
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for AUTH_SUCCESS_PASSWORD: userId={}", userDetailsResponse.getId());
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for AUTH_SUCCESS_PASSWORD: {}", e.getMessage(), e);
+        }
+    }
+    
+    private void logFailedAuthentication(UserDetailsResponse userDetailsResponse,
+                                        String username,
+                                        String accountName,
+                                        AuditEventType eventType,
+                                        int failedAttempts) {
+        try {
+            String accountIdStr = userDetailsResponse.getAccountId();
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(userDetailsResponse.getId())
+                .username(username)
+                .accountId(accountIdStr)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            PasswordAuthenticationContext authContext = PasswordAuthenticationContext.builder()
+                .failedAttempts(failedAttempts)
+                .authType("password")
+                .build();
+            
+            auditLogger.log(
+                eventType.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                eventType.getDescription(),
+                actorContext,
+                null,  // TargetContext
+                requestContext,
+                authContext
+            );
+            
+            LOGGER.debug("Audit log created for {}: userId={}, failedAttempts={}", 
+                eventType, userDetailsResponse.getId(), failedAttempts);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for {}: {}", eventType, e.getMessage(), e);
+        }
+    }
+    
+    private void logAuthenticationException(OAuth2AuthenticationException ex, 
+                                           String username, 
+                                           String accountName) {
+        try {
+            String errorCode = ex.getError().getErrorCode();
+            AuditEventType eventType;
+            
+            if ("USER_NOT_FOUND".equals(errorCode)) {
+                eventType = AuditEventType.AUTH_FAILURE_USER_NOT_FOUND;
+            } else if ("USER_NOT_ACTIVE".equals(errorCode)) {
+                eventType = AuditEventType.AUTH_FAILURE_USER_BLOCKED;
+            } else if ("ACCOUNT_NOT_FOUND".equals(errorCode)) {
+                eventType = AuditEventType.AUTH_FAILURE_ACCOUNT_NOT_FOUND;
+            } else {
+                // Generic authentication failure - don't audit unknown error codes
+                return;
+            }
+            
+            // For user not found/blocked, we don't have userId
+            UserActorContext actorContext = UserActorContext.builder()
+                .username(username)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            auditLogger.log(
+                eventType.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                ex.getError().getDescription(),
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for {}: username={}", eventType, username);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for authentication exception: {}", e.getMessage(), e);
+        }
     }
 
     /**

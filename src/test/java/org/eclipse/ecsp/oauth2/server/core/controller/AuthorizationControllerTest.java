@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
 import io.prometheus.client.CollectorRegistry;
+import org.eclipse.ecsp.audit.repository.AuditRepository;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
 import org.eclipse.ecsp.oauth2.server.core.config.KeyStoreConfigByJavaKeyStore;
 import org.eclipse.ecsp.oauth2.server.core.config.KeyStoreConfigByPubPvtKey;
@@ -76,6 +77,9 @@ import static org.mockito.Mockito.when;
 @AutoConfigureWebTestClient(timeout = "3600000")
 @ContextConfiguration(classes = {AuthorizationControllerTest.TestConfig.class})
 class AuthorizationControllerTest {
+    @MockitoBean
+    AuditRepository auditRepository;
+
     @MockitoBean
     AuthorizationRepository authorizationRepository;
 

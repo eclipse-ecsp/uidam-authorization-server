@@ -28,4 +28,7 @@
   <!-- Release 1.0 -->
   <include file="changesets/1_0_release/initial_schema.xml" relativeToChangelogFile="true" />
 
+  <!-- Release 1.3 - Audit Log Framework -->
+  <include file="changesets/1_3_release/audit_log_schema.xml" relativeToChangelogFile="true" />
+
 </databaseChangeLog>

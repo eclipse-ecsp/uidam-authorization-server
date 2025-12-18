@@ -20,6 +20,7 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.filters;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.exception.PatternMismatchException;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
@@ -56,12 +57,15 @@ public class CustomUserPwdAuthenticationFilter extends UsernamePasswordAuthentic
      * @param authenticationManager The AuthenticationManager to be used for authenticating requests.
      * @param tenantConfigurationService The TenantConfigurationService to be used for configuring tenants.
      * @param authorizationMetricsService The AuthorizationMetricsService to be used for metrics collection.
+     * @param auditLogger The AuditLogger for logging authentication events.
      */
     public CustomUserPwdAuthenticationFilter(AuthenticationManager authenticationManager,
                                              TenantConfigurationService tenantConfigurationService,
-                                             AuthorizationMetricsService authorizationMetricsService) {
+                                             AuthorizationMetricsService authorizationMetricsService,
+                                             AuditLogger auditLogger) {
         super(authenticationManager);
-        captchaServiceImpl = new CaptchaServiceImpl(tenantConfigurationService, authorizationMetricsService);
+        captchaServiceImpl = new CaptchaServiceImpl(tenantConfigurationService, authorizationMetricsService,
+                                                    auditLogger);
     }
 
     /**
