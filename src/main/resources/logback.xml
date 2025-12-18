@@ -127,6 +127,20 @@
             <else><appender-ref ref="ASYNC-STDOUT" /></else>
         </if>
     </logger>
+    <logger name="org.eclipse.ecsp.uidam.config.TenantDefaultPropertiesProcessor"
+        level="INFO" additivity="false">
+        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
+            <then><appender-ref ref="ASYNC-GELF" /></then>
+            <else><appender-ref ref="ASYNC-STDOUT" /></else>
+        </if>
+    </logger>
+    <logger name="org.eclipse.ecsp.uidam.config.ConfigRefreshListener"
+        level="INFO" additivity="false">
+        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
+            <then><appender-ref ref="ASYNC-GELF" /></then>
+            <else><appender-ref ref="ASYNC-STDOUT" /></else>
+        </if>
+    </logger>
     <logger name="org.eclipse.ecsp.oauth2.server.core"
         level="${SVC_LOG_LEVEL}" additivity="false">
         <if condition='p("GRAYLOG_ENABLED").contains("true")'>
