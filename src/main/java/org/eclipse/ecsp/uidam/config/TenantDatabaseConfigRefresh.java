@@ -32,7 +32,6 @@ package org.eclipse.ecsp.uidam.config;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,23 +44,23 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Configuration class to enable dynamic refresh of MultiTenantDatabaseProperties.
+ * Configuration class to enable dynamic refresh of tenant database configuration map.
  * 
  * <p>This implementation uses a wrapper approach to work around the limitation that
- * the SQL-DAO library's MultiTenantDatabaseProperties is not refresh-scoped by default.
+ * the SQL-DAO library's tenant config map is not refresh-scoped by default.
  * 
  * <p>Strategy:
  * <ol>
  * <li>Create a separate RefreshableTenantConfig bean with @RefreshScope</li>
  * <li>This wrapper bean gets updated when /actuator/refresh is called</li>
- * <li>Manually sync the updated tenant properties to SQL-DAO's MultiTenantDatabaseProperties</li>
+ * <li>Manually sync the updated tenant properties to SQL-DAO's tenant config map</li>
  * <li>TenantAwareDataSource uses the updated properties from SQL-DAO bean</li>
  * </ol>
  * 
  * <p>This approach avoids using @Primary which might cause bean injection conflicts,
  * and instead maintains the original SQL-DAO bean while providing a refresh mechanism.
  *
- * @see org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties
+ * @see org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties
  */
 @Configuration
 public class TenantDatabaseConfigRefresh {
@@ -70,7 +69,7 @@ public class TenantDatabaseConfigRefresh {
 
     /**
      * Wrapper class for tenant database properties that supports refresh.
-     * This is a duplicate of MultiTenantDatabaseProperties structure but with RefreshScope support.
+     * This mirrors the structure from sql-dao's TenantConfig but with RefreshScope support.
      */
     @Getter
     @Setter
@@ -96,26 +95,27 @@ public class TenantDatabaseConfigRefresh {
     }
 
     /**
-     * Synchronizes tenant properties from the refreshable wrapper to SQL-DAO's MultiTenantDatabaseProperties.
+     * Synchronizes tenant properties from the refreshable wrapper to SQL-DAO's tenant config map.
      * 
      * <p>This method should be called after /actuator/refresh to update the SQL-DAO bean
      * with the latest tenant configurations from the refreshable wrapper bean.
      *
-     * @param sqlDaoProperties the SQL-DAO MultiTenantDatabaseProperties bean
+     * @param sqlDaoProperties the SQL-DAO tenant config map bean
      * @param refreshableConfig the refreshable wrapper bean with updated properties
      */
     public void syncTenantProperties(
-            MultiTenantDatabaseProperties sqlDaoProperties,
+            Map<String, TenantDatabaseProperties> sqlDaoProperties,
             RefreshableTenantConfig refreshableConfig) {
         
         Map<String, TenantDatabaseProperties> updatedProfile = refreshableConfig.getProfile();
         
-        LOGGER.info("Syncing tenant properties from RefreshableTenantConfig to SQL-DAO MultiTenantDatabaseProperties");
+        LOGGER.info("Syncing tenant properties from RefreshableTenantConfig to SQL-DAO tenant config map");
         LOGGER.info("Updated tenant count: {}, Tenant IDs: {}", 
                    updatedProfile.size(), updatedProfile.keySet());
         
-        // Update the SQL-DAO bean with new tenant properties
-        sqlDaoProperties.setProfile(updatedProfile);
+        // Update the SQL-DAO map with new tenant properties
+        sqlDaoProperties.clear();
+        sqlDaoProperties.putAll(updatedProfile);
         
         LOGGER.info("Successfully synced tenant database properties to SQL-DAO bean");
     }

@@ -30,7 +30,6 @@
 
 package org.eclipse.ecsp.uidam.config;
 
-import org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,7 +55,7 @@ import static org.mockito.Mockito.verify;
 class TenantDatabaseConfigRefreshTest {
 
     @Mock
-    private MultiTenantDatabaseProperties sqlDaoProperties;
+    private Map<String, TenantDatabaseProperties> sqlDaoProperties;
 
     private TenantDatabaseConfigRefresh config;
     private TenantDatabaseConfigRefresh.RefreshableTenantConfig refreshableConfig;
@@ -104,7 +103,8 @@ class TenantDatabaseConfigRefreshTest {
         config.syncTenantProperties(sqlDaoProperties, refreshableConfig);
 
         // Assert
-        verify(sqlDaoProperties).setProfile(updatedTenants);
+        verify(sqlDaoProperties).clear();
+        verify(sqlDaoProperties).putAll(updatedTenants);
     }
 
     @Test
@@ -131,7 +131,8 @@ class TenantDatabaseConfigRefreshTest {
 
         // Assert
         final int expectedTenantCount = 2;
-        verify(sqlDaoProperties).setProfile(updatedTenants);
+        verify(sqlDaoProperties).clear();
+        verify(sqlDaoProperties).putAll(updatedTenants);
         assertEquals(expectedTenantCount, updatedTenants.size());
     }
 
@@ -145,7 +146,8 @@ class TenantDatabaseConfigRefreshTest {
         config.syncTenantProperties(sqlDaoProperties, refreshableConfig);
 
         // Assert
-        verify(sqlDaoProperties).setProfile(emptyTenants);
+        verify(sqlDaoProperties).clear();
+        verify(sqlDaoProperties).putAll(emptyTenants);
     }
 
     @Test
@@ -188,7 +190,8 @@ class TenantDatabaseConfigRefreshTest {
 
         // Assert
         final int expectedTenantCount = 3;
-        verify(sqlDaoProperties).setProfile(updatedTenants);
+        verify(sqlDaoProperties).clear();
+        verify(sqlDaoProperties).putAll(updatedTenants);
         assertEquals(expectedTenantCount, updatedTenants.size());
     }
 
@@ -259,7 +262,8 @@ class TenantDatabaseConfigRefreshTest {
         config.syncTenantProperties(sqlDaoProperties, refreshableConfig);
 
         // Assert
-        verify(sqlDaoProperties).setProfile(updatedTenants);
+        verify(sqlDaoProperties).clear();
+        verify(sqlDaoProperties).putAll(updatedTenants);
         TenantDatabaseProperties syncedProps = updatedTenants.get("tenant1");
         assertEquals(minPoolSize, syncedProps.getMinPoolSize());
         assertEquals(maxPoolSize, syncedProps.getMaxPoolSize());
@@ -289,7 +293,8 @@ class TenantDatabaseConfigRefreshTest {
         config.syncTenantProperties(sqlDaoProperties, refreshableConfig);
 
         // Assert
-        verify(sqlDaoProperties).setProfile(originalTenants);
+        verify(sqlDaoProperties).clear();
+        verify(sqlDaoProperties).putAll(originalTenants);
         assertEquals(1, originalTenants.size());
         assertTrue(originalTenants.containsKey("tenant1"));
     }

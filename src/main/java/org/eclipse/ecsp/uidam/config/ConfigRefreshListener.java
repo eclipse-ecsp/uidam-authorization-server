@@ -31,7 +31,6 @@
 package org.eclipse.ecsp.uidam.config;
 
 import org.eclipse.ecsp.oauth2.server.core.config.LiquibaseConfig;
-import org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties;
 import org.eclipse.ecsp.sql.multitenancy.TenantAwareDataSource;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.slf4j.Logger;
@@ -91,7 +90,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
     private TenantDefaultPropertiesProcessor tenantDefaultPropertiesProcessor;
 
     @Autowired
-    private MultiTenantDatabaseProperties multiTenantDatabaseProperties;
+    private Map<String, TenantDatabaseProperties> multiTenantDatabaseProperties;
 
     @Autowired
     private LiquibaseConfig liquibaseConfig;

@@ -30,7 +30,6 @@
 
 package org.eclipse.ecsp.uidam.config;
 
-import org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +47,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -65,7 +65,7 @@ class MultitenancySystemPropertyConfigTest {
     private Environment environment;
 
     @Mock
-    private MultiTenantDatabaseProperties multiTenantDbProperties;
+    private Map<String, TenantDatabaseProperties> multiTenantDbProperties;
 
     @InjectMocks
     private MultitenancySystemPropertyConfig config;
@@ -136,7 +136,8 @@ class MultitenancySystemPropertyConfigTest {
         tenant2Props.setJdbcUrl("jdbc:postgresql://localhost:5432/tenant2");
         tenantProperties.put("tenant2", tenant2Props);
         
-        when(multiTenantDbProperties.getProfile()).thenReturn(tenantProperties);
+        when(multiTenantDbProperties.get("tenant1")).thenReturn(tenant1Props);
+        when(multiTenantDbProperties.get("tenant2")).thenReturn(tenant2Props);
 
         // Act
         config.refreshTenantSystemProperties();
@@ -250,7 +251,8 @@ class MultitenancySystemPropertyConfigTest {
         tenantProperties.put("tenant1", tenant1Props);
         tenantProperties.put("tenant2", tenant2Props);
         
-        when(multiTenantDbProperties.getProfile()).thenReturn(tenantProperties);
+        when(multiTenantDbProperties.get("tenant1")).thenReturn(tenant1Props);
+        when(multiTenantDbProperties.get("tenant2")).thenReturn(tenant2Props);
 
         // Act
         config.refreshTenantSystemProperties();
@@ -258,7 +260,7 @@ class MultitenancySystemPropertyConfigTest {
         // Assert
         final int expectedGetTenantsCalls = 2;
         assertEquals("tenant1,tenant2", System.getProperty("multi.tenant.ids"));
-        verify(multiTenantDbProperties, times(expectedGetTenantsCalls)).getProfile();
+        verify(multiTenantDbProperties, times(expectedGetTenantsCalls)).get(anyString());
     }
 
     @Test

@@ -30,7 +30,6 @@
 
 package org.eclipse.ecsp.uidam.config;
 
-import org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +39,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 import javax.annotation.PostConstruct;
+import java.util.Map;
 /**
  * Configuration class to bridge Spring application properties to System properties
  * for multitenancy support.
@@ -61,7 +61,7 @@ public class MultitenancySystemPropertyConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger(MultitenancySystemPropertyConfig.class);
 
     @Autowired(required = false)
-    private MultiTenantDatabaseProperties multiTenantDbProperties;
+    private Map<String, TenantDatabaseProperties> multiTenantDbProperties;
 
     @Autowired
     private Environment environment;
@@ -147,19 +147,19 @@ public class MultitenancySystemPropertyConfig {
     
     /**
      * Logs database properties for a single tenant.
-     * Fetches properties from MultiTenantDatabaseProperties following the pattern
-     * used in sql-dao's PostgresDbConfig: multiTenantDbProperties.getProfile().get(tenantId)
+     * Fetches properties from TenantDatabaseProperties map following the pattern
+     * used in sql-dao's PostgresDbConfig: multiTenantDbProperties.get(tenantId)
      *
      * @param tenantId the tenant ID
      */
     private void logSingleTenantProperties(String tenantId) {
         if (multiTenantDbProperties == null) {
-            LOGGER.warn("MultiTenantDatabaseProperties is not available. "
+            LOGGER.warn("TenantDatabaseProperties map is not available. "
                     + "Skipping tenant database property logging for tenant: {}", tenantId);
             return;
         }
         
-        TenantDatabaseProperties tenantDbProps = multiTenantDbProperties.getProfile().get(tenantId);
+        TenantDatabaseProperties tenantDbProps = multiTenantDbProperties.get(tenantId);
         
         if (tenantDbProps == null) {
             LOGGER.warn("No database properties found for tenant: {}", tenantId);

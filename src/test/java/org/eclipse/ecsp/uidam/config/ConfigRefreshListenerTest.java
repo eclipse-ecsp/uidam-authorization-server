@@ -31,7 +31,6 @@
 package org.eclipse.ecsp.uidam.config;
 
 import org.eclipse.ecsp.oauth2.server.core.config.LiquibaseConfig;
-import org.eclipse.ecsp.sql.multitenancy.MultiTenantDatabaseProperties;
 import org.eclipse.ecsp.sql.multitenancy.TenantAwareDataSource;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,9 +78,6 @@ class ConfigRefreshListenerTest {
 
     @Mock
     private TenantDefaultPropertiesProcessor tenantDefaultPropertiesProcessor;
-
-    @Mock
-    private MultiTenantDatabaseProperties multiTenantDatabaseProperties;
 
     @Mock
     private LiquibaseConfig liquibaseConfig;

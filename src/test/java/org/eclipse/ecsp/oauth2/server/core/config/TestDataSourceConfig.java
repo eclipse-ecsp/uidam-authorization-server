@@ -54,9 +54,9 @@ public class TestDataSourceConfig {
      * @throws Exception if mocking fails
      */
     @Bean("targetDataSources")
-    public Map<Object, Object> targetDataSources() throws Exception {
+    public Map<String, javax.sql.DataSource> targetDataSources() throws Exception {
         // Provide mock targetDataSources bean required by TenantAwareDataSource
-        final Map<Object, Object> dataSources = new HashMap<>();
+        final Map<String, javax.sql.DataSource> dataSources = new HashMap<>();
         
         // Create a mock datasource with proper connection mocking
         javax.sql.DataSource mockDataSource = Mockito.mock(javax.sql.DataSource.class);
