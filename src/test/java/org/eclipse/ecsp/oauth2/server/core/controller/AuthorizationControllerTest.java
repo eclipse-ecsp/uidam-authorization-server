@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
 import io.prometheus.client.CollectorRegistry;
+import org.eclipse.ecsp.audit.repository.AuditRepository;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
 import org.eclipse.ecsp.oauth2.server.core.config.KeyStoreConfigByJavaKeyStore;
 import org.eclipse.ecsp.oauth2.server.core.config.KeyStoreConfigByPubPvtKey;
@@ -36,15 +37,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -74,8 +72,26 @@ import static org.mockito.Mockito.when;
 @TestPropertySource("classpath:application-test.properties") 
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT) 
 @AutoConfigureWebTestClient(timeout = "3600000")
-@ContextConfiguration(classes = {AuthorizationControllerTest.TestConfig.class})
+@TestExecutionListeners(listeners = {
+    org.eclipse.ecsp.oauth2.server.core.common.test.TenantContextTestExecutionListener.class
+}, mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
+@org.springframework.context.annotation.Import({
+    org.eclipse.ecsp.oauth2.server.core.common.test.TestTenantConfiguration.class,
+    org.eclipse.ecsp.oauth2.server.core.config.TestDataSourceConfig.class
+})
 class AuthorizationControllerTest {
+    
+    // Static initializer to set system property before Spring context loads
+    static {
+        System.setProperty("multitenancy.enabled", "true");
+        System.setProperty("tenant.default", "ecsp");
+    }
+    
+    @MockitoBean
+    private TenantConfigurationService tenantConfigurationService;
+    
+    AuditRepository auditRepository;
+
     @MockitoBean
     AuthorizationRepository authorizationRepository;
 
@@ -94,14 +110,44 @@ class AuthorizationControllerTest {
     @Autowired
     private WebTestClient webTestClient;
 
+    @BeforeEach
+    public void setup() {
+        // Configure WebTestClient with default tenantId header for all requests
+        webTestClient = webTestClient.mutate()
+                .defaultHeader("tenantId", "ecsp")
+                .build();
+        
+        // Set up mock TenantConfigurationService
+        TenantProperties mockTenantProperties = new TenantProperties();
+        // Set external IDP and internal login flags to prevent NPE in security config
+        mockTenantProperties.setExternalIdpEnabled(false);
+        mockTenantProperties.setInternalLoginEnabled(true);
+
+        // Set up keystore properties required by KeyStoreConfigByJavaKeyStore
+        HashMap<String, String> keystoreProperties = new HashMap<>();
+        keystoreProperties.put(TENANT_KEYSTORE_TYPE, "JKS");
+        keystoreProperties.put(TENANT_KEYSTORE_FILENAME, "uidamauthserver.jks");
+        keystoreProperties.put(TENANT_KEYSTORE_PASS, "uidam-test-pwd");
+        keystoreProperties.put(TENANT_KEYSTORE_ALIAS, "uidam-dev");
+        mockTenantProperties.setKeyStore(keystoreProperties);
+        
+        // Mock the TenantConfigurationService methods
+        Mockito.when(tenantConfigurationService.getTenantProperties(ECSP)).thenReturn(mockTenantProperties);
+        Mockito.when(tenantConfigurationService.getTenantProperties("testClient")).thenReturn(mockTenantProperties);
+        // Mock tenant existence checks
+        Mockito.when(tenantConfigurationService.tenantExists(ECSP)).thenReturn(true);
+        Mockito.when(tenantConfigurationService.tenantExists("testClient")).thenReturn(true);
+    }
+
     /**
      * This method is executed before and after each test. It clears the default registry of the CollectorRegistry.
      */
-    @BeforeEach 
+    @BeforeEach
     @AfterEach
     void cleanup() {
         CollectorRegistry.defaultRegistry.clear();
     }
+    
 
     /**
      * This test method tests the scenario where the revoke token request is successful. It sets up the necessary
@@ -358,42 +404,5 @@ class AuthorizationControllerTest {
         }).bodyValue("clientId=testClient").exchange().expectStatus().isEqualTo(HttpStatus.OK);
 
     }
-
-    /**
-     * This test method tests the scenario where the revoke token request is successful but the client id is missing. It
-     * sets up the necessary parameters and then calls the revoke token method. The test asserts that the returned
-     * status is HttpStatus.OK.
-     */
-    @TestConfiguration
-    static class TestConfig {
-
-        @Bean 
-        @Primary
-        public TenantConfigurationService tenantConfigurationService() {
-            
-
-            // Create a mock TenantProperties with required keystore properties
-            TenantProperties mockTenantProperties = new TenantProperties();
-            // Set external IDP and internal login flags to prevent NPE in security config
-            mockTenantProperties.setExternalIdpEnabled(false);
-            mockTenantProperties.setInternalLoginEnabled(true);
-
-            // Set up keystore properties required by KeyStoreConfigByJavaKeyStore
-            HashMap<String, String> keystoreProperties = new HashMap<>();
-            keystoreProperties.put(TENANT_KEYSTORE_TYPE, "JKS");
-            keystoreProperties.put(TENANT_KEYSTORE_FILENAME, "uidamauthserver.jks");
-            keystoreProperties.put(TENANT_KEYSTORE_PASS, "uidam-test-pwd");
-            keystoreProperties.put(TENANT_KEYSTORE_ALIAS, "uidam-dev");
-            mockTenantProperties.setKeyStore(keystoreProperties);
-            TenantConfigurationService mockService = Mockito.mock(TenantConfigurationService.class);
-            // Mock the TenantConfigurationService to return our mock TenantProperties
-            when(mockService.getTenantProperties(ECSP)).thenReturn(mockTenantProperties);
-            when(mockService.getTenantProperties("testClient")).thenReturn(mockTenantProperties);
-            // Mock tenant existence checks
-            when(mockService.tenantExists(ECSP)).thenReturn(true);
-            when(mockService.tenantExists("testClient")).thenReturn(true);
-
-            return mockService;
-        }
-    }
 }
+

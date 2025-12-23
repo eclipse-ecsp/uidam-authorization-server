@@ -18,6 +18,12 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config;
 
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.TokenAuthenticationContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
 import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
@@ -92,6 +98,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 @Configuration
 public class ClaimsConfigManager {
     private static final int TENANT_PREFIX_PARTS = 2;
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClaimsConfigManager.class);
 
@@ -99,6 +106,7 @@ public class ClaimsConfigManager {
     private final UserManagementClient userManagementClient;
     private final ClaimMappingService claimMappingService;
     private final AuthorizationMetricsService authorizationMetricsService;
+    private final AuditLogger auditLogger;
 
     /**
      * Constructor for ClaimsConfigManager. It initializes the tenant configuration service
@@ -107,16 +115,20 @@ public class ClaimsConfigManager {
      * @param tenantConfigurationService the service to retrieve tenant properties from
      * @param claimMappingService the service for claim mapping operations
      * @param userManagementClient the client for user management operations
+     * @param authorizationMetricsService the service for authorization metrics
+     * @param auditLogger the audit logger
      */
     @Autowired
     public ClaimsConfigManager(TenantConfigurationService tenantConfigurationService,
             ClaimMappingService claimMappingService,
             UserManagementClient userManagementClient,
-            AuthorizationMetricsService authorizationMetricsService) {
+            AuthorizationMetricsService authorizationMetricsService,
+            AuditLogger auditLogger) {
         this.tenantConfigurationService = tenantConfigurationService;
         this.claimMappingService = claimMappingService;
         this.userManagementClient = userManagementClient;
         this.authorizationMetricsService = authorizationMetricsService;
+        this.auditLogger = auditLogger;
     }
 
     
@@ -149,36 +161,75 @@ public class ClaimsConfigManager {
     @Primary
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(CacheClientUtils cacheClientUtils) {
         return context -> {
-            // Need to refactor
-            UserDetailsResponse userDetailsResponse = null;
-            if (AUTHORIZATION_CODE_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())
-                    || REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
-                if (context.getPrincipal() instanceof CustomUserPwdAuthenticationToken
-                    customUserPwdAuthenticationToken) {
-                    LOGGER.debug("Non Federated user authentication");
-                    userDetailsResponse = userManagementClient.getUserDetailsByUsername(
-                            customUserPwdAuthenticationToken.getName(),
-                            customUserPwdAuthenticationToken.getAccountName());
-                    authorizationMetricsService.incrementMetricsForTenant(
-                            getCurrentTenantProperties().getTenantId(),
-                            MetricType.SUCCESS_LOGIN_BY_INTERNAL_CREDENTIALS);
-                }
-                if (context.getPrincipal() instanceof OAuth2AuthenticationToken oauth2AuthenticationToken) {
-                    LOGGER.debug("Federated user authentication");
-                    userDetailsResponse = getUserDetailsForFederatedUser(oauth2AuthenticationToken);
-                }
-            }
+            UserDetailsResponse userDetailsResponse = retrieveUserDetails(context);
+            
             JwtClaimsSet.Builder claimsBuilder = context.getClaims();
             Set<String> scopeSet = claimsBuilder.build().getClaim(OAuth2ParameterNames.SCOPE);
+            
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
-
-                ClientCacheDetails clientDetails = cacheClientUtils.getClientDetails(
-                    context.getRegisteredClient().getClientId());
-                addClaimsForAccessToken(context, clientDetails, userDetailsResponse, claimsBuilder, scopeSet);
+                processAccessToken(context, cacheClientUtils, userDetailsResponse, claimsBuilder, scopeSet);
             } else if (context.getTokenType().getValue().equals(OidcParameterNames.ID_TOKEN)) {
                 addClaimsForIdToken(context, userDetailsResponse, claimsBuilder);
             }
         };
+    }
+
+    /**
+     * Retrieves user details based on the authentication context.
+     * Supports both internal password authentication and federated authentication.
+     *
+     * @param context The JWT encoding context
+     * @return UserDetailsResponse or null if not applicable
+     */
+    private UserDetailsResponse retrieveUserDetails(JwtEncodingContext context) {
+        String grantType = context.getAuthorizationGrantType().getValue();
+        
+        if (!AUTHORIZATION_CODE_GRANT_TYPE.equals(grantType) 
+                && !REFRESH_TOKEN_GRANT_TYPE.equals(grantType)) {
+            return null;
+        }
+        
+        if (context.getPrincipal() instanceof CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken) {
+            LOGGER.debug("Non Federated user authentication");
+            authorizationMetricsService.incrementMetricsForTenant(
+                    getCurrentTenantProperties().getTenantId(),
+                    MetricType.SUCCESS_LOGIN_BY_INTERNAL_CREDENTIALS);
+            return userManagementClient.getUserDetailsByUsername(
+                    customUserPwdAuthenticationToken.getName(),
+                    customUserPwdAuthenticationToken.getAccountName());
+        }
+        
+        if (context.getPrincipal() instanceof OAuth2AuthenticationToken oauth2AuthenticationToken) {
+            LOGGER.debug("Federated user authentication");
+            return getUserDetailsForFederatedUser(oauth2AuthenticationToken);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Processes access token by adding claims and logging audit events.
+     *
+     * @param context The JWT encoding context
+     * @param cacheClientUtils The cache client utilities
+     * @param userDetailsResponse The user details
+     * @param claimsBuilder The JWT claims builder
+     * @param scopeSet The set of scopes
+     */
+    private void processAccessToken(JwtEncodingContext context, CacheClientUtils cacheClientUtils,
+                                    UserDetailsResponse userDetailsResponse, 
+                                    JwtClaimsSet.Builder claimsBuilder, Set<String> scopeSet) {
+        ClientCacheDetails clientDetails = cacheClientUtils.getClientDetails(
+                context.getRegisteredClient().getClientId());
+        addClaimsForAccessToken(context, clientDetails, userDetailsResponse, claimsBuilder, scopeSet);
+        
+        String grantType = context.getAuthorizationGrantType().getValue();
+        
+        if (REFRESH_TOKEN_GRANT_TYPE.equals(grantType)) {
+            logTokenRefreshed(context, userDetailsResponse, clientDetails);
+        } else {
+            logAccessTokenGenerated(context, userDetailsResponse, clientDetails, grantType);
+        }
     }
 
     /**
@@ -234,6 +285,10 @@ public class ClaimsConfigManager {
                                                                         federatedUserName,
                                                                         idpClient,
                                                                         claims);
+        
+        // Log successful external IDP authentication
+        logIdpAuthenticationSuccess(userDetailsResponse, oauth2AuthenticationToken);
+        
         authorizationMetricsService.incrementMetricsForTenantAndIdp(
                                                                 tenantId,
                                                                 idpClient.getRegistrationId(),
@@ -585,11 +640,13 @@ public class ClaimsConfigManager {
             LOGGER.debug("Scope and Scopes bifurcation not required - "
                     + "Single Role Client or tenant.client.oauth-scope-customization = false");
             addScopeAndScopesForSingleRoleClient(claimsBuilder, scopeSet);
-        } else {
+        } else if (clientDetails != null) {
             LOGGER.debug("Scope and Scopes bifurcation required - Multi Role Client"
                     + " or tenant.client.oauth-scope-customization = true");
             addScopeAndScopesForMultiRoleClient(clientDetails, userDetailsResponse, claimsBuilder,
                     scopeSet, isClientCredentialsGrantType);
+        } else {
+            LOGGER.warn("ClientDetails is null, skipping scope and scopes bifurcation for multi-role client");
         }
         LOGGER.debug("## addScopeAndScopes - END");
     }
@@ -697,6 +754,232 @@ public class ClaimsConfigManager {
                         userDetailsResponse.getScopes());
             }
         }
+    }
+
+    /**
+     * Logs successful authentication via external Identity Provider (IdP).
+     * This method is called after a user successfully authenticates through an external IdP
+     * and their details are retrieved or created in the system.
+     * Note: HttpRequestContext is null for external IdP flows since the actual authentication
+     * request goes to the external IdP server, not our authorization server.
+     *
+     * @param userDetailsResponse The user details retrieved or created after IDP authentication
+     * @param oauth2AuthenticationToken The OAuth2 authentication token containing IdP information and claims
+     */
+    private void logIdpAuthenticationSuccess(UserDetailsResponse userDetailsResponse,
+                                            OAuth2AuthenticationToken oauth2AuthenticationToken) {
+        try {
+            // Extract IdP registration ID (with tenant prefix)
+            String tenantPrefixedRegistrationId = oauth2AuthenticationToken.getAuthorizedClientRegistrationId();
+            
+            // Extract just the IdP name (e.g., "google" from "demo-google")
+            String idpRegistrationId = tenantPrefixedRegistrationId;
+            if (tenantPrefixedRegistrationId != null && tenantPrefixedRegistrationId.contains("-")) {
+                String[] parts = tenantPrefixedRegistrationId.split("-", TENANT_PREFIX_PARTS);
+                if (parts.length == TENANT_PREFIX_PARTS) {
+                    idpRegistrationId = parts[1];
+                }
+            }
+            
+            // Extract IdP claims
+            Map<String, Object> idpClaims = oauth2AuthenticationToken.getPrincipal().getAttributes();
+            
+            final UserActorContext actorContext = UserActorContext.builder()
+                .userId(userDetailsResponse.getId())
+                .username(userDetailsResponse.getUserName())
+                .accountId(userDetailsResponse.getAccountId())
+                .accountName(null) // External IDP users may not have account name
+                .build();
+            
+            // HttpRequestContext is null for external IdP flows since the authentication
+            // request goes to the external IdP, not our server
+            final HttpRequestContext requestContext = null;
+            
+            auditLogger.log(
+                AuditEventType.AUTH_SUCCESS_IDP.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.SUCCESS,
+                AuditEventType.AUTH_SUCCESS_IDP.getDescription(),
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for AUTH_SUCCESS_IDP: userId={}, idp={}", 
+                        userDetailsResponse.getId(), idpRegistrationId);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for AUTH_SUCCESS_IDP: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Logs successful token refresh operation.
+     * This method is called when a new access token is issued using the refresh_token grant type.
+     * Only called when grant_type=refresh_token, so the principal will always be either:
+     * 1. Password-authenticated users (CustomUserPwdAuthenticationToken)
+     * 2. IdP-authenticated users (OAuth2AuthenticationToken)
+     * Note: HttpRequestContext is null since token customizers don't have direct access to HTTP request.
+     *
+     * @param context The JWT encoding context containing grant type and principal information
+     * @param userDetailsResponse The user details retrieved for the refresh token request
+     * @param clientDetails The client details for the OAuth2 client requesting the token
+     */
+    private void logTokenRefreshed(JwtEncodingContext context, 
+                                   UserDetailsResponse userDetailsResponse,
+                                   ClientCacheDetails clientDetails) {
+        try {
+            Object principal = context.getPrincipal();
+            final UserActorContext actorContext;
+            final String authType;
+            
+            if (principal instanceof CustomUserPwdAuthenticationToken) {
+                // Password-authenticated user token refresh
+                authType = "password";
+                actorContext = buildUserActorContext(userDetailsResponse);
+            } else if (principal instanceof OAuth2AuthenticationToken oauth2Token) {
+                // IdP-authenticated user token refresh
+                String idpName = extractIdpName(oauth2Token);
+                authType = "idp:" + idpName;
+                actorContext = buildUserActorContext(userDetailsResponse);
+            } else {
+                // Unexpected principal type - log warning and return early
+                LOGGER.warn("Unexpected principal type for TOKEN_REFRESHED: {}", 
+                           principal != null ? principal.getClass().getName() : "null");
+                return;
+            }
+            
+            TokenAuthenticationContext tokenAuthContext = TokenAuthenticationContext.builder()
+                .grantType("refresh_token")
+                .authType(authType)
+                .clientId(clientDetails != null ? clientDetails.getRegisteredClient().getClientId() : null)
+                .build();
+            
+            auditLogger.log(
+                AuditEventType.TOKEN_REFRESHED.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.SUCCESS,
+                AuditEventType.TOKEN_REFRESHED.getDescription(),
+                actorContext,
+                null,  // TargetContext
+                null,  // RequestContext - null for token customizer flows
+                tokenAuthContext
+            );
+            
+            LOGGER.debug("Audit log created for TOKEN_REFRESHED: authType={}", authType);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for TOKEN_REFRESHED: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Logs access token generation for initial token issuance (authorization_code, client_credentials).
+     * This method is called when an access token is generated for:
+     * 1. authorization_code - Initial token for password or IdP authenticated users
+     * 2. client_credentials - Service account token
+     * Note: HttpRequestContext is null since token customizers don't have direct access to HTTP request.
+     *
+     * @param context The JWT encoding context containing grant type and principal information
+     * @param userDetailsResponse The user details (null for client_credentials grant)
+     * @param clientDetails The client details for the OAuth2 client requesting the token
+     * @param grantType The OAuth2 grant type used to obtain the token
+     */
+    private void logAccessTokenGenerated(JwtEncodingContext context,
+                                        UserDetailsResponse userDetailsResponse,
+                                        ClientCacheDetails clientDetails,
+                                        String grantType) {
+        try {
+            final UserActorContext actorContext;
+            final String authType;
+            
+            if (CLIENT_CREDENTIALS_GRANT_TYPE.equals(grantType)) {
+                // Client credentials flow - service account
+                authType = "client_credentials";
+                actorContext = buildClientActorContext(clientDetails);
+            } else {
+                // authorization_code flow - password or IdP user
+                Object principal = context.getPrincipal();
+                if (principal instanceof CustomUserPwdAuthenticationToken) {
+                    authType = "password";
+                    actorContext = buildUserActorContext(userDetailsResponse);
+                } else if (principal instanceof OAuth2AuthenticationToken oauth2Token) {
+                    String idpName = extractIdpName(oauth2Token);
+                    authType = "idp:" + idpName;
+                    actorContext = buildUserActorContext(userDetailsResponse);
+                } else {
+                    LOGGER.warn("Unexpected principal type for ACCESS_TOKEN_GENERATED: {}", 
+                               principal != null ? principal.getClass().getName() : "null");
+                    return;
+                }
+            }
+            
+            TokenAuthenticationContext tokenAuthContext = TokenAuthenticationContext.builder()
+                .grantType(grantType)
+                .authType(authType)
+                .clientId(clientDetails != null ? clientDetails.getRegisteredClient().getClientId() : null)
+                .build();
+            
+            auditLogger.log(
+                AuditEventType.ACCESS_TOKEN_GENERATED.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.SUCCESS,
+                AuditEventType.ACCESS_TOKEN_GENERATED.getDescription(),
+                actorContext,
+                null,  // TargetContext
+                null,  // RequestContext - null for token customizer flows
+                tokenAuthContext
+            );
+            
+            LOGGER.debug("Audit log created for ACCESS_TOKEN_GENERATED: grantType={}, authType={}", 
+                        grantType, authType);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for ACCESS_TOKEN_GENERATED: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Builds UserActorContext from user details.
+     *
+     * @param userDetailsResponse The user details
+     * @return UserActorContext for audit logging
+     */
+    private UserActorContext buildUserActorContext(UserDetailsResponse userDetailsResponse) {
+        return UserActorContext.builder()
+            .userId(userDetailsResponse.getId())
+            .username(userDetailsResponse.getUserName())
+            .accountId(userDetailsResponse.getAccountId())
+            .accountName(null)
+            .build();
+    }
+
+    /**
+     * Builds UserActorContext from client details (for client_credentials flow).
+     *
+     * @param clientDetails The client details
+     * @return UserActorContext for audit logging
+     */
+    private UserActorContext buildClientActorContext(ClientCacheDetails clientDetails) {
+        return UserActorContext.builder()
+            .userId(null)
+            .username(clientDetails.getRegisteredClient().getClientId())
+            .accountId(clientDetails.getAccountId())
+            .accountName(clientDetails.getAccountName())
+            .build();
+    }
+
+    /**
+     * Extracts IdP name from OAuth2AuthenticationToken.
+     *
+     * @param oauth2Token The OAuth2 authentication token
+     * @return The IdP name (e.g., "google" from "demo-google")
+     */
+    private String extractIdpName(OAuth2AuthenticationToken oauth2Token) {
+        String tenantPrefixedRegistrationId = oauth2Token.getAuthorizedClientRegistrationId();
+        if (tenantPrefixedRegistrationId != null && tenantPrefixedRegistrationId.contains("-")) {
+            String[] parts = tenantPrefixedRegistrationId.split("-", TENANT_PREFIX_PARTS);
+            if (parts.length == TENANT_PREFIX_PARTS) {
+                return parts[1];
+            }
+        }
+        return tenantPrefixedRegistrationId;
     }
 
     /**

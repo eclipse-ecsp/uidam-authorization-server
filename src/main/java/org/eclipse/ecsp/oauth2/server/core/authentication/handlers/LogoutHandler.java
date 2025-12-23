@@ -20,6 +20,11 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.handlers;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.service.AuthorizationService;
 import org.eclipse.ecsp.oauth2.server.core.service.ClientRegistrationManager;
 import org.eclipse.ecsp.oauth2.server.core.service.DatabaseSecurityContextRepository;
@@ -66,12 +71,14 @@ public class LogoutHandler {
     private static final int INTEGER_SEVEN = 7;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LogoutHandler.class);
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private final RedirectStrategy redirectStrategy = new DefaultRedirectStrategy();
 
     private final AuthorizationService authorizationService;
     private final ClientRegistrationManager registeredClientManger;
     private final DatabaseSecurityContextRepository databaseSecurityContextRepository;
+    private final AuditLogger auditLogger;
     
     private final Set<String> whitelistedCustomHosts;
 
@@ -80,10 +87,12 @@ public class LogoutHandler {
      */
     public LogoutHandler(AuthorizationService authorizationService, ClientRegistrationManager registeredClientManger,
             DatabaseSecurityContextRepository databaseSecurityContextRepository,
+            AuditLogger auditLogger,
             @Value("${logout.redirect.whitelisted.custom.hosts:localhost,127.0.0.1}") String allowedHosts) {
         this.authorizationService = authorizationService;
         this.registeredClientManger = registeredClientManger;
         this.databaseSecurityContextRepository = databaseSecurityContextRepository;
+        this.auditLogger = auditLogger;
         this.whitelistedCustomHosts = Arrays.stream(allowedHosts.split(",")).map(String::trim)
                 .collect(Collectors.toSet());
     }
@@ -111,14 +120,19 @@ public class LogoutHandler {
         // 1. Validate post_logout_redirect_uri against registered client
         String validatedRedirectUri = validatePostLogoutRedirectUri(clientId, postLogoutRedirectUri);
 
+        OAuth2Authorization authorization = null;
         try {
             // 2. Validate and extract information from id_token_hint (access token)
             if (StringUtils.hasText(idTokenHint)) {
-                revokeTokens(idTokenHint, clientId);
+                authorization = revokeTokens(idTokenHint, clientId);
             }
 
             // 3. Invalidate session and security context
-            invalidateSession(request, sessionId); 
+            invalidateSession(request, sessionId);
+            
+            // Log successful logout audit event
+            logLogoutSuccess(request, authentication, authorization);
+            
             // 4. Perform redirect based on scenario
             performLogoutRedirect(request, response, validatedRedirectUri, state, null);
 
@@ -137,8 +151,9 @@ public class LogoutHandler {
      *
      * @param accessToken Access token to revoke
      * @param clientId Client ID associated with the token
+     * @return OAuth2Authorization containing token claims (userId, accountId) for audit logging
      */
-    private void revokeTokens(String accessToken, String clientId) {
+    private OAuth2Authorization revokeTokens(String accessToken, String clientId) {
         String token = accessToken.startsWith("Bearer ") ? accessToken.substring(INTEGER_SEVEN) : accessToken;
 
         // Find authorization by access token
@@ -173,6 +188,8 @@ public class LogoutHandler {
             authorizationService.revokenTokenByPrincipalAndClientId(authorization.getPrincipalName(), clientId);
             LOGGER.debug("Access token revoked for client: {}", clientId);
         }
+        
+        return authorization;
 
     }
 
@@ -342,5 +359,62 @@ public class LogoutHandler {
     private static void throwError(String errorCode, String parameterName) {
         OAuth2Error error = new OAuth2Error(errorCode, "Error with Logout Request Parameter: " + parameterName, null);
         throw new OAuth2AuthenticationException(error);
+    }
+    
+    /**
+     * Logs successful logout audit event.
+     *
+     * @param request HTTP servlet request
+     * @param authentication Current authentication context (may be null if already invalidated)
+     * @param authorization OAuth2Authorization containing access token with user claims (userId, accountId)
+     */
+    private void logLogoutSuccess(HttpServletRequest request, Authentication authentication, 
+                                  OAuth2Authorization authorization) {
+        try {
+            // Extract username from authentication
+            String username = authentication != null ? authentication.getName() : "unknown";
+            
+            // Extract userId and accountId from access token claims if available
+            String userId = null;
+            String accountId = null;
+            String accountName = null;
+            
+            if (authorization != null && authorization.getAccessToken() != null) {
+                OAuth2Authorization.Token<OAuth2AccessToken> accessToken = authorization.getAccessToken();
+                if (accessToken.getClaims() != null) {
+                    Object userIdClaim = accessToken.getClaims().get("user_id");
+                    Object accountIdClaim = accessToken.getClaims().get("accountId");
+                    Object accountNameClaim = accessToken.getClaims().get("accountName");
+                    
+                    userId = userIdClaim != null ? userIdClaim.toString() : null;
+                    accountId = accountIdClaim != null ? accountIdClaim.toString() : null;
+                    accountName = accountNameClaim != null ? accountNameClaim.toString() : null;
+                }
+            }
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(userId)
+                .username(username)
+                .accountId(accountId)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            String message = "User logged out successfully";
+            
+            auditLogger.log(
+                AuditEventType.LOGOUT.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.SUCCESS,
+                message,
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for LOGOUT: userId={}, username={}", userId, username);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for LOGOUT: {}", e.getMessage(), e);
+        }
     }
 }

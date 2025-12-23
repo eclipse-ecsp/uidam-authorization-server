@@ -18,12 +18,12 @@
 
 package org.eclipse.ecsp.oauth2.server.core.job;
 
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.entities.CleanupJobAudit;
 import org.eclipse.ecsp.oauth2.server.core.exception.CleanupJobException;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
 import org.eclipse.ecsp.oauth2.server.core.repositories.CleanupJobAuditRepository;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

@@ -20,6 +20,10 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 
 import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationTokenMixin;
 import org.eclipse.ecsp.oauth2.server.core.common.CustomOauth2TokenGenErrorCodes;
@@ -75,10 +79,13 @@ public class AuthorizationService implements OAuth2AuthorizationService {
     private static final int BEGIN_INDEX = 7;
     private static final String DEFAULT_HASH_ALGORITHM = "SHA-256";
 
+    private static final String COMPONENT_NAME = "uidam-authorization-server";
+    
     private final AuthorizationRepository authorizationRepository;
     private final RegisteredClientRepository registeredClientRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final JwtTokenValidator jwtTokenValidator;
+    private final AuditLogger auditLogger;
    
     @Value("${uidam.oauth2.token.hash.algorithm}")
     private String tokenHashAlgorithm;
@@ -92,17 +99,21 @@ public class AuthorizationService implements OAuth2AuthorizationService {
      * @param authorizationRepository the repository to use for interacting with Authorization instances in the database
      * @param registeredClientRepository the repository to use for retrieving RegisteredClient instances
      * @param jwtTokenValidator the validator to use for JWT token validation
+     * @param auditLogger the audit logger for logging authorization events
      */
     public AuthorizationService(AuthorizationRepository authorizationRepository,
                                 RegisteredClientRepository registeredClientRepository,
-                                JwtTokenValidator jwtTokenValidator) {
+                                JwtTokenValidator jwtTokenValidator,
+                                AuditLogger auditLogger) {
         LOGGER.debug("## IgniteOAuth2AuthorizationService - START");
         Assert.notNull(authorizationRepository, "authorizationRepository cannot be null");
         Assert.notNull(registeredClientRepository, "registeredClientRepository cannot be null");
         Assert.notNull(jwtTokenValidator, "jwtTokenValidator cannot be null");
+        Assert.notNull(auditLogger, "auditLogger cannot be null");
         this.authorizationRepository = authorizationRepository;
         this.registeredClientRepository = registeredClientRepository;
         this.jwtTokenValidator = jwtTokenValidator;
+        this.auditLogger = auditLogger;
 
         ClassLoader classLoader = AuthorizationService.class.getClassLoader();
         List<Module> securityModules = SecurityJackson2Modules.getModules(classLoader);
@@ -220,6 +231,9 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         LOGGER.debug("revokeToken START");
         if (!isValidToken(token)) {
             LOGGER.error("## Token validation failed!");
+            logAuthorizationFailure(AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN, 
+                                   revokeTokenRequest.getUsername(), 
+                                   revokeTokenRequest.getClientId());
             throw new CustomOauth2AuthorizationException(CustomOauth2TokenGenErrorCodes.INVALID_TOKEN);
         }
         String principalName;
@@ -727,6 +741,40 @@ public class AuthorizationService implements OAuth2AuthorizationService {
             authorization.setOidcIdTokenValue(token);
         }
         
+    }
+
+    /**
+     * Logs authorization failure audit events.
+     *
+     * @param eventType the authorization failure event type
+     * @param username the username (may be null for client credentials)
+     * @param clientId the client ID (may be null for user tokens)
+     */
+    private void logAuthorizationFailure(AuditEventType eventType, String username, String clientId) {
+        try {
+            // Determine actor information - either username or clientId
+            String actorId = username != null ? username : clientId;
+            String actorType = username != null ? "USER" : "CLIENT";
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(actorId)
+                .username(username)
+                .build();
+            
+            auditLogger.log(
+                eventType.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                eventType.getDescription(),
+                actorContext,
+                null  // RequestContext - not available in service layer
+            );
+            
+            LOGGER.debug("Audit log created for {}: actorId={}, actorType={}", 
+                eventType, actorId, actorType);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for {}: {}", eventType, e.getMessage(), e);
+        }
     }
 
 }

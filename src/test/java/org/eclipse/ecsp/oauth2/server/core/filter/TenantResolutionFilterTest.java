@@ -21,8 +21,8 @@ package org.eclipse.ecsp.oauth2.server.core.filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.FilterConfig;
 import jakarta.servlet.ServletException;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -54,6 +55,12 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class TenantResolutionFilterTest {
+
+    // Static initializer to set system property before tests run
+    static {
+        System.setProperty("multitenancy.enabled", "true");
+        System.setProperty("tenant.default", "ecsp");
+    }
 
     private static final String TENANT_NOT_FOUND_ERROR = "TENANT_NOT_FOUND_IN_REQUEST";
 
@@ -76,8 +83,8 @@ class TenantResolutionFilterTest {
         tenantResolutionFilter = new TenantResolutionFilter(tenantConfigurationService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
-        // Set default property values for @Value fields
-        setSpringProperties(true, "ecsp");
+        // Set default property values via mocked TenantConfigurationService
+        setupDefaultTenantConfiguration(true, "ecsp");
     }
 
     @AfterEach
@@ -86,19 +93,10 @@ class TenantResolutionFilterTest {
         TenantContext.clear();
     }
 
-    private void setSpringProperties(boolean multiTenantEnabled, String defaultTenant) {
-        // Simulate Spring @Value injection for test
-        try {
-            java.lang.reflect.Field multiTenantField = TenantResolutionFilter.class
-                .getDeclaredField("multiTenantEnabled");
-            multiTenantField.setAccessible(true);
-            multiTenantField.set(tenantResolutionFilter, multiTenantEnabled);
-            java.lang.reflect.Field defaultTenantField = TenantResolutionFilter.class.getDeclaredField("defaultTenant");
-            defaultTenantField.setAccessible(true);
-            defaultTenantField.set(tenantResolutionFilter, defaultTenant);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+    private void setupDefaultTenantConfiguration(boolean multiTenantEnabled, String defaultTenant) {
+        // Configure mocked TenantConfigurationService behavior
+        lenient().when(tenantConfigurationService.isMultitenantEnabled()).thenReturn(multiTenantEnabled);
+        lenient().when(tenantConfigurationService.getDefaultTenantId()).thenReturn(defaultTenant);
     }
 
     /**
@@ -608,7 +606,7 @@ class TenantResolutionFilterTest {
     @Test
     void whenMultiTenantDisabledShouldSetTenantToDefault() throws IOException, ServletException {
         // Given
-        setSpringProperties(false, "default-tenant");
+        setupDefaultTenantConfiguration(false, "default-tenant");
         request.setRequestURI("/oauth2/authorize");
         when(tenantConfigurationService.tenantExists("default-tenant")).thenReturn(true);
 
@@ -930,7 +928,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerRootEndpointShouldWorkWhenMultitenancyEnabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(true, "ecsp");
+        setupDefaultTenantConfiguration(true, "ecsp");
         request.setRequestURI("/.well-known/oauth-authorization-server");
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -952,7 +950,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerRootEndpointShouldWorkWhenMultitenancyDisabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(false, "ecsp");
+        setupDefaultTenantConfiguration(false, "ecsp");
         request.setRequestURI("/.well-known/oauth-authorization-server");
         when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
 
@@ -972,7 +970,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerWithValidTenantPostfixShouldWorkWhenMultitenancyEnabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(true, "ecsp");
+        setupDefaultTenantConfiguration(true, "ecsp");
         request.setRequestURI("/.well-known/oauth-authorization-server/ecsp");
         when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
 
@@ -991,7 +989,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerWithDefaultTenantPostfixShouldWorkWhenMultitenancyDisabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(false, "ecsp");
+        setupDefaultTenantConfiguration(false, "ecsp");
         request.setRequestURI("/.well-known/oauth-authorization-server/ecsp");
         when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
 
@@ -1010,7 +1008,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerWithNonDefaultTenantPostfixShouldFailWhenMultitenancyDisabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(false, "ecsp");
+        setupDefaultTenantConfiguration(false, "ecsp");
         request.setRequestURI("/.well-known/oauth-authorization-server/sdp");
 
         try (MockedStatic<TenantContext> tenantContextMock = mockStatic(TenantContext.class)) {
@@ -1033,7 +1031,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerWithInvalidTenantPostfixShouldFailWhenMultitenancyEnabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(true, "ecsp");
+        setupDefaultTenantConfiguration(true, "ecsp");
         request.setRequestURI("/.well-known/oauth-authorization-server/invalid-tenant");
         when(tenantConfigurationService.tenantExists("invalid-tenant")).thenReturn(false);
 
@@ -1057,7 +1055,7 @@ class TenantResolutionFilterTest {
     @Test
     void wellKnownOpenIdConfigurationWithValidTenantPostfixShouldWork() throws IOException, ServletException {
         // Given
-        setSpringProperties(true, "ecsp");
+        setupDefaultTenantConfiguration(true, "ecsp");
         request.setRequestURI("/.well-known/openid-configuration/demo");
         when(tenantConfigurationService.tenantExists("demo")).thenReturn(true);
 
@@ -1076,7 +1074,7 @@ class TenantResolutionFilterTest {
     void wellKnownServerWithMultipleTenantsShouldWorkWhenMultitenancyEnabled()
             throws IOException, ServletException {
         // Given
-        setSpringProperties(true, "ecsp");
+        setupDefaultTenantConfiguration(true, "ecsp");
         String[] tenants = {"ecsp", "sdp", "demo"};
 
         for (String tenant : tenants) {
@@ -1096,7 +1094,7 @@ class TenantResolutionFilterTest {
     @Test
     void tenantPrefixPatternShouldWorkWithWellKnownInPath() throws IOException, ServletException {
         // Given - Test pattern like /demo/.well-known/...
-        setSpringProperties(true, "ecsp");
+        setupDefaultTenantConfiguration(true, "ecsp");
         request.setRequestURI("/demo/.well-known/oauth-authorization-server");
         when(tenantConfigurationService.tenantExists("demo")).thenReturn(true);
 
