@@ -24,6 +24,8 @@ import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantPropert
 import org.eclipse.ecsp.oauth2.server.core.exception.ReCaptchaInvalidException;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,11 +65,16 @@ class CaptchaServiceImplTest {
 
     /**
      * This method sets up the test environment before each test.
-     * It initializes the mocks.
+     * It initializes the mocks and sets up tenant context.
      */
     @BeforeEach
     void setup() {
-        // Setup code if needed
+        TenantContext.setCurrentTenant("ecsp");
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
     }
 
     /**

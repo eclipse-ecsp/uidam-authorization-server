@@ -19,10 +19,10 @@
 package org.eclipse.ecsp.oauth2.server.core.client;
 
 import io.prometheus.client.CollectorRegistry;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +68,7 @@ class AuthManagementClientTest {
         
         // Set up mock external URLs
         HashMap<String, String> externalUrls = new HashMap<>();
-        externalUrls.put(TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV, "http://localhost:8080");
+        externalUrls.put(TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV, "http://localhost:8081");
         externalUrls.put(TENANT_EXTERNAL_URLS_CLIENT_BY_CLIENT_ID_ENDPOINT, "/v1/oauth2/client/{clientId}");
         tenantProperties.setExternalUrls(externalUrls);
         

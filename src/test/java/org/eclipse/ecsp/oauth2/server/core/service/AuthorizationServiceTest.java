@@ -18,8 +18,12 @@
 
 package org.eclipse.ecsp.oauth2.server.core.service;
 
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.entities.Authorization;
+import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationException;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
+import org.eclipse.ecsp.oauth2.server.core.request.dto.RevokeTokenRequest;
 import org.eclipse.ecsp.oauth2.server.core.test.TestRegisteredClients;
 import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,8 +62,12 @@ import static org.eclipse.ecsp.oauth2.server.core.test.TestOauth2Authorizations.
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -80,6 +88,8 @@ class AuthorizationServiceTest {
     AuthorizationRepository authorizationRepository;
     @Mock
     JwtTokenValidator jwtTokenValidator;
+    @Mock
+    AuditLogger auditLogger;
 
     private static final RegisteredClient REGISTERED_CLIENT = TestRegisteredClients.registeredDummyClient().build();
     private static final AuthorizationGrantType AUTHORIZATION_GRANT_TYPE = AuthorizationGrantType.CLIENT_CREDENTIALS;
@@ -94,6 +104,7 @@ class AuthorizationServiceTest {
         this.clientManger = mock(ClientRegistrationManager.class);
         this.authorizationService = Mockito.mock(AuthorizationService.class);
         this.jwtTokenValidator = mock(JwtTokenValidator.class);
+        this.auditLogger = mock(AuditLogger.class);
     }
 
     /**
@@ -102,8 +113,9 @@ class AuthorizationServiceTest {
      * The test asserts that an IllegalArgumentException is thrown.
      */
     @Test    void saveWhenAuthorizationNullThrowsException() {
-        authorizationService = new AuthorizationService(authorizationRepository,
-            clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         OAuth2Authorization authorization = null;
         assertThrows(IllegalArgumentException.class, () -> authorizationService.save(authorization));
     }
@@ -114,8 +126,9 @@ class AuthorizationServiceTest {
      * The test asserts that an IllegalArgumentException is thrown.
      */
     @Test    void removeWhenAuthorizationNullThrowsException() {
-        authorizationService = new AuthorizationService(authorizationRepository,
-            clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         OAuth2Authorization authorization = null;
         assertThrows(IllegalArgumentException.class, () -> authorizationService.remove(authorization));
 
@@ -128,7 +141,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void findByIdWhenAuthorizationNullThrowsException() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         String id = "";
         assertThrows(IllegalArgumentException.class, () -> authorizationService.findById(id));
     }
@@ -141,7 +156,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void findByIdReturnNullWhenIdNotPresent() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         OAuth2Authorization authorization = this.authorizationService.findById("1");
         assertNull(authorization);
 
@@ -155,7 +172,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void findByTokenReturnNullWhenTokenNotExist() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
 
         OAuth2TokenType oauth2TokenType = OAuth2TokenType.ACCESS_TOKEN;
         String dummyToken = DUMMY_TOKEN;
@@ -170,7 +189,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void saveWhenAuthorizationNewThenSaved() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString()))
             .thenReturn(REGISTERED_CLIENT);
         Authorization expAuthorization = createAuthorization();
@@ -201,7 +222,9 @@ class AuthorizationServiceTest {
     @Test
     void saveWhenAccessTokenInAuthorizationThenSaved() {
 
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString()))
             .thenReturn(REGISTERED_CLIENT);
         Authorization expAuthorization = createAccTokenAuthorization();
@@ -230,7 +253,9 @@ class AuthorizationServiceTest {
     @Test
     void saveWhenRefreshTokenInAuthorizationThenSaved() {
 
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString()))
             .thenReturn(REGISTERED_CLIENT);
         Authorization expAuthorization = createRefreshTokenAuthorization();
@@ -279,7 +304,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void findByTokenWhenDeviceCodeExistsThenFound() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString()))
             .thenReturn(REGISTERED_CLIENT);
         OAuth2DeviceCode deviceCode = new OAuth2DeviceCode("device-code",
@@ -307,7 +334,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void findByTokenWhenUserCodeExistsThenFound() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString()))
             .thenReturn(REGISTERED_CLIENT);
         OAuth2UserCode userCode = new OAuth2UserCode("user-code",
@@ -336,7 +365,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void findByTokenWhenIdTokenExistsThenFound() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString()))
             .thenReturn(REGISTERED_CLIENT);
         OidcIdToken idToken =  OidcIdToken.withTokenValue("id-token")
@@ -370,7 +401,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenActiveTokensThenSuccess() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
 
         // Create test authorization entities
@@ -399,7 +432,9 @@ class AuthorizationServiceTest {
      * The test asserts that the returned response indicates no active tokens exist.
      */
     @Test    void revokenTokenByPrincipalAndClientIdWhenNoActiveTokensThenNoActiveTokenMessage() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         List<Authorization> emptyTokens = List.of();
@@ -417,7 +452,9 @@ class AuthorizationServiceTest {
      * test asserts that a CustomOauth2AuthorizationException is thrown with SERVER_ERROR.
      */
     @Test    void revokenTokenByPrincipalAndClientIdWhenRepositoryExceptionThenThrowsCustomException() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
@@ -435,7 +472,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenNullPrincipalThenHandledGracefully() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         List<Authorization> emptyTokens = List.of();
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(eq(null), eq("testClient"),
@@ -453,7 +492,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenNullClientIdThenHandledGracefully() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         List<Authorization> emptyTokens = List.of();
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(eq("testUser"), eq(null),
@@ -471,7 +512,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenEmptyStringsThenHandledGracefully() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         List<Authorization> emptyTokens = List.of();
@@ -490,7 +533,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenSingleTokenThenSuccess() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         Authorization testAuth = createAccTokenAuthorization();
@@ -515,7 +560,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenSaveFailsThenThrowsException() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         Authorization testAuth = createAccTokenAuthorization();
@@ -539,7 +586,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenLongStringsThenSuccess() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         String longPrincipal = "a".repeat(INT_500);
@@ -567,7 +616,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenSpecialCharactersThenSuccess() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         String specialPrincipal = "user@domain.com";
@@ -595,7 +646,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenExpiredTokensThenNoActiveTokens() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         // Create expired tokens to test the scenario where tokens exist but are expired
@@ -631,7 +684,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenMultipleClientIdsThenOnlySpecificClientRevoked() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         Authorization testAuth = createAccTokenAuthorization();
@@ -656,7 +711,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenCalledThenLogsAppropriateMessages() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         Authorization testAuth = createAccTokenAuthorization();
@@ -682,7 +739,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenWhitespaceParametersThenHandledCorrectly() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         String whitespacePrincipal = "   ";
@@ -705,7 +764,9 @@ class AuthorizationServiceTest {
      */
     @Test
     void revokenTokenByPrincipalAndClientIdWhenRepositoryReturnsNullThenHandledGracefully() {
-        authorizationService = new AuthorizationService(authorizationRepository, clientManger, jwtTokenValidator);
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
@@ -714,6 +775,104 @@ class AuthorizationServiceTest {
         // This should throw an exception as the code expects a non-null list
         assertThrows(RuntimeException.class, () -> 
             this.authorizationService.revokenTokenByPrincipalAndClientId("testUser", "testClient"));
+    }
+
+    /**
+     * This test verifies that audit logging is called when revoking a token with an invalid token.
+     * It ensures AUTHZ_FAILURE_REVOKED_TOKEN event is logged with correct parameters.
+     */
+    @Test
+    void revokeTokenWithInvalidTokenShouldLogAuthorizationFailure() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        request.setClientId("testClient");
+        request.setUsername("testUser");
+        
+        String invalidToken = "Bearer invalid-jwt-token";
+        
+        // Mock token validation to return false
+        when(jwtTokenValidator.validateToken(anyString())).thenReturn(false);
+        
+        // Attempt to revoke token should throw exception
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokeToken(request, invalidToken));
+        
+        // Verify audit logger was called with AUTHZ_FAILURE_REVOKED_TOKEN
+        verify(auditLogger, times(1)).log(
+            eq("AUTHZ_FAILURE_REVOKED_TOKEN"),
+            eq("uidam-authorization-server"),
+            eq(AuditEventResult.FAILURE),
+            eq("Authorization failed - token has been revoked"),
+            any(),  // actorContext
+            isNull()  // targetContext
+        );
+    }
+
+    /**
+     * This test verifies that audit logging is called when revoking a token with a null token.
+     * It ensures AUTHZ_FAILURE_REVOKED_TOKEN event is logged.
+     */
+    @Test
+    void revokeTokenWithNullTokenShouldLogAuthorizationFailure() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        request.setClientId("testClient");
+        
+        String nullToken = null;
+        
+        // Attempt to revoke with null token should throw exception (NullPointerException)
+        assertThrows(NullPointerException.class, () -> 
+            authorizationService.revokeToken(request, nullToken));
+        
+        // Verify audit logger was NOT called for null token (exception before validation)
+        verify(auditLogger, never()).log(
+            anyString(),
+            anyString(),
+            any(),
+            anyString(),
+            any(),
+            any()
+        );
+    }
+
+    /**
+     * This test verifies that audit logging parameters include the correct actor information.
+     * The actor should be the username if present, otherwise the clientId.
+     */
+    @Test
+    void revokeTokenWithClientIdOnlyShouldLogWithClientIdAsActor() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        request.setClientId("testClient");
+        // No username set
+        
+        String invalidToken = "Bearer invalid-jwt-token";
+        
+        // Mock token validation to return false
+        when(jwtTokenValidator.validateToken(anyString())).thenReturn(false);
+        
+        // Attempt to revoke token should throw exception
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokeToken(request, invalidToken));
+        
+        // Verify audit logger was called
+        verify(auditLogger, times(1)).log(
+            eq("AUTHZ_FAILURE_REVOKED_TOKEN"),
+            eq("uidam-authorization-server"),
+            eq(AuditEventResult.FAILURE),
+            eq("Authorization failed - token has been revoked"),
+            any(),  // actorContext - should have clientId as userId
+            isNull()  // targetContext
+        );
     }
 }
 

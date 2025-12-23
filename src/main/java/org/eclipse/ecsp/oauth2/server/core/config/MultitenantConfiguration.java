@@ -41,12 +41,12 @@ import java.util.Properties;
 /**
  * Multiple Datasource configuration for the tenants.
  */ 
-@Configuration
+//@Configuration
 public class MultitenantConfiguration {
 
     private static final String TENANT_DEFAULT = "${tenant.default}";
     private static final String TENANT_IDS = "${tenant.ids}";
-    private static final String TENANT_PROPERTIES_PREFIX = "tenant.tenants.%s.%s";
+    private static final String TENANT_PROPERTIES_PREFIX = "tenants.profile.%s.%s";
     private static final String TENANT_PROPERTIES_FILE = "classpath:tenant-%s.properties";
     private static final String ENV_KEY_FORMAT = "%s";
     private static final String POSTGRES_DRIVER_CLASS_NAME = "postgres.driver.class.name";

@@ -28,4 +28,13 @@ import org.springframework.context.annotation.Profile;
 @Configuration
 public class LiquibaseConfig {
 
+    /**
+     * No-op implementation for test environment.
+     * This method does nothing to avoid Liquibase execution during tests.
+     *
+     * @param tenantId the tenant ID
+     */
+    public void initializeTenantSchema(String tenantId) {
+        // No-op for tests
+    }
 }

@@ -22,11 +22,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.service.LoginService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ACCOUNT_FIELD_ENABLED;
@@ -45,11 +48,18 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
  * It exposes the /login and /error endpoints for this purpose.
  */
 @Controller
+@RequestMapping
 public class LoginController {
 
     private final TenantConfigurationService tenantConfigurationService;
     private final LoginService loginService;
     private final UiAttributeUtils uiAttributeUtils;
+
+    @Value("${tenant.multitenant.enabled}")
+    private boolean multitenantEnabled;
+
+    @Value("${tenant.default}")
+    private String defaultTenant;
 
     /**
      * The constructor for the LoginController class.
@@ -74,14 +84,17 @@ public class LoginController {
      * @param model The Model object that is used for adding attributes.
      * @return The name of the login page.
      */
-    @GetMapping("/{tenantId}/login")
-    public String login(@PathVariable("tenantId") String tenantId,
-                        Model model, HttpServletRequest request,
+    @GetMapping({"/{tenantId}/login", "/login"})
+    public String login(
+            @PathVariable(value = "tenantId", required = false) String tenantId,
+            Model model, HttpServletRequest request,
             @RequestParam(name = "client_id", required = false) String clientId,
             @RequestParam(required = false) String scope,
             @RequestParam(name = "redirect_uri", required = false) String redirectUri,
             @RequestParam(name = "response_type", required = false) String responseType,
             @RequestParam(required = false) String state) {
+        // Determine tenantId based on multitenant config
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         // Get tenant properties dynamically based on current tenant context
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(ACCOUNT_FIELD_ENABLED, tenantProperties.getAccount().getAccountFieldEnabled());
