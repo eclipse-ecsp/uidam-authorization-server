@@ -21,7 +21,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.eclipse.ecsp</groupId>
     <artifactId>uidam-authorization-server</artifactId>
-    <version>1.3.0-M1</version>
+    <version>1.3.0-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>uidam-authorization-server</name>
     <description>Project for Authorization Server</description>
