@@ -28,15 +28,15 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.exception.TenantResolutionException;
 import org.eclipse.ecsp.oauth2.server.core.response.BaseRepresentation;
 import org.eclipse.ecsp.oauth2.server.core.response.ResponseMessage;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -58,7 +58,8 @@ import java.util.regex.Pattern;
  * 5. Authorization header (JWT token with tenantID claim)
  * Static resources (CSS, JS, images, etc.) are bypassed and served without tenant resolution.
  */
-@Component 
+@Component
+@RefreshScope
 @Order(Ordered.HIGHEST_PRECEDENCE + 10) // Run early, but after basic security filters
 public class TenantResolutionFilter implements Filter {
 
@@ -117,12 +118,6 @@ public class TenantResolutionFilter implements Filter {
     public TenantResolutionFilter(TenantConfigurationService tenantConfigurationService) {
         this.tenantConfigurationService = tenantConfigurationService;
     }
-
-    @Value("${tenant.multitenant.enabled}")
-    private boolean multiTenantEnabled;
-
-    @Value("${tenant.default}")
-    private String defaultTenant;
     
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
@@ -165,7 +160,7 @@ public class TenantResolutionFilter implements Filter {
                 //tenantId = getTenantFromSession(httpRequest);
                 if (StringUtils.hasText(tenantId)) {
                     LOGGER.debug("Tenant resolved from session: {}", tenantId);
-                } else if (multiTenantEnabled) {
+                } else if (tenantConfigurationService.isMultitenantEnabled()) {
                     // No tenant could be resolved - throw exception
                     LOGGER.error("No tenant could be resolved for request: {}", requestUri);
                     throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
@@ -173,8 +168,8 @@ public class TenantResolutionFilter implements Filter {
             }
 
             // Additional validation: if multitenant is disabled, set tenantId to default
-            if (!StringUtils.hasText(tenantId) && !multiTenantEnabled) {
-                tenantId = defaultTenant;
+            if (!StringUtils.hasText(tenantId) && !tenantConfigurationService.isMultitenantEnabled()) {
+                tenantId = tenantConfigurationService.getDefaultTenantId();
                 LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
             }
 
@@ -545,8 +540,8 @@ public class TenantResolutionFilter implements Filter {
             LOGGER.debug("Tenant ID found in well-known postfix: {}", tenantIdFromPostfix);
 
             // If multitenancy is disabled, only allow default tenant or reject
-            if (!multiTenantEnabled) {
-                if (!tenantIdFromPostfix.equals(defaultTenant)) {
+            if (!tenantConfigurationService.isMultitenantEnabled()) {
+                if (!tenantIdFromPostfix.equals(tenantConfigurationService.getDefaultTenantId())) {
                     LOGGER.warn("Multitenancy is disabled but non-default tenant postfix '{}' provided in: {}", 
                             tenantIdFromPostfix, requestUri);
                     throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
@@ -598,8 +593,14 @@ public class TenantResolutionFilter implements Filter {
                 // Extract everything after the well-known path
                 String afterWellKnown = requestUri.substring(wellKnownIndex + wellKnownPath.length());
                 
-                // Remove trailing slashes and extract tenant ID
-                afterWellKnown = afterWellKnown.replaceAll("^/+|/+$", "").trim();
+                // Remove trailing slashes and extract tenant ID (using safe string manipulation)
+                while (afterWellKnown.startsWith("/")) {
+                    afterWellKnown = afterWellKnown.substring(1);
+                }
+                while (afterWellKnown.endsWith("/")) {
+                    afterWellKnown = afterWellKnown.substring(0, afterWellKnown.length() - 1);
+                }
+                afterWellKnown = afterWellKnown.trim();
                 
                 if (StringUtils.hasText(afterWellKnown)) {
                     // Take only the first segment as tenant ID (in case there are more path segments)

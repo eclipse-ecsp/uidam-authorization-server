@@ -65,7 +65,7 @@ class MultiTenantPropertiesTest {
         tenants.put("ecsp", ecspTenantProps);
         tenants.put("demo", demoTenantProps);
         
-        multiTenantProperties.setTenants(tenants);
+        multiTenantProperties.setProfile(tenants);
         multiTenantProperties.setDefaultTenantId("ecsp");
     }
     
@@ -120,8 +120,8 @@ class MultiTenantPropertiesTest {
     void testDefaultConstructorAndSetters() {
         MultiTenantProperties properties = new MultiTenantProperties();
         
-        assertNotNull(properties.getTenants());
-        assertTrue(properties.getTenants().isEmpty());
+        assertNotNull(properties.getProfile());
+        assertTrue(properties.getProfile().isEmpty());
         assertEquals("ecsp", properties.getDefaultTenantId());
         
         // Test setters
@@ -131,9 +131,9 @@ class MultiTenantPropertiesTest {
         Map<String, TenantProperties> newTenants = new HashMap<>();
         TenantProperties testProps = new TenantProperties();
         newTenants.put("test", testProps);
-        properties.setTenants(newTenants);
+        properties.setProfile(newTenants);
         
-        assertEquals(newTenants, properties.getTenants());
+        assertEquals(newTenants, properties.getProfile());
     }
 }
 // CHECKSTYLE.ON: MatchXpath

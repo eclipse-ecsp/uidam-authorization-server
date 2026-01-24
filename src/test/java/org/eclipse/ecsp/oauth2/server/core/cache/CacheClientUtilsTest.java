@@ -19,7 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.cache;
 
 import org.eclipse.ecsp.oauth2.server.core.cache.impl.CacheClientServiceImpl;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
