@@ -125,7 +125,7 @@ maven/mavencentral/org.codehaus.janino/commons-compiler/3.1.12, BSD-3-Clause, ap
 maven/mavencentral/org.codehaus.janino/janino/3.1.12, BSD-3-Clause, approved, #13292
 maven/mavencentral/org.eclipse.angus/angus-activation/2.0.2, EPL-2.0 OR GPL-2.0-only with Classpath-exception-2.0, approved, ee4j.angus
 maven/mavencentral/org.eclipse.ecsp/entities/1.1.1, Apache-2.0, approved, automotive.ecsp
-maven/mavencentral/org.eclipse.ecsp/sql-dao/1.9-feat-17-8-20251217.082812-1, Apache-2.0, approved, automotive.ecsp
+maven/mavencentral/org.eclipse.ecsp/sql-dao/1.2.2, Apache-2.0, approved, automotive.ecsp
 maven/mavencentral/org.eclipse.ecsp/utils/1.1.1, Apache-2.0, approved, automotive.ecsp
 maven/mavencentral/org.glassfish.jaxb/jaxb-core/4.0.5, BSD-3-Clause, approved, ee4j.jaxb-impl
 maven/mavencentral/org.glassfish.jaxb/jaxb-runtime/4.0.5, BSD-3-Clause, approved, ee4j.jaxb-impl
@@ -194,7 +194,7 @@ maven/mavencentral/org.springframework.cloud/spring-cloud-commons/4.3.0, Apache-
 maven/mavencentral/org.springframework.cloud/spring-cloud-config-client/4.3.0, Apache-2.0, approved, clearlydefined
 maven/mavencentral/org.springframework.cloud/spring-cloud-context/4.3.0, Apache-2.0, approved, clearlydefined
 maven/mavencentral/org.springframework.cloud/spring-cloud-starter-config/4.3.0, Apache-2.0, approved, clearlydefined
-maven/mavencentral/org.springframework.cloud/spring-cloud-starter/4.3.0, Apache-2.0, approved, clearlydefined
+maven/mavencentral/org.springframework.cloud/spring-cloud-starter/4.3.0, Apache-2.0, approved, #25562
 maven/mavencentral/org.springframework.data/spring-data-commons/3.5.4, Apache-2.0, approved, #21920
 maven/mavencentral/org.springframework.data/spring-data-jpa/3.5.4, Apache-2.0, approved, #21922
 maven/mavencentral/org.springframework.retry/spring-retry/2.0.12, Apache-2.0, approved, #16889
