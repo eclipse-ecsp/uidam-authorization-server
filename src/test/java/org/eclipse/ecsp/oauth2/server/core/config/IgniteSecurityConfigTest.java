@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.config;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.CustomAccessTokenFailureHandler;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.CustomAuthCodeFailureHandler;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.FederatedIdentityAuthenticationSuccessHandler;
@@ -49,6 +50,7 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -113,7 +115,8 @@ class IgniteSecurityConfigTest {
     @BeforeEach
     void setUp() {
         config = new IgniteSecurityConfig(tenantConfigurationService,
-                                        authorizationMetricsService);
+                                        authorizationMetricsService,
+                                        mock(AuditLogger.class));
         
         // Set required field values using ReflectionTestUtils
         ReflectionTestUtils.setField(config, "sessionTimeout", "1800");

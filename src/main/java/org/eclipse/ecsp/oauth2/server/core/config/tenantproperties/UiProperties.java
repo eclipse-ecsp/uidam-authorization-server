@@ -32,6 +32,7 @@ public class UiProperties {
 
     private String logoPath;
     private String stylesheetPath;
+    private String termsPrivacyPolicy;
 
     /**
      * Gets the logo path for the tenant, with fallback to default logo

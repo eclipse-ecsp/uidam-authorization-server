@@ -18,6 +18,7 @@
 
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +40,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
  * It exposes the /emailVerification/verify endpoint for this purpose.
  */
 @Controller
-@RequestMapping("/{tenantId}/emailVerification")
+@RequestMapping({"/{tenantId}/emailVerification", "/emailVerification"})
 public class EmailVerificationController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EmailVerificationController.class);
@@ -71,8 +72,9 @@ public class EmailVerificationController {
      * @return A ModelAndView object that includes the view name and model attributes.
      */
     @GetMapping("/verify")
-    public ModelAndView verifyEmail(@PathVariable("tenantId") String tenantId,
+    public ModelAndView verifyEmail(@PathVariable(value = "tenantId", required = false) String tenantId,
                                     @RequestParam(SUCCESS) String verifyStatus, Model model) {
+        tenantId = TenantUtils.resolveTenantId(tenantId);
         if (!ERROR_LITERAL.equalsIgnoreCase(verifyStatus) && !TRUE.equalsIgnoreCase(verifyStatus)
             && !FALSE.equalsIgnoreCase(verifyStatus)) {
             LOGGER.info("Reassigning verification status to error as invalid verification status provided");
@@ -85,6 +87,6 @@ public class EmailVerificationController {
         // Add UI configuration attributes based on tenant properties
         uiAttributeUtils.addUiAttributes(model, tenantId);
         
-        return new ModelAndView("/emailVerify/email-verification").addObject(model);
+        return new ModelAndView("emailVerify/email-verification").addObject(model);
     }
 }

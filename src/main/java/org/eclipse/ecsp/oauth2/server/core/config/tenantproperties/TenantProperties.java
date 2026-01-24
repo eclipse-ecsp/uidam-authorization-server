@@ -40,7 +40,6 @@ public class TenantProperties {
     private String tenantId;
     private String tenantName;
     private Boolean jksEnabled;
-    @Pattern(regexp = "[A-Za-z]+")
     private String alias;
     private HashMap<String, String> contactDetails;
     private AccountProperties account;
