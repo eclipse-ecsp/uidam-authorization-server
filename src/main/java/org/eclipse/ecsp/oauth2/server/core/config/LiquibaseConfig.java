@@ -118,7 +118,7 @@ public class LiquibaseConfig  {
             // Get configuration values
             final String liquibaseChangeLogPath = getProperty("uidam.liquibase.change-log.path", 
                 "classpath:database.schema/master.xml");
-            final String defaultUidamSchema = getProperty("uidam.default.db.schema", "uidam");
+            final String defaultUidamSchema = getSchemaNameForTenant(tenantId);
             
             // Validate schema name to prevent SQL injection
             validateSchemaName(defaultUidamSchema);
@@ -211,6 +211,30 @@ public class LiquibaseConfig  {
      */
     private boolean getBooleanProperty(String key, boolean defaultValue) {
         return environment.getProperty(key, Boolean.class, defaultValue);
+    }
+
+    /**
+     * Gets the schema name for a tenant. 
+     * First checks the uidam.default.db.schema property.
+     * If empty or null, uses the tenant ID (lowercase) as the schema name.
+     *
+     * @param tenantId the tenant identifier
+     * @return the schema name to use for this tenant
+     */
+    private String getSchemaNameForTenant(String tenantId) {
+        String schemaFromProperty = getProperty("uidam.default.db.schema", "");
+        
+        if (schemaFromProperty.trim().isEmpty()) {
+            // Use tenant ID (lowercase) as schema name
+            String schemaName = tenantId.toLowerCase();
+            LOGGER.info("Property 'uidam.default.db.schema' is empty or null. "
+                    + "Using tenant ID (lowercase) as schema: {}", schemaName);
+            return schemaName;
+        }
+        
+        LOGGER.info("Using schema from property 'uidam.default.db.schema': {}", 
+                    schemaFromProperty);
+        return schemaFromProperty;
     }
 
     /**

@@ -92,7 +92,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -137,7 +137,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -160,7 +160,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -183,7 +183,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -227,8 +227,8 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
-        defaultProps.put("tenants.profile.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -241,9 +241,9 @@ class TenantDefaultPropertiesProcessorTest {
             .thenReturn(null);
         lenient().when(configurableEnvironment.getProperty("tenants.profile.tenant1.user-name"))
             .thenReturn(null);
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.jdbc-url"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
             .thenReturn("jdbc:postgresql://localhost:5432/default");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.user-name"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
             .thenReturn("defaultUser");
 
         // Act
@@ -272,7 +272,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -282,7 +282,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock environment to return null for tenant1 properties (so they will be generated)
         lenient().when(configurableEnvironment.getProperty("tenants.profile.tenant1.jdbc-url")).thenReturn(null);
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.jdbc-url"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
             .thenReturn("jdbc:postgresql://localhost:5432/default");
 
         // Act
@@ -299,7 +299,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -318,7 +318,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources with tenant already having all properties
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -341,7 +341,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -360,7 +360,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -379,7 +379,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -410,7 +410,7 @@ class TenantDefaultPropertiesProcessorTest {
         lenient().when(configurableEnvironment.getProperty("tenant.default")).thenReturn("tenant1");
         
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
         List<PropertySource<?>> sources = new ArrayList<>();
@@ -456,15 +456,15 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
-        defaultProps.put("tenants.profile.default.user-name", "defaultUser");
-        defaultProps.put("tenants.profile.default.password", "defaultPass");
-        defaultProps.put("tenants.profile.default.key-store.key-store-jks-encoded-content", "content");
-        defaultProps.put("tenants.profile.default.key-store.key-store-password", "keystorePass");
-        defaultProps.put("tenants.profile.default.key-store.key-alias", "alias");
-        defaultProps.put("tenants.profile.default.key-store.key-type", "RSA");
-        defaultProps.put("tenants.profile.default.captcha.recaptcha-key-site", "siteKey");
-        defaultProps.put("tenants.profile.default.captcha.recaptcha-key-secret", "secretKey");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.password", "defaultPass");
+        defaultProps.put("tenant.props.default.key-store.key-store-jks-encoded-content", "content");
+        defaultProps.put("tenant.props.default.key-store.key-store-password", "keystorePass");
+        defaultProps.put("tenant.props.default.key-store.key-alias", "alias");
+        defaultProps.put("tenant.props.default.key-store.key-type", "RSA");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-site", "siteKey");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-secret", "secretKey");
         
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
@@ -478,27 +478,27 @@ class TenantDefaultPropertiesProcessorTest {
         lenient().when(configurableEnvironment.getProperty("tenant.ids")).thenReturn(tenantIds);
         
         // Mock all validation properties for default tenant
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.jdbc-url"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
             .thenReturn("jdbc:postgresql://localhost:5432/default");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.user-name"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
             .thenReturn("defaultUser");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.password"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
             .thenReturn("defaultPass");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.key-store.key-store-jks-encoded-content"))
+                "tenant.props.default.key-store.key-store-jks-encoded-content"))
             .thenReturn("content");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.key-store.key-store-password"))
+                "tenant.props.default.key-store.key-store-password"))
             .thenReturn("keystorePass");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.key-store.key-alias"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-alias"))
             .thenReturn("alias");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.key-store.key-type"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-type"))
             .thenReturn("RSA");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.captcha.recaptcha-key-site"))
+                "tenant.props.default.captcha.recaptcha-key-site"))
             .thenReturn("siteKey");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.captcha.recaptcha-key-secret"))
+                "tenant.props.default.captcha.recaptcha-key-secret"))
             .thenReturn("secretKey");
 
         // Act & Assert
@@ -520,15 +520,15 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources with valid default but incomplete tenant1
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
-        defaultProps.put("tenants.profile.default.user-name", "defaultUser");
-        defaultProps.put("tenants.profile.default.password", "defaultPass");
-        defaultProps.put("tenants.profile.default.key-store.key-store-jks-encoded-content", "content");
-        defaultProps.put("tenants.profile.default.key-store.key-store-password", "keystorePass");
-        defaultProps.put("tenants.profile.default.key-store.key-alias", "alias");
-        defaultProps.put("tenants.profile.default.key-store.key-type", "RSA");
-        defaultProps.put("tenants.profile.default.captcha.recaptcha-key-site", "siteKey");
-        defaultProps.put("tenants.profile.default.captcha.recaptcha-key-secret", "secretKey");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.password", "defaultPass");
+        defaultProps.put("tenant.props.default.key-store.key-store-jks-encoded-content", "content");
+        defaultProps.put("tenant.props.default.key-store.key-store-password", "keystorePass");
+        defaultProps.put("tenant.props.default.key-store.key-alias", "alias");
+        defaultProps.put("tenant.props.default.key-store.key-type", "RSA");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-site", "siteKey");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-secret", "secretKey");
         
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
@@ -539,27 +539,27 @@ class TenantDefaultPropertiesProcessorTest {
         when(propertySources.contains("failedTenantRemovalProperties")).thenReturn(false);
         
         // Mock validation properties for default tenant (all present)
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.jdbc-url"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
             .thenReturn("jdbc:postgresql://localhost:5432/default");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.user-name"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
             .thenReturn("defaultUser");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.password"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
             .thenReturn("defaultPass");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.key-store.key-store-jks-encoded-content"))
+                "tenant.props.default.key-store.key-store-jks-encoded-content"))
             .thenReturn("content");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.key-store.key-store-password"))
+                "tenant.props.default.key-store.key-store-password"))
             .thenReturn("keystorePass");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.key-store.key-alias"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-alias"))
             .thenReturn("alias");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.key-store.key-type"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-type"))
             .thenReturn("RSA");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.captcha.recaptcha-key-site"))
+                "tenant.props.default.captcha.recaptcha-key-site"))
             .thenReturn("siteKey");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.captcha.recaptcha-key-secret"))
+                "tenant.props.default.captcha.recaptcha-key-secret"))
             .thenReturn("secretKey");
         
         // Mock validation properties for tenant1 (missing password - will fail)
@@ -585,24 +585,25 @@ class TenantDefaultPropertiesProcessorTest {
         // Arrange
         final String tenantIds = "tenant1";
         
-        lenient().when(configurableEnvironment.getProperty("tenant.config.validation.enabled", 
+        // Override the setUp() method's disabled validation for this test
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled", 
             Boolean.class, true)).thenReturn(true);
-        lenient().when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation", 
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation", 
             "EQUAL")).thenReturn("NONE");
         lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
             .thenReturn(true);
         
         // Mock property sources with valid default
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
-        defaultProps.put("tenants.profile.default.user-name", "defaultUser");
-        defaultProps.put("tenants.profile.default.password", "defaultPass");
-        defaultProps.put("tenants.profile.default.key-store.key-store-jks-encoded-content", "content");
-        defaultProps.put("tenants.profile.default.key-store.key-store-password", "keystorePass");
-        defaultProps.put("tenants.profile.default.key-store.key-alias", "alias");
-        defaultProps.put("tenants.profile.default.key-store.key-type", "RSA");
-        defaultProps.put("tenants.profile.default.captcha.recaptcha-key-site", "siteKey");
-        defaultProps.put("tenants.profile.default.captcha.recaptcha-key-secret", "secretKey");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.password", "defaultPass");
+        defaultProps.put("tenant.props.default.key-store.key-store-jks-encoded-content", "content");
+        defaultProps.put("tenant.props.default.key-store.key-store-password", "keystorePass");
+        defaultProps.put("tenant.props.default.key-store.key-alias", "alias");
+        defaultProps.put("tenant.props.default.key-store.key-type", "RSA");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-site", "siteKey");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-secret", "secretKey");
         
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
         
@@ -613,27 +614,27 @@ class TenantDefaultPropertiesProcessorTest {
         when(propertySources.contains("failedTenantRemovalProperties")).thenReturn(false);
         
         // Mock validation properties for default tenant
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.jdbc-url"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
             .thenReturn("jdbc:postgresql://localhost:5432/default");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.user-name"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
             .thenReturn("defaultUser");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.password"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
             .thenReturn("defaultPass");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.key-store.key-store-jks-encoded-content"))
+                "tenant.props.default.key-store.key-store-jks-encoded-content"))
             .thenReturn("content");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.key-store.key-store-password"))
+                "tenant.props.default.key-store.key-store-password"))
             .thenReturn("keystorePass");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.key-store.key-alias"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-alias"))
             .thenReturn("alias");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.key-store.key-type"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-type"))
             .thenReturn("RSA");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.captcha.recaptcha-key-site"))
+                "tenant.props.default.captcha.recaptcha-key-site"))
             .thenReturn("siteKey");
         lenient().when(configurableEnvironment.getProperty(
-                "tenants.profile.default.captcha.recaptcha-key-secret"))
+                "tenant.props.default.captcha.recaptcha-key-secret"))
             .thenReturn("secretKey");
         
         // Mock tenant1 with missing properties (will fail validation)
@@ -660,7 +661,7 @@ class TenantDefaultPropertiesProcessorTest {
         
         // Mock property sources with incomplete default tenant
         Map<String, Object> defaultProps = new HashMap<>();
-        defaultProps.put("tenants.profile.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         // Missing other required properties
         
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
@@ -670,9 +671,9 @@ class TenantDefaultPropertiesProcessorTest {
         when(propertySources.iterator()).thenReturn(sources.iterator());
         
         // Mock default tenant with missing properties
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.jdbc-url"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
             .thenReturn("jdbc:postgresql://localhost:5432/default");
-        lenient().when(configurableEnvironment.getProperty("tenants.profile.default.user-name"))
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
             .thenReturn(null); // Missing
 
         // Act

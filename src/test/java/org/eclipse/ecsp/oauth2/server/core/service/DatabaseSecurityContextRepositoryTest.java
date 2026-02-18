@@ -98,13 +98,40 @@ class DatabaseSecurityContextRepositoryTest {
         this.authorizationSecurityContextRepository = mock(AuthorizationSecurityContextRepository.class);
         this.securityContextHolderStrategy = mock(SecurityContextHolderStrategy.class);
         this.tenantProperties = mock(TenantProperties.class);
-        MultiTenantProperties multiTenantProperties = mock(MultiTenantProperties.class);
+        
+        // Mock the account properties
+        final AccountProperties accountProperties = Mockito.mock(AccountProperties.class);
+        when(accountProperties.getAccountName()).thenReturn(ACCOUNT_NAME);
+        when(tenantProperties.getAccount()).thenReturn(accountProperties);
+        
+        // Set up tenant context - in single-tenant mode, TenantContext returns "default"
+        try {
+            TenantContext.clear();
+            TenantContext.setCurrentTenant("ecsp");
+        } catch (Exception e) {
+            // Ignore exceptions during setup
+        }
+        
+        // Get the actual tenant that will be used (may be "default" in single-tenant mode)
+        final String actualTenant = TenantContext.getCurrentTenant();
+        
+        // Mock multiTenantProperties to return tenantProperties for the actual tenant
+        final MultiTenantProperties multiTenantProperties = mock(MultiTenantProperties.class);
+        when(multiTenantProperties.getTenantProperties(actualTenant)).thenReturn(tenantProperties);
         when(multiTenantProperties.getTenantProperties(anyString())).thenReturn(tenantProperties);
+        
+        // Mock multiTenantProperties.getProfile() to return a map with the tenant
+        final Map<String, TenantProperties> tenantsMap = new HashMap<>();
+        tenantsMap.put(actualTenant, tenantProperties);
+        tenantsMap.put("ecsp", tenantProperties);
+        tenantsMap.put("default", tenantProperties);
+        when(multiTenantProperties.getProfile()).thenReturn(tenantsMap);
+        
         tenantConfigurationService = new TenantConfigurationService(multiTenantProperties);
         request = new MockHttpServletRequest();
         request.setRequestedSessionId(REQUESTED_SESSION_ID);
         // Create a MockHttpSession
-        MockHttpSession session = new MockHttpSession() {
+        final MockHttpSession session = new MockHttpSession() {
             @Override
             public String getId() {
                 return REQUESTED_SESSION_ID; // Return your desired session ID
@@ -119,25 +146,16 @@ class DatabaseSecurityContextRepositoryTest {
         response = new MockHttpServletResponse();
         databaseSecurityContextRepository = new DatabaseSecurityContextRepository(
             authorizationSecurityContextRepository, tenantConfigurationService, "5m");
-        
-        // Mock the account properties
-        AccountProperties accountProperties = Mockito.mock(AccountProperties.class);
-        when(accountProperties.getAccountName()).thenReturn(ACCOUNT_NAME);
-        when(tenantProperties.getAccount()).thenReturn(accountProperties);
-        
-        // Mock multiTenantProperties.getProfile() to return a map with the ecsp tenant
-        Map<String, TenantProperties> tenantsMap = new HashMap<>();
-        tenantsMap.put("ecsp", tenantProperties);
-        when(multiTenantProperties.getProfile()).thenReturn(tenantsMap);
-        
-        // Set up tenant context for multi-tenancy tests
-        TenantContext.setCurrentTenant("ecsp");
     }
 
     @AfterEach
     void tearDown() {
         // Clean up tenant context after each test
-        TenantContext.clear();
+        try {
+            TenantContext.clear();
+        } catch (Exception e) {
+            // Ignore exceptions during teardown
+        }
     }
 
     /**
