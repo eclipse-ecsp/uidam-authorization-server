@@ -224,7 +224,7 @@ public class LiquibaseConfig  {
     private String getSchemaNameForTenant(String tenantId) {
         String schemaFromProperty = getProperty("uidam.default.db.schema", "");
         
-        if (schemaFromProperty == null || schemaFromProperty.trim().isEmpty()) {
+        if (schemaFromProperty.trim().isEmpty()) {
             // Use tenant ID (lowercase) as schema name
             String schemaName = tenantId.toLowerCase();
             LOGGER.info("Property 'uidam.default.db.schema' is empty or null. "

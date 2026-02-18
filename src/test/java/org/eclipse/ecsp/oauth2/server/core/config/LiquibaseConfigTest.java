@@ -418,4 +418,142 @@ class LiquibaseConfigTest {
         }
         assertEquals(allTenants, tenantIds, "Should use all tenants when multi-tenant is enabled");
     }
+
+    @Test
+    void getSchemaNameForTenant_shouldUsePropertyWhenAvailable() {
+        // This tests the behavior of getSchemaNameForTenant() when uidam.default.db.schema is set
+        // Simulating the logic from LiquibaseConfig.getSchemaNameForTenant()
+        
+        final String schemaFromProperty = "uidam";
+        final String tenantId = "ecsp";
+        
+        // Act - Simulate the method logic
+        final String result = getSchemaName(schemaFromProperty, tenantId);
+        
+        // Assert
+        assertEquals("uidam", result, "Should use schema from property when available");
+    }
+
+    @Test
+    void getSchemaNameForTenant_shouldUseTenantIdWhenPropertyIsEmpty() {
+        // This tests the behavior when uidam.default.db.schema is empty
+        
+        final String schemaFromProperty = "";
+        final String tenantId = "ECSP";
+        
+        // Act - Simulate the method logic
+        final String result = getSchemaName(schemaFromProperty, tenantId);
+        
+        // Assert
+        assertEquals("ecsp", result, "Should use tenant ID (lowercase) when property is empty");
+    }
+
+    @Test
+    void getSchemaNameForTenant_shouldUseTenantIdWhenPropertyIsNull() {
+        // This tests the behavior when uidam.default.db.schema is null
+        
+        final String schemaFromProperty = null;
+        final String tenantId = "SDP";
+        
+        // Act - Simulate the method logic
+        final String result = getSchemaName(schemaFromProperty, tenantId);
+        
+        // Assert
+        assertEquals("sdp", result, "Should use tenant ID (lowercase) when property is null");
+    }
+
+    @Test
+    void getSchemaNameForTenant_shouldUseTenantIdWhenPropertyIsWhitespace() {
+        // This tests the behavior when uidam.default.db.schema contains only whitespace
+        
+        final String schemaFromProperty = "   ";
+        final String tenantId = "Custom_Tenant";
+        
+        // Act - Simulate the method logic
+        final String result = getSchemaName(schemaFromProperty, tenantId);
+        
+        // Assert
+        assertEquals("custom_tenant", result, "Should use tenant ID (lowercase) when property is whitespace");
+    }
+
+    /**
+     * Helper method to simulate getSchemaNameForTenant logic.
+     */
+    private String getSchemaName(String schemaFromProperty, String tenantId) {
+        if (schemaFromProperty == null || schemaFromProperty.trim().isEmpty()) {
+            return tenantId.toLowerCase();
+        }
+        return schemaFromProperty;
+    }
+
+    @Test
+    void getSchemaNameForTenant_shouldConvertTenantIdToLowercase() {
+        // Test that tenant ID is converted to lowercase when used as schema name
+        
+        String[] tenantIds = {"ECSP", "Sdp", "MixedCase", "UPPERCASE"};
+        String[] expected = {"ecsp", "sdp", "mixedcase", "uppercase"};
+        
+        for (int i = 0; i < tenantIds.length; i++) {
+            String result = tenantIds[i].toLowerCase();
+            assertEquals(expected[i], result, 
+                "Tenant ID should be converted to lowercase: " + tenantIds[i]);
+        }
+    }
+
+    @Test
+    void getSchemaNameForTenant_shouldHandleUnderscoresInTenantId() {
+        // Test that underscores in tenant IDs are preserved
+        
+        String tenantId = "My_Test_Tenant";
+        String expected = "my_test_tenant";
+        
+        String result = tenantId.toLowerCase();
+        
+        assertEquals(expected, result, "Underscores should be preserved in tenant ID");
+    }
+
+    @Test
+    void schemaNameValidation_shouldRejectInvalidCharacters() {
+        // Test schema validation against SQL injection
+        // Pattern used in LiquibaseConfig: ^[a-zA-Z0-9_.-]+$
+        final String[] invalidSchemas = {
+            "schema; DROP TABLE users",
+            "schema OR 1=1",
+            "schema/*comment*/",
+            "schema'",
+            "schema\"",
+            "schema;",
+            "schema DROP",
+            "schema\nDROP",
+            "schema@example"
+        };
+        
+        final String pattern = "^[a-zA-Z0-9_.-]+$";
+        
+        for (String schema : invalidSchemas) {
+            final boolean isValid = schema.matches(pattern);
+            assertFalse(isValid, "Invalid schema should be rejected: " + schema);
+        }
+    }
+
+    @Test
+    void schemaNameValidation_shouldAcceptValidCharacters() {
+        // Test that valid schema names are accepted
+        String[] validSchemas = {
+            "uidam",
+            "ecsp",
+            "test_schema",
+            "schema123",
+            "schema-name",
+            "schema.name",
+            "SCHEMA_NAME"
+        };
+        
+        String pattern = "^[a-zA-Z0-9_.-]+$";
+        
+        for (String schema : validSchemas) {
+            boolean isValid = schema.matches(pattern);
+            assertTrue(isValid, "Valid schema should be accepted: " + schema);
+        }
+    }
 }

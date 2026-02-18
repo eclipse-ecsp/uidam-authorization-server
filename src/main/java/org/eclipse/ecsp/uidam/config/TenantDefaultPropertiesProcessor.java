@@ -473,7 +473,7 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
         
         // Database name validation - runs INDEPENDENTLY of tenant.config.validation.enabled
         // Skip DB name validation for default tenant
-        if (isDefaultTenant || "default".equalsIgnoreCase(tenantId)) {
+        if (isDefaultTenant || DEFAULT_TENANT.equalsIgnoreCase(tenantId)) {
             return allValidationsPassed;
         }
         boolean dbNameValidationPassed = validateDatabaseName(tenantId, environment, isDefaultTenant);
