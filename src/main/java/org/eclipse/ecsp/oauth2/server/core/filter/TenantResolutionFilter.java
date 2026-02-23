@@ -28,14 +28,15 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.exception.TenantResolutionException;
 import org.eclipse.ecsp.oauth2.server.core.response.BaseRepresentation;
 import org.eclipse.ecsp.oauth2.server.core.response.ResponseMessage;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -51,11 +52,14 @@ import java.util.regex.Pattern;
  * Filter to resolve and set the tenant context from HTTP request. This filter runs early in the Spring Security filter
  * chain, before OAuth2 processing. It supports multiple tenant resolution strategies: 
  * 1. tenantId header 
- * 2. Path-based tenant resolution (/tenant/{tenantId}/... or /{tenantId}/oauth2/...)
- * 3. Request parameter
+ * 2. Well-known endpoint postfix (/.well-known/oauth-authorization-server/{tenantId})
+ * 3. Path-based tenant resolution (/tenant/{tenantId}/... or /{tenantId}/oauth2/...)
+ * 4. Request parameter
+ * 5. Authorization header (JWT token with tenantID claim)
  * Static resources (CSS, JS, images, etc.) are bypassed and served without tenant resolution.
  */
-@Component 
+@Component
+@RefreshScope
 @Order(Ordered.HIGHEST_PRECEDENCE + 10) // Run early, but after basic security filters
 public class TenantResolutionFilter implements Filter {
 
@@ -73,8 +77,17 @@ public class TenantResolutionFilter implements Filter {
     private static final int TENANT_PREFIX_POSITION = 1;
 
     private static final String TENANT_HEADER = "tenantId";
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final int BEARER_PREFIX_LENGTH = 7; // Length of "Bearer "
+    private static final int JWT_PARTS_COUNT = 3; // JWT has 3 parts: header.payload.signature
     private static final String TENANT_PARAM = "tenant";
     private static final String TENANT_SESSION_KEY = "RESOLVED_TENANT_ID";
+    
+    // Well-known endpoint paths
+    private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server/";
+    private static final String WELL_KNOWN_OPENID_CONFIG = "/.well-known/openid-configuration/";
+    private static final String WELL_KNOWN_PATH = "/.well-known/";
+    private static final int NOT_FOUND_INDEX = -1;
     
     // Whitelist of path segments that should trigger tenant resolution
     private static final Set<String> TENANT_AWARE_PATHS = Set.of(
@@ -105,7 +118,6 @@ public class TenantResolutionFilter implements Filter {
     public TenantResolutionFilter(TenantConfigurationService tenantConfigurationService) {
         this.tenantConfigurationService = tenantConfigurationService;
     }
-
     
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
@@ -132,20 +144,33 @@ public class TenantResolutionFilter implements Filter {
         LOGGER.debug("Processing tenant resolution for request: {}", requestUri);
 
         try {
+            // Validate well-known endpoint postfix before processing tenant resolution
+            if (requestUri != null && requestUri.contains(WELL_KNOWN_PATH)) {
+                if (!validateWellKnownPostfix(httpRequest, httpResponse)) {
+                    return; // Validation failed, error response already sent
+                }
+            }
+            
             // First, try to resolve tenant from request (path, header, parameter)
             tenantId = resolveTenantFromRequest(httpRequest);
             if (StringUtils.hasText(tenantId)) {
                 LOGGER.debug("Tenant resolved from request: {}", tenantId);
             } else {
                 // Fallback: try to get tenant from session
-                tenantId = getTenantFromSession(httpRequest);
+                //tenantId = getTenantFromSession(httpRequest);
                 if (StringUtils.hasText(tenantId)) {
                     LOGGER.debug("Tenant resolved from session: {}", tenantId);
-                } else {
+                } else if (tenantConfigurationService.isMultitenantEnabled()) {
                     // No tenant could be resolved - throw exception
                     LOGGER.error("No tenant could be resolved for request: {}", requestUri);
                     throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
                 }
+            }
+
+            // Additional validation: if multitenant is disabled, set tenantId to default
+            if (!StringUtils.hasText(tenantId) && !tenantConfigurationService.isMultitenantEnabled()) {
+                tenantId = tenantConfigurationService.getDefaultTenantId();
+                LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
             }
 
             // Validate that the resolved tenant actually exists in configuration
@@ -224,12 +249,23 @@ public class TenantResolutionFilter implements Filter {
         // Strategy 1: Check header
         tenantId = request.getHeader(TENANT_HEADER);
         if (StringUtils.hasText(tenantId)) {
-            LOGGER.debug("Tenant resolved from header: {}", tenantId);
+            LOGGER.debug("Tenant resolved from tenantId header: {}", tenantId);
             storeTenantInSession(request, tenantId);
             return tenantId;
         }
 
-        // Strategy 2: Extract from path (/{tenantId}/oauth2/...)
+        // Strategy 2: Extract from well-known postfix (/.well-known/oauth-authorization-server/tenant)
+        String path = request.getRequestURI();
+        if (path != null && path.contains(WELL_KNOWN_PATH)) {
+            tenantId = extractTenantFromWellKnownPostfix(path);
+            if (StringUtils.hasText(tenantId)) {
+                LOGGER.debug("Tenant resolved from well-known postfix: {}", tenantId);
+                storeTenantInSession(request, tenantId);
+                return tenantId;
+            }
+        }
+
+        // Strategy 3: Extract from path (/{tenantId}/oauth2/...)
         tenantId = extractTenantFromPathPrefix(request);
         if (StringUtils.hasText(tenantId)) {
             LOGGER.debug("Tenant resolved from path prefix: {}", tenantId);
@@ -237,8 +273,7 @@ public class TenantResolutionFilter implements Filter {
             return tenantId;
         }
 
-        // Strategy 3: Generic path prefix (/{tenantId}/...) - fallback when whitelist misses
-        String path = request.getRequestURI();
+        // Strategy 4: Generic path prefix (/{tenantId}/...) - fallback when whitelist misses
         if (path != null) {
             String[] genericParts = path.split("/");
             if (genericParts.length > 1) {
@@ -250,12 +285,20 @@ public class TenantResolutionFilter implements Filter {
                 }
             }
         }
-        // Strategy 4: Check request parameter
-        tenantId = request.getParameter(TENANT_PARAM);
+        // Strategy 5: Check request parameter tenantId
+        tenantId = request.getParameter(TENANT_HEADER);
         if (StringUtils.hasText(tenantId)) {
             LOGGER.debug("Tenant resolved from parameter: {}", tenantId);
             storeTenantInSession(request, tenantId);
             return tenantId;
+        }
+
+        // Strategy 6: Check Authorization header for JWT token with tenantID claim
+        String tenantFromAuth = extractTenantFromAuthorizationHeader(request);
+        if (StringUtils.hasText(tenantFromAuth)) {
+            LOGGER.debug("Tenant resolved from Authorization header: {}", tenantFromAuth);
+            storeTenantInSession(request, tenantFromAuth);
+            return tenantFromAuth;
         }
 
         return null;
@@ -290,7 +333,7 @@ public class TenantResolutionFilter implements Filter {
             return null;
         }
         
-        // Pattern 1: /tenant/{tenantId}/... (explicit tenant prefix)
+        // Pattern 1: /{tenantId}/... (explicit tenant prefix)
         if (TENANT_PARAM.equals(parts[TENANT_PREFIX_POSITION])) {
             String tenantId = parts[TENANT_ID_POSITION];
             if (StringUtils.hasText(tenantId)) {
@@ -318,6 +361,110 @@ public class TenantResolutionFilter implements Filter {
      */
     private boolean isValidTenantId(String tenantId) {
         return StringUtils.hasText(tenantId) && !INVALID_TENANT_IDS.contains(tenantId);
+    }
+
+    /**
+     * Extract tenant ID from Authorization header.
+     * Supports JWT tokens with tenantId claim in the payload.
+     * Expected format: Bearer JWT-TOKEN
+     * The JWT payload should contain a "tenantId" claim.
+     *
+     * <p>Example JWT payload:
+     * <pre>
+     * {
+     *   "sub": "admin",
+     *   "accountName": "sdp",
+     *   "tenantId": "sdp",
+     *   "user_id": "33332547171543448520109731243641",
+     *   ...
+     * }
+     * </pre>
+     *
+     * @param request The HTTP request containing the Authorization header
+     * @return The tenant ID if found in the token, null otherwise
+     */
+    private String extractTenantFromAuthorizationHeader(HttpServletRequest request) {
+        String authHeader = request.getHeader(AUTHORIZATION_HEADER);
+        
+        if (!StringUtils.hasText(authHeader)) {
+            LOGGER.debug("No Authorization header found in request");
+            return null;
+        }
+        
+        // Check if it's a Bearer token
+        if (!authHeader.startsWith("Bearer ")) {
+            LOGGER.debug("Authorization header is not a Bearer token");
+            return null;
+        }
+        
+        try {
+            // Extract the JWT token (remove "Bearer " prefix)
+            String token = authHeader.substring(BEARER_PREFIX_LENGTH);
+            
+            // Parse JWT token to extract tenantId claim
+            // JWT format: header.payload.signature
+            String[] parts = token.split("\\.");
+            if (parts.length != JWT_PARTS_COUNT) {
+                LOGGER.warn("Invalid JWT token format in Authorization header");
+                return null;
+            }
+            
+            // Decode the payload (second part)
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]));
+            
+            // Parse JSON payload to extract tenantId
+            String tenantId = extractTenantIdFromPayload(payload);
+            
+            if (StringUtils.hasText(tenantId)) {
+                LOGGER.debug("Extracted tenant '{}' from Authorization header JWT token", tenantId);
+                return tenantId;
+            } else {
+                LOGGER.debug("No tenantId claim found in JWT token payload");
+                return null;
+            }
+            
+        } catch (IllegalArgumentException e) {
+            LOGGER.warn("Failed to decode JWT token from Authorization header: {}", e.getMessage());
+            return null;
+        } catch (Exception e) {
+            LOGGER.error("Error extracting tenant from Authorization header: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * Extract tenantId value from JWT payload JSON.
+     * The primary claim name is "tenantId" as per UIDAM token structure.
+     *
+     * @param payload The JWT payload JSON string
+     * @return The tenant ID if found, null otherwise
+     */
+    private String extractTenantIdFromPayload(String payload) {
+        if (!StringUtils.hasText(payload)) {
+            return null;
+        }
+        
+        try {
+            // Use Jackson ObjectMapper to parse the JSON payload
+            ObjectMapper objectMapper = new ObjectMapper();
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> claims = objectMapper.readValue(payload, java.util.Map.class);
+            
+            // Check for "tenantId" claim (standard UIDAM claim name)
+            Object tenantId = claims.get(TENANT_HEADER);
+            if (tenantId != null) {
+                LOGGER.debug("Found '{}' claim in JWT payload: {}", TENANT_HEADER, tenantId);
+                return tenantId.toString();
+            }
+            
+            LOGGER.debug("JWT payload does not contain '{}' claim. Available claims: {}", 
+                TENANT_HEADER, claims.keySet());
+            return null;
+            
+        } catch (Exception e) {
+            LOGGER.warn("Failed to parse JWT payload JSON: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -370,4 +517,104 @@ public class TenantResolutionFilter implements Filter {
         response.getWriter().flush();
     }
 
+    /**
+     * Validates well-known endpoint postfix paths for tenant ID validation.
+     * This method ensures that:
+     * 1. If multitenancy is disabled, only root well-known paths and default tenant paths are allowed
+     * 2. If multitenancy is enabled, postfix tenant IDs must be valid and configured
+     * 3. Random/invalid tenant IDs in postfix are rejected
+     *
+     * @param request the HTTP request
+     * @param response the HTTP response
+     * @return true if validation passed, false if validation failed (error response sent)
+     * @throws IOException if writing error response fails
+     */
+    private boolean validateWellKnownPostfix(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+        String requestUri = request.getRequestURI();
+        
+        // Extract tenant ID from postfix if present
+        String tenantIdFromPostfix = extractTenantFromWellKnownPostfix(requestUri);
+
+        if (tenantIdFromPostfix != null) {
+            LOGGER.debug("Tenant ID found in well-known postfix: {}", tenantIdFromPostfix);
+
+            // If multitenancy is disabled, only allow default tenant or reject
+            if (!tenantConfigurationService.isMultitenantEnabled()) {
+                if (!tenantIdFromPostfix.equals(tenantConfigurationService.getDefaultTenantId())) {
+                    LOGGER.warn("Multitenancy is disabled but non-default tenant postfix '{}' provided in: {}", 
+                            tenantIdFromPostfix, requestUri);
+                    throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
+                }
+                LOGGER.debug("Multitenancy disabled, but default tenant '{}' postfix is allowed", tenantIdFromPostfix);
+            }
+
+            // Validate that the tenant exists in configuration
+            if (!isValidConfiguredTenant(tenantIdFromPostfix)) {
+                LOGGER.warn("Invalid tenant ID '{}' in well-known postfix: {}", tenantIdFromPostfix, requestUri);
+                throw TenantResolutionException.invalidTenant(tenantIdFromPostfix, requestUri);
+            }
+
+            LOGGER.debug("Valid tenant ID '{}' in well-known postfix", tenantIdFromPostfix);
+        }
+
+        return true;
+    }
+
+    /**
+     * Extracts tenant ID from well-known endpoint postfix.
+     * 
+     * <p>Examples:
+     * - /.well-known/oauth-authorization-server → null
+     * - /.well-known/oauth-authorization-server/ → null
+     * - /.well-known/oauth-authorization-server/ecsp → "ecsp"
+     * - /.well-known/oauth-authorization-server/ecsp/ → "ecsp"
+     * - /.well-known/openid-configuration/demo → "demo"
+     *
+     * @param requestUri the request URI
+     * @return the tenant ID from postfix, or null if not present
+     */
+    private String extractTenantFromWellKnownPostfix(String requestUri) {
+        if (!StringUtils.hasText(requestUri)) {
+            return null;
+        }
+
+        // Match patterns like:
+        // /.well-known/oauth-authorization-server/TENANT
+        // /.well-known/openid-configuration/TENANT
+        String[] wellKnownPaths = {
+            WELL_KNOWN_OAUTH_SERVER,
+            WELL_KNOWN_OPENID_CONFIG
+        };
+
+        for (String wellKnownPath : wellKnownPaths) {
+            int wellKnownIndex = requestUri.indexOf(wellKnownPath);
+            if (wellKnownIndex != NOT_FOUND_INDEX) {
+                // Extract everything after the well-known path
+                String afterWellKnown = requestUri.substring(wellKnownIndex + wellKnownPath.length());
+                
+                // Remove trailing slashes and extract tenant ID (using safe string manipulation)
+                while (afterWellKnown.startsWith("/")) {
+                    afterWellKnown = afterWellKnown.substring(1);
+                }
+                while (afterWellKnown.endsWith("/")) {
+                    afterWellKnown = afterWellKnown.substring(0, afterWellKnown.length() - 1);
+                }
+                afterWellKnown = afterWellKnown.trim();
+                
+                if (StringUtils.hasText(afterWellKnown)) {
+                    // Take only the first segment as tenant ID (in case there are more path segments)
+                    String[] segments = afterWellKnown.split("/");
+                    String tenantId = segments[0];
+                    
+                    if (StringUtils.hasText(tenantId)) {
+                        LOGGER.debug("Extracted tenant '{}' from well-known postfix: {}", tenantId, requestUri);
+                        return tenantId;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
 }

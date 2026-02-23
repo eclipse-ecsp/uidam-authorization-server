@@ -268,15 +268,14 @@
             
             </div>
 			
-			<div class="container-auth-input">
+			<div class="container-auth-input" th:if="${termsPrivacyPolicy != null and termsPrivacyPolicy != ''}">
 			    <div class="policy" style="margin-bottom: 5px;">
-					Please read and accept both policies before continuing.
+					Please read and accept the policy before continuing.
 				</div>
 				<div class="policy-container">
 					<input type="checkbox" id="termsCheckbox" name="termsCheckbox">
 					<label for="termsCheckbox" class="policy">
-						I agree to the <a href="terms-of-use" target="_blank">Terms of Use</a> and 
-						<a href="privacy-agreement" target="_blank">Privacy Agreement</a>
+						I agree to the <a th:href="${termsPrivacyPolicy}" onclick="window.open(this.href, 'termsPrivacy', 'width=800,height=600,scrollbars=yes,resizable=yes'); return false;">Terms & Privacy Policy</a>
 					</label>
 				</div>
 			</div>
@@ -313,7 +312,13 @@
 				var lastName = $('#lastName').val().trim();
 				var password = $('#password').val().trim();
 				var confirmPassword = $('#confirmPassword').val().trim();
-				var termsAccepted = $('#termsCheckbox').is(':checked');
+				
+				// Check for terms acceptance - only if checkbox exists
+				var termsAccepted = true; // Default to true when no checkbox exists
+				if ($('#termsCheckbox').length > 0) {
+					termsAccepted = $('#termsCheckbox').is(':checked');
+				}
+				
 				var recaptchaResponse = $('#g-recaptcha-response').val();
 				var isCaptchaFieldEnabled = $('#g-recaptcha').length > 0;
 
@@ -360,6 +365,11 @@
 				} else {
 					errorMessage.hide();
 				}
+				handleInputFields();
+			});
+
+			// Add event listener for terms checkbox if it exists
+			$('#termsCheckbox').on('change', function() {
 				handleInputFields();
 			});
 

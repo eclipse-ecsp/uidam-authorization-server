@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.controller;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RevokeTokenRequest;
 import org.eclipse.ecsp.oauth2.server.core.response.BaseResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.AuthorizationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
  * It exposes the /revoke/revokeByAdmin endpoint for this purpose.
  */
 @RestController
-@RequestMapping("/{tenantId}/revoke/revokeByAdmin")
+@RequestMapping({"/{tenantId}/revoke/revokeByAdmin", "/revoke/revokeByAdmin"})
 public class AuthorizationController {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthorizationController.class);
     @Autowired
@@ -58,10 +59,11 @@ public class AuthorizationController {
      * @return A ResponseEntity object containing a BaseResponse with the response message.
      */
     @PostMapping(consumes = { MediaType.APPLICATION_FORM_URLENCODED_VALUE })
-    public ResponseEntity<BaseResponse> revokeToken(@PathVariable("tenantId") String tenantId,
+    public ResponseEntity<BaseResponse> revokeToken(@PathVariable(value = "tenantId", required = false) String tenantId,
                                                    @RequestHeader(value = "Authorization",
         required = true) String authorization, RevokeTokenRequest revokeTokenRequest) {
-        LOGGER.info("Revoke token request for clientId: {} or username: {}",
+        tenantId = TenantUtils.resolveTenantId(tenantId);
+        LOGGER.info("Revoke token request for clientId: {} or username: {} ",
                 revokeTokenRequest.getClientId(), revokeTokenRequest.getUsername());
         String response = authorizationService.revokeToken(revokeTokenRequest, authorization);
         return buildResponse(response, null, HttpStatus.OK, null);

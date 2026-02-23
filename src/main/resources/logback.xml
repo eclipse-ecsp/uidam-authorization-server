@@ -40,6 +40,8 @@
                     source="APP_SPRING_LOG_LEVEL" />
     <springProperty scope="context" name="LOG_FOLDER"
                     source="APP_LOG_FOLDER" />
+    <springProperty scope="context" name="PROP_LOAD_LOG_LEVEL"
+                    source="APP_PROP_LOAD_LOG_LEVEL" />
 
 
     <appender name="GELF"
@@ -122,6 +124,20 @@
 
     <logger name="org.eclipse.ecsp" level="${IGNITE_LOG_LEVEL}"
         additivity="false">
+        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
+            <then><appender-ref ref="ASYNC-GELF" /></then>
+            <else><appender-ref ref="ASYNC-STDOUT" /></else>
+        </if>
+    </logger>
+    <logger name="org.eclipse.ecsp.uidam.config.TenantDefaultPropertiesProcessor"
+        level="${PROP_LOAD_LOG_LEVEL}" additivity="false">
+        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
+            <then><appender-ref ref="ASYNC-GELF" /></then>
+            <else><appender-ref ref="ASYNC-STDOUT" /></else>
+        </if>
+    </logger>
+    <logger name="org.eclipse.ecsp.uidam.config.ConfigRefreshListener"
+        level="${PROP_LOAD_LOG_LEVEL}" additivity="false">
         <if condition='p("GRAYLOG_ENABLED").contains("true")'>
             <then><appender-ref ref="ASYNC-GELF" /></then>
             <else><appender-ref ref="ASYNC-STDOUT" /></else>

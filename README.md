@@ -54,6 +54,9 @@ from the command line interface.
 
 [Install Java](https://stackoverflow.com/questions/52511778/how-to-install-openjdk-11-on-windows)
 
+[Multitenancy Configuration](https://github.com/eclipse-ecsp/uidam-user-management/blob/main/docs/MULTITENANCY_DEVELOPER_GUIDE.md)
+
+
 #### Local DB Setup
 
 1. Install PostgreSQL and a Database manager tool like [DBeaver](https://dbeaver.com/2022/02/17/how-to-download-and-install-dbeaver/)

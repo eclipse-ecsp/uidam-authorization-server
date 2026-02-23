@@ -18,6 +18,7 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config;
 
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 
 /**

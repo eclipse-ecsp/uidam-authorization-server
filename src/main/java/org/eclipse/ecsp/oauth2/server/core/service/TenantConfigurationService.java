@@ -18,12 +18,14 @@
 
 package org.eclipse.ecsp.oauth2.server.core.service;
 
+import lombok.Getter;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MultiTenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.util.SessionTenantResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
@@ -34,14 +36,23 @@ import java.util.List;
  * It provides multi-tenant support by managing configurations for multiple tenants.
  */
 @Service
+@RefreshScope
 public class TenantConfigurationService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TenantConfigurationService.class);
     
     private final MultiTenantProperties multiTenantProperties;
 
+    @Getter
     @Value("#{'${tenant.ids}'.split(',')}")
     private List<String> tenantIds;
+
+    @Getter
+    @Value("${tenant.multitenant.enabled:true}")
+    private boolean multitenantEnabled;
+
+    @Value("${tenant.default:ecsp}")
+    private String defaultTenantId;
 
     /**
      * Constructor for TenantConfigurationService.
@@ -53,9 +64,9 @@ public class TenantConfigurationService {
         this.multiTenantProperties = multiTenantProperties;
         
         // Add null safety for tenant properties
-        if (multiTenantProperties.getTenants() != null) {
+        if (multiTenantProperties.getProfile() != null) {
             LOGGER.info("TenantConfigurationService initialized with {} tenant(s)", 
-                       multiTenantProperties.getTenants().size());
+                       multiTenantProperties.getProfile().size());
         } else {
             LOGGER.warn("TenantConfigurationService initialized with null tenant properties - check property loading");
         }
@@ -70,12 +81,12 @@ public class TenantConfigurationService {
      */
     public TenantProperties getTenantProperties(String tenantId) {
         // Add null safety check
-        if (multiTenantProperties.getTenants() == null) {
-            LOGGER.error("Multi-tenant properties not loaded - getTenants() returns null for tenant: {}", tenantId);
+        if (multiTenantProperties.getProfile() == null) {
+            LOGGER.error("Multi-tenant properties not loaded - getProfile() returns null for tenant: {}", tenantId);
             return null;
         }
         
-        TenantProperties properties = multiTenantProperties.getTenants().get(tenantId);
+        TenantProperties properties = multiTenantProperties.getProfile().get(tenantId);
         if (properties == null) {
             LOGGER.warn("No properties found for tenant: {}", tenantId);
         }
@@ -103,11 +114,15 @@ public class TenantConfigurationService {
      */
     public boolean tenantExists(String tenantId) {
         // Add null safety check
-        if (multiTenantProperties.getTenants() == null) {
+        if (multiTenantProperties.getProfile() == null) {
             LOGGER.error("Multi-tenant properties not loaded - cannot check if tenant exists");
             return false;
         }
-        return tenantIds.contains(tenantId) && multiTenantProperties.getTenants().containsKey(tenantId);
+        if (multitenantEnabled) {
+            return tenantIds.contains(tenantId) && multiTenantProperties.getProfile().containsKey(tenantId);
+        } else {
+            return defaultTenantId.equals(tenantId) && multiTenantProperties.getProfile().containsKey(tenantId);
+        }
     }
 
     /**
@@ -125,21 +140,31 @@ public class TenantConfigurationService {
      * @return the default tenant ID
      */
     public String getDefaultTenantId() {
-        return multiTenantProperties.getDefaultTenantId();
+        return defaultTenantId;
     }
     
 
     /**
      * Get all available tenant IDs.
+     * If multi-tenancy is disabled, returns only the default tenant.
+     * If multi-tenancy is enabled, returns all configured tenants.
      *
      * @return a set of all configured tenant IDs, or empty set if no tenants are configured
      */
     public java.util.Set<String> getAllTenants() {
         // Add null safety check
-        if (multiTenantProperties.getTenants() == null) {
+        if (multiTenantProperties.getProfile() == null) {
             LOGGER.error("Multi-tenant properties not loaded - cannot retrieve tenant list");
             return Collections.emptySet();
         }
+        
+        // If multi-tenancy is disabled, return only the default tenant
+        if (!multitenantEnabled) {
+            LOGGER.debug("Multi-tenancy is disabled, returning only default tenant: {}", defaultTenantId);
+            return Collections.singleton(defaultTenantId);
+        }
+        
+        // If multi-tenancy is enabled, return all available tenants
         return multiTenantProperties.getAvailableTenants();
     }
 }

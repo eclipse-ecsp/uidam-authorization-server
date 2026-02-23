@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.Assert.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -64,7 +65,7 @@ class MultiTenantPropertiesTest {
         tenants.put("ecsp", ecspTenantProps);
         tenants.put("demo", demoTenantProps);
         
-        multiTenantProperties.setTenants(tenants);
+        multiTenantProperties.setProfile(tenants);
         multiTenantProperties.setDefaultTenantId("ecsp");
     }
     
@@ -80,16 +81,14 @@ class MultiTenantPropertiesTest {
     void testGetTenantPropertiesWithInvalidTenantId() {
         TenantProperties result = multiTenantProperties.getTenantProperties("nonexistent");
         
-        assertNotNull(result);
-        assertEquals(ecspTenantProps, result); // Should return default tenant
+        assertNull(result);
     }
     
     @Test
     void testGetTenantPropertiesWithNullTenantId() {
         TenantProperties result = multiTenantProperties.getTenantProperties(null);
         
-        assertNotNull(result);
-        assertEquals(ecspTenantProps, result); // Should return default tenant
+        assertNull(result);
     }
     
     @Test
@@ -121,8 +120,8 @@ class MultiTenantPropertiesTest {
     void testDefaultConstructorAndSetters() {
         MultiTenantProperties properties = new MultiTenantProperties();
         
-        assertNotNull(properties.getTenants());
-        assertTrue(properties.getTenants().isEmpty());
+        assertNotNull(properties.getProfile());
+        assertTrue(properties.getProfile().isEmpty());
         assertEquals("ecsp", properties.getDefaultTenantId());
         
         // Test setters
@@ -132,9 +131,9 @@ class MultiTenantPropertiesTest {
         Map<String, TenantProperties> newTenants = new HashMap<>();
         TenantProperties testProps = new TenantProperties();
         newTenants.put("test", testProps);
-        properties.setTenants(newTenants);
+        properties.setProfile(newTenants);
         
-        assertEquals(newTenants, properties.getTenants());
+        assertEquals(newTenants, properties.getProfile());
     }
 }
 // CHECKSTYLE.ON: MatchXpath
