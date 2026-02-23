@@ -317,8 +317,8 @@ class TenantConfigurationServiceTest {
      */
     @Test
     void getDefaultTenantIdTest() {
-        // Setup mock default tenant ID
-        when(multiTenantProperties.getDefaultTenantId()).thenReturn("default-tenant");
+        // Setup default tenant ID field using ReflectionTestUtils
+        ReflectionTestUtils.setField(tenantConfigurationService, "defaultTenantId", "default-tenant");
         
         // Execute the method under test
         String result = tenantConfigurationService.getDefaultTenantId();
