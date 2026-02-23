@@ -69,7 +69,7 @@ class EmailVerificationControllerTest {
             .perform(get("/ecsp/emailVerification/verify")
                          .param("success", "true"))
             .andExpect(status().isOk())
-            .andExpect(view().name("/emailVerify/email-verification"))
+            .andExpect(view().name("emailVerify/email-verification"))
             .andExpect(model().attributeExists("success"))
             .andExpect(model().attribute("success", "true"));
     }
@@ -86,7 +86,7 @@ class EmailVerificationControllerTest {
             .perform(get("/{tenantId}/emailVerification/verify", "ecsp")
                          .param("success", "false"))
             .andExpect(status().isOk())
-            .andExpect(view().name("/emailVerify/email-verification"))
+            .andExpect(view().name("emailVerify/email-verification"))
             .andExpect(model().attributeExists("success"))
             .andExpect(model().attribute("success", "false"));
     }
@@ -103,7 +103,7 @@ class EmailVerificationControllerTest {
             .perform(get("/{tenantId}/emailVerification/verify", "ecsp")
                          .param("success", "error"))
             .andExpect(status().isOk())
-            .andExpect(view().name("/emailVerify/email-verification"))
+            .andExpect(view().name("emailVerify/email-verification"))
             .andExpect(model().attributeExists("success"))
             .andExpect(model().attribute("success", "error"));
     }
@@ -121,7 +121,7 @@ class EmailVerificationControllerTest {
             .perform(get("/{tenantId}/emailVerification/verify", "ecsp")
                          .param("success", "random_value"))
             .andExpect(status().isOk())
-            .andExpect(view().name("/emailVerify/email-verification"))
+            .andExpect(view().name("emailVerify/email-verification"))
             .andExpect(model().attributeExists("success"))
             .andExpect(model().attribute("success", "error"));
     }

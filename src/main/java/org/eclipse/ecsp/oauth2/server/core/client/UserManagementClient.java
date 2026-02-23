@@ -542,9 +542,15 @@ public class UserManagementClient {
                 errorDesc = errorMessage;
                 metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_NOT_FOUND);
             } else if (HttpStatus.FORBIDDEN.isSameCodeAs(statusCode)) {
-                errorCode = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.name();
-                errorDesc = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.getDescription();
-                metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_BLOCKED);
+                // Check if it's account not found or user not active
+                if (errorMessage.toLowerCase().contains("account")) {
+                    errorCode = CustomOauth2TokenGenErrorCodes.ACCOUNT_NOT_FOUND.name();
+                    errorDesc = CustomOauth2TokenGenErrorCodes.ACCOUNT_NOT_FOUND.getDescription();
+                } else {
+                    errorCode = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.name();
+                    errorDesc = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.getDescription();
+                    metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_BLOCKED);
+                }
             } else {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
                 errorDesc = errorMessage;

@@ -70,14 +70,14 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String requestUri = request.getRequestURI();
-        String currentTenant = SessionTenantResolver.getCurrentTenant();
+        //String currentTenant = SessionTenantResolver.getCurrentTenant();
 
-        LOGGER.debug("Processing authentication filter for tenant: {} on URI: {}", currentTenant, requestUri);
+        LOGGER.debug("Processing authentication filter for  URI: {}", requestUri);
 
         try {
             // Only check authentication-related endpoints
             if (isAuthenticationEndpoint(requestUri) && !isAuthenticationMethodAllowed(request)) {
-                LOGGER.warn("Authentication method not allowed for tenant: {} on URI: {}", currentTenant, requestUri);
+                LOGGER.warn("Authentication method not allowed for URI: {}", requestUri);
                 redirectToAlternativeAuth(response);
                 return;
             }
@@ -89,7 +89,7 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
             // Re-throw servlet exceptions as they're part of the filter contract
             throw e;
         } catch (RuntimeException e) {
-            LOGGER.error("Runtime error in tenant-aware authentication filter for tenant: {}", currentTenant, e);
+            LOGGER.error("Runtime error in tenant-aware authentication filter",  e);
             // Fail secure: redirect to error page instead of continuing
             response.sendRedirect(ERROR_REDIRECT_PATH + "?error=tenant_security_error");
         }
@@ -120,16 +120,14 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
             // Check form login attempts
             if (isFormLoginAttempt(request, requestUri)) {
                 boolean allowed = tenantProperties.isInternalLoginEnabled();
-                LOGGER.debug("Form login attempt for tenant: {} - allowed: {}",
-                        SessionTenantResolver.getCurrentTenant(), allowed);
+                LOGGER.debug("Form login attempt allowed: {}", allowed);
                 return allowed;
             }
 
             // Check OAuth login attempts
             if (isOauthLoginAttempt(requestUri)) {
                 boolean allowed = tenantProperties.isExternalIdpEnabled();
-                LOGGER.debug("OAuth login attempt for tenant: {} - allowed: {}",
-                        SessionTenantResolver.getCurrentTenant(), allowed);
+                LOGGER.debug("OAuth login attempt  - allowed: {}", allowed);
                 return allowed;
             }
 
@@ -137,8 +135,7 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
             return true;
 
         } catch (RuntimeException e) {
-            LOGGER.error("Runtime error checking authentication method for tenant: {}",
-                    SessionTenantResolver.getCurrentTenant(), e);
+            LOGGER.error("Runtime error checking authentication method", e);
             // Fail secure: deny authentication when configuration cannot be determined
             return false;
         }
