@@ -34,6 +34,7 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.UserErrorResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
 import org.eclipse.ecsp.sql.multitenancy.TenantContext;
@@ -278,14 +279,22 @@ class UserManagementClientTest {
         when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
 
         when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
-        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.just(new String("")));
+        UserEventResponse mockResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded successfully")
+            .build();
+        when(responseSpecMock.bodyToMono(UserEventResponse.class)).thenReturn(Mono.just(mockResponse));
 
         UserEvent userEvent = new UserEvent();
         userEvent.setType("Login_Attempt");
         userEvent.setResult("Success");
         userEvent.setMessage("login sucessfully!");
-        String response = userManagementClient.addUserEvent(userEvent, "6f452624-c4e3-40ff-ba29-fe9082705f50");
+        String userId = "6f452624-c4e3-40ff-ba29-fe9082705f50";
+        UserEventResponse response = userManagementClient.addUserEvent(userEvent, userId);
         assertNotNull(response);
+        assertEquals("ACTIVE", response.getUserStatus());
+        assertEquals(0, response.getLockDurationMinutes());
     }
 
     /**
@@ -306,7 +315,7 @@ class UserManagementClientTest {
         when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
 
         when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
-        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.error(new RuntimeException()));
+        when(responseSpecMock.bodyToMono(UserEventResponse.class)).thenReturn(Mono.error(new RuntimeException()));
 
         UserEvent userEvent = new UserEvent();
         userEvent.setType("Login_Attempt");

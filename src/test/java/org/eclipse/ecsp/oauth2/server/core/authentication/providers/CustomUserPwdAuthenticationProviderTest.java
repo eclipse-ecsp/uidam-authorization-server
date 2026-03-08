@@ -31,7 +31,9 @@ import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantPropert
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UserProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
+import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -116,11 +119,21 @@ class CustomUserPwdAuthenticationProviderTest {
         TenantProperties tenantProperties = mock(TenantProperties.class);
         UserProperties userProperties = mock(UserProperties.class);
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        when(tenantProperties.getUser()).thenReturn(userProperties);
-        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        lenient().when(tenantProperties.getUser()).thenReturn(userProperties);
+        lenient().when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup user management client mock
         doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return UserEventResponse for successful login
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString()))
+            .thenReturn(eventResponse);
         
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
             TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
@@ -145,6 +158,7 @@ class CustomUserPwdAuthenticationProviderTest {
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         when(tenantProperties.getUser()).thenReturn(userProperties);
         when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup session mock for failure case (needed for setRecaptchaSession)
         when(request.getSession()).thenReturn(session);
@@ -153,6 +167,14 @@ class CustomUserPwdAuthenticationProviderTest {
         UserDetailsResponse userDetailsResponse = getUser();
         userDetailsResponse.setPassword(TEST_PASSWORD);
         doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return UserEventResponse with ACTIVE status
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
         
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
             TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
@@ -169,12 +191,21 @@ class CustomUserPwdAuthenticationProviderTest {
         TenantProperties tenantProperties = mock(TenantProperties.class);
         UserProperties userProperties = mock(UserProperties.class);
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        when(tenantProperties.getUser()).thenReturn(userProperties);
+        lenient().when(tenantProperties.getUser()).thenReturn(userProperties);
         final int maxLoginAttempts = 5; // Different from default
-        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(maxLoginAttempts);
+        lenient().when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(maxLoginAttempts);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup user management client mock
         doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return UserEventResponse for successful login
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
         
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
             TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
@@ -216,11 +247,20 @@ class CustomUserPwdAuthenticationProviderTest {
         TenantProperties tenantProperties = mock(TenantProperties.class);
         UserProperties userProperties = mock(UserProperties.class);
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        when(tenantProperties.getUser()).thenReturn(userProperties);
-        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        lenient().when(tenantProperties.getUser()).thenReturn(userProperties);
+        lenient().when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup user management client mock
         doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return UserEventResponse for successful login
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
         
         // Perform authentication
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
@@ -273,6 +313,7 @@ class CustomUserPwdAuthenticationProviderTest {
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
         when(tenantProperties.getUser()).thenReturn(userProperties);
         when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup session mock for failure case (needed for setRecaptchaSession)
         when(request.getSession()).thenReturn(session);
@@ -281,6 +322,14 @@ class CustomUserPwdAuthenticationProviderTest {
         UserDetailsResponse userDetailsResponse = getUser();
         userDetailsResponse.setPassword(TEST_PASSWORD);
         doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return UserEventResponse with ACTIVE status
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
         
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
             TEST_PASSWORD, TEST_ACCOUNT_NAME, null);
@@ -305,10 +354,10 @@ class CustomUserPwdAuthenticationProviderTest {
         // Setup tenant properties mock
         TenantProperties tenantProperties = mock(TenantProperties.class);
         UserProperties userProperties = mock(UserProperties.class);
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        when(tenantProperties.getUser()).thenReturn(userProperties);
-        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_THREE);
-        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        lenient().when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        lenient().when(tenantProperties.getUser()).thenReturn(userProperties);
+        lenient().when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_THREE);
+        lenient().when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup mock to throw OAuth2AuthenticationException with USER_NOT_FOUND error code
         org.springframework.security.oauth2.core.OAuth2Error error = 
@@ -335,10 +384,10 @@ class CustomUserPwdAuthenticationProviderTest {
         // Setup tenant properties mock
         TenantProperties tenantProperties = mock(TenantProperties.class);
         UserProperties userProperties = mock(UserProperties.class);
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        when(tenantProperties.getUser()).thenReturn(userProperties);
-        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_THREE);
-        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        lenient().when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        lenient().when(tenantProperties.getUser()).thenReturn(userProperties);
+        lenient().when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_THREE);
+        lenient().when(tenantProperties.getTenantId()).thenReturn("test-tenant");
         
         // Setup mock to throw OAuth2AuthenticationException with generic error code
         org.springframework.security.oauth2.core.OAuth2Error error = 
@@ -379,6 +428,14 @@ class CustomUserPwdAuthenticationProviderTest {
         
         doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
         
+        // Mock addUserEvent to return UserEventResponse with ACTIVE status
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
+        
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
             TEST_USER_NAME, "wrongPassword", TEST_ACCOUNT_NAME, null);
         
@@ -415,6 +472,14 @@ class CustomUserPwdAuthenticationProviderTest {
         userDetailsResponse.getCaptcha().put(USER_ENFORCE_AFTER_NO_OF_FAILURES, MAX_ATTEMPTS_FIVE);
         
         doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return UserEventResponse with ACTIVE status
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
         
         CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
             TEST_USER_NAME, "wrongPassword", TEST_ACCOUNT_NAME, null);

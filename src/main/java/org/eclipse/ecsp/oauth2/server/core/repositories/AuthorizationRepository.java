@@ -51,26 +51,47 @@ public interface AuthorizationRepository extends JpaRepository<Authorization, St
     /**
      * This method retrieves a list of Authorization entities based on the principalName and accessTokenExpiresAt.
      * It uses a custom query to perform this operation.
+     * Username comparison is case-insensitive by converting both sides to lowercase.
      *
      * @param principalName the principal name to be used in the search criteria.
      * @param accessTokenExpiresAt the access token expiry time to be used in the search criteria.
      * @return a List of matching Authorization entities.
      */
-    @Query("select a from Authorization a where a.principalName=:principalName "
+    @Query("select a from Authorization a where a.principalName = LOWER(:principalName) "
         + "AND a.accessTokenExpiresAt >= :accessTokenExpiresAt")
     List<Authorization> findByPrincipalNameAndAccessTokenExpiresAt(
         @Param("principalName") String principalName, @Param("accessTokenExpiresAt")Instant accessTokenExpiresAt);
     
+    /**
+     * This method retrieves active authorization sessions for a user.
+     * It filters by principal name, authorization grant type, and ensures tokens are not expired.
+     * This method is optimized for session management queries with proper database indexing.
+     * Username comparison is case-insensitive by converting both sides to lowercase.
+     *
+     * @param principalName the principal name (username) to search for
+     * @param grantType the authorization grant type (e.g., "authorization_code")
+     * @param currentTime the current time to compare against token expiration
+     * @return a List of active Authorization entities for the user
+     */
+    @Query("select a from Authorization a where LOWER(a.principalName) = LOWER(:principalName) "
+            + "AND a.authorizationGrantType = :grantType "
+            + "AND a.accessTokenExpiresAt > :currentTime")
+    List<Authorization> findActiveSessionsByPrincipalNameAndGrantType(
+            @Param("principalName") String principalName,
+            @Param("grantType") String grantType,
+            @Param("currentTime") Instant currentTime);
+    
     /** 
      * This method retrieves a list of Authorization entities based on the principalName, 
      * clientId, and accessTokenExpiresAt,It uses a custom query to perform this operation.
+     * Username comparison is case-insensitive by converting both sides to lowercase.
      *
      * @param principalName the principal name to be used in the search criteria.
      * @param clientId the client ID to be used in the search criteria.
      * @param accessTokenExpiresAt the access token expiry time to be used in the search criteria.
      * @return a List of matching Authorization entities.
      */
-    @Query("select a from Authorization a where a.principalName=:principalName "
+    @Query("select a from Authorization a where LOWER(a.principalName) = LOWER(:principalName) "
             + " AND a.registeredClientId = :clientId " + "AND a.accessTokenExpiresAt >= :accessTokenExpiresAt")
     List<Authorization> findByPrincipalNameClientAndAccessTokenExpiresAt(@Param("principalName") String principalName,
             @Param("clientId") String clientId, @Param("accessTokenExpiresAt") Instant accessTokenExpiresAt);    
@@ -80,13 +101,14 @@ public interface AuthorizationRepository extends JpaRepository<Authorization, St
      * access token OR refresh token is still valid (not expired). This ensures we capture all valid authorizations for
      * logout, even if access tokens are expired but refresh tokens are still valid. NOTE: Excludes client_credentials
      * grant type tokens as they are not tied to user sessions and should not be revoked during user logout operations.
+     * Username comparison is case-insensitive by converting both sides to lowercase.
      *
      * @param principalName the principal name to be used in the search criteria.
      * @param clientId the client ID to be used in the search criteria.
      * @param currentTime the current time to compare against token expiration times.
      * @return a List of matching Authorization entities with valid tokens (excluding client_credentials).
      */
-    @Query("select a from Authorization a where a.principalName=:principalName "
+    @Query("select a from Authorization a where LOWER(a.principalName) = LOWER(:principalName) "
             + " AND a.registeredClientId = :clientId " + " AND a.authorizationGrantType != 'client_credentials' "
             + " AND (a.accessTokenExpiresAt >= :currentTime OR a.refreshTokenExpiresAt >= :currentTime)")
     List<Authorization> findByPrincipalNameClientAndValidTokens(@Param("principalName") String principalName,

@@ -73,6 +73,8 @@ public class IgniteOauth2CoreConstants {
     public static final String REVOKE_TOKEN_SUCCESS_RESPONSE = "Token revoked successfully!";
     public static final String NO_ACTIVE_TOKEN_EXIST = "No active token exist for the provided id!";
     public static final String REVOKE_TOKEN_SCOPE = "RevokeToken";
+    public static final String SELF_MANAGE_SCOPE = "SelfManage";
+    public static final String MANAGE_USERS_SCOPE = "ManageUsers";
     public static final String BEARER = "Bearer";
     public static final String USER_STATUS_ACTIVE = "ACTIVE";
     public static final String USER_STATUS_BLOCKED = "BLOCKED";

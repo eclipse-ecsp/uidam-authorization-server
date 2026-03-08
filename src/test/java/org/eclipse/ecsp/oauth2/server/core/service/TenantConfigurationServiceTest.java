@@ -317,7 +317,7 @@ class TenantConfigurationServiceTest {
      */
     @Test
     void getDefaultTenantIdTest() {
-        // Setup default tenant ID field using ReflectionTestUtils
+        // Setup default tenant ID using reflection since it's a @Value field
         ReflectionTestUtils.setField(tenantConfigurationService, "defaultTenantId", "default-tenant");
         
         // Execute the method under test

@@ -34,6 +34,7 @@ import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
 import org.slf4j.Logger;
@@ -111,54 +112,184 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
         CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken =
             (CustomUserPwdAuthenticationToken) authentication;
-        UserEvent userEvent = new UserEvent();
-        userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
-        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
-        int maxAllowedLoginAttempt = tenantProperties.getUser().getMaxAllowedLoginAttempts();
-        String tenantId = tenantProperties.getTenantId();
+        
         String username = customUserPwdAuthenticationToken.getPrincipal() + "";
         String accountName = customUserPwdAuthenticationToken.getAccountName();
+        String password = customUserPwdAuthenticationToken.getCredentials() + "";
+        
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        String tenantId = tenantProperties.getTenantId();
+        
         LOGGER.debug("Authenticating user details for username {}", username);
         metricsService.incrementMetricsForTenant(tenantId, MetricType.TOTAL_LOGIN_ATTEMPTS);
         
-        UserDetailsResponse userDetailsResponse;
+        UserDetailsResponse userDetailsResponse = getUserDetails(username, accountName);
+        
+        if (!validatePassword(password, userDetailsResponse)) {
+            handleFailedAuthentication(username, accountName, tenantId, tenantProperties, userDetailsResponse);
+        }
+        
+        return handleSuccessfulAuthentication(username, password, accountName, tenantId, userDetailsResponse);
+    }
+    
+    /**
+     * Retrieves user details from the user management service.
+     *
+     * @param username the username
+     * @param accountName the account name
+     * @return the user details response
+     * @throws OAuth2AuthenticationException if user retrieval fails
+     */
+    private UserDetailsResponse getUserDetails(String username, String accountName) {
         try {
-            userDetailsResponse = userManagementClient.getUserDetailsByUsername(username, accountName);
+            return userManagementClient.getUserDetailsByUsername(username, accountName);
         } catch (OAuth2AuthenticationException ex) {
             logAuthenticationException(ex, username, accountName);
             throw ex;
         }
-        String password = customUserPwdAuthenticationToken.getCredentials() + "";
+    }
+    
+    /**
+     * Validates the user's password.
+     *
+     * @param password the plain text password
+     * @param userDetailsResponse the user details response
+     * @return true if password is valid, false otherwise
+     */
+    private boolean validatePassword(String password, UserDetailsResponse userDetailsResponse) {
         String encryptedUserEnteredPassword = PasswordUtils.getSecurePassword(password,
             userDetailsResponse.getPasswordEncoder(), userDetailsResponse.getSalt());
-        if (!encryptedUserEnteredPassword.equals(userDetailsResponse.getPassword())) {
-            LOGGER.info("Password validation status: FAILED for username {}", username);
-            metricsService.incrementMetricsForTenant(tenantId,
-                                                    MetricType.FAILURE_LOGIN_WRONG_PASSWORD,
-                                                    MetricType.FAILURE_LOGIN_ATTEMPTS);
-            addUserEvent(userEvent, IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE,
-                IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE_BAD_CREDENTIALS_MSG,
-                userDetailsResponse.getId());
-            int loginAttempt = userDetailsResponse.getFailureLoginAttempts() + 1;
-            
-            logFailedAuthentication(userDetailsResponse, username, accountName, 
-                AuditEventType.AUTH_FAILURE_WRONG_PASSWORD, loginAttempt);
+        return encryptedUserEnteredPassword.equals(userDetailsResponse.getPassword());
+    }
+    
+    /**
+     * Handles failed authentication attempts.
+     *
+     * @param username the username
+     * @param accountName the account name
+     * @param tenantId the tenant ID
+     * @param tenantProperties the tenant properties
+     * @param userDetailsResponse the user details response
+     * @throws BadCredentialsException with appropriate message
+     */
+    private void handleFailedAuthentication(String username, String accountName, String tenantId,
+                                           TenantProperties tenantProperties,
+                                           UserDetailsResponse userDetailsResponse) {
+        LOGGER.info("Password validation status: FAILED for username {}", username);
+        metricsService.incrementMetricsForTenant(tenantId,
+                                                MetricType.FAILURE_LOGIN_WRONG_PASSWORD,
+                                                MetricType.FAILURE_LOGIN_ATTEMPTS);
+        
+        UserEvent userEvent = new UserEvent();
+        userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
+        UserEventResponse eventResponse = addUserEvent(userEvent, 
+            IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE,
+            IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE_BAD_CREDENTIALS_MSG,
+            userDetailsResponse.getId());
+        
+        LOGGER.info("User event response for failed login - Status: {}, Lock Duration: {} minutes", 
+            eventResponse.getUserStatus(), eventResponse.getLockDurationMinutes());
+        
+        int loginAttempt = userDetailsResponse.getFailureLoginAttempts() + 1;
+        
+        logFailedAuthentication(userDetailsResponse, username, accountName, 
+            AuditEventType.AUTH_FAILURE_WRONG_PASSWORD, loginAttempt);
 
-            setRecaptchaSession(loginAttempt, userDetailsResponse.getCaptcha().get(USER_CAPTCHA_REQUIRED),
-                userDetailsResponse.getCaptcha().get(USER_ENFORCE_AFTER_NO_OF_FAILURES));
-            if (loginAttempt >= maxAllowedLoginAttempt) {
-                LOGGER.info("{} max allowed login attempt used ", maxAllowedLoginAttempt);
-                metricsService.incrementMetricsForTenant(tenantId,
-                                                        MetricType.FAILURE_LOGIN_USER_BLOCKED,
-                                                        MetricType.FAILURE_LOGIN_ATTEMPTS);
-                logFailedAuthentication(userDetailsResponse, username, accountName,
-                    AuditEventType.AUTH_FAILURE_ACCOUNT_LOCKED, loginAttempt);
+        setRecaptchaSession(loginAttempt, userDetailsResponse.getCaptcha().get(USER_CAPTCHA_REQUIRED),
+            userDetailsResponse.getCaptcha().get(USER_ENFORCE_AFTER_NO_OF_FAILURES));
+        
+        checkUserBlockedOrDeactivated(eventResponse, tenantId, userDetailsResponse, 
+            username, accountName, loginAttempt);
+        
+        int maxAllowedLoginAttempt = tenantProperties.getUser().getMaxAllowedLoginAttempts();
+        if (loginAttempt >= maxAllowedLoginAttempt) {
+            handleMaxLoginAttemptsExceeded(tenantId, userDetailsResponse, username, accountName, 
+                loginAttempt, maxAllowedLoginAttempt);
+        }
+        
+        throw new BadCredentialsException("Bad credentials");
+    }
+    
+    /**
+     * Checks if the user is blocked or deactivated and throws appropriate exception.
+     *
+     * @param eventResponse the user event response
+     * @param tenantId the tenant ID
+     * @param userDetailsResponse the user details response
+     * @param username the username
+     * @param accountName the account name
+     * @param loginAttempt the current login attempt count
+     * @throws BadCredentialsException if user is blocked or deactivated
+     */
+    private void checkUserBlockedOrDeactivated(UserEventResponse eventResponse, String tenantId,
+                                              UserDetailsResponse userDetailsResponse,
+                                              String username, String accountName, int loginAttempt) {
+        String userStatus = eventResponse.getUserStatus();
+        if ("BLOCKED".equals(userStatus) || "DEACTIVATED".equals(userStatus)) {
+            LOGGER.info("User {} is {}. Lock duration: {} minutes", 
+                userDetailsResponse.getId(), userStatus, eventResponse.getLockDurationMinutes());
+            metricsService.incrementMetricsForTenant(tenantId,
+                                                    MetricType.FAILURE_LOGIN_USER_BLOCKED,
+                                                    MetricType.FAILURE_LOGIN_ATTEMPTS);
+            logFailedAuthentication(userDetailsResponse, username, accountName,
+                AuditEventType.AUTH_FAILURE_ACCOUNT_LOCKED, loginAttempt);
+            
+            if ("DEACTIVATED".equals(userStatus)) {
+                String msg = "Account has been deactivated due to multiple failed login attempts. "
+                    + "Please contact administrator.";
+                throw new BadCredentialsException(msg);
+            } else if (eventResponse.getLockDurationMinutes() > 0) {
+                String msg = String.format(
+                    "Account is temporarily locked for %d minutes due to multiple failed login attempts.", 
+                    eventResponse.getLockDurationMinutes());
+                throw new BadCredentialsException(msg);
+            } else {
                 throw new BadCredentialsException(USER_LOCKED_ERROR);
             }
-            throw new BadCredentialsException("Bad credentials");
         }
+    }
+    
+    /**
+     * Handles the case when maximum login attempts are exceeded.
+     *
+     * @param tenantId the tenant ID
+     * @param userDetailsResponse the user details response
+     * @param username the username
+     * @param accountName the account name
+     * @param loginAttempt the current login attempt count
+     * @param maxAllowedLoginAttempt the maximum allowed login attempts
+     * @throws BadCredentialsException with user locked message
+     */
+    private void handleMaxLoginAttemptsExceeded(String tenantId, UserDetailsResponse userDetailsResponse,
+                                               String username, String accountName,
+                                               int loginAttempt, int maxAllowedLoginAttempt) {
+        LOGGER.info("{} max allowed login attempt used ", maxAllowedLoginAttempt);
+        metricsService.incrementMetricsForTenant(tenantId,
+                                                MetricType.FAILURE_LOGIN_USER_BLOCKED,
+                                                MetricType.FAILURE_LOGIN_ATTEMPTS);
+        logFailedAuthentication(userDetailsResponse, username, accountName,
+            AuditEventType.AUTH_FAILURE_ACCOUNT_LOCKED, loginAttempt);
+        throw new BadCredentialsException(USER_LOCKED_ERROR);
+    }
+    
+    /**
+     * Handles successful authentication.
+     *
+     * @param username the username
+     * @param password the password
+     * @param accountName the account name
+     * @param tenantId the tenant ID
+     * @param userDetailsResponse the user details response
+     * @return the authenticated token
+     */
+    private Authentication handleSuccessfulAuthentication(String username, String password,
+                                                         String accountName, String tenantId,
+                                                         UserDetailsResponse userDetailsResponse) {
         LOGGER.info("Password validation status: SUCCESS for username {}", username);
         metricsService.incrementMetricsForTenant(tenantId, MetricType.SUCCESS_LOGIN_ATTEMPTS);
+        
+        UserEvent userEvent = new UserEvent();
+        userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
         addUserEvent(userEvent, IgniteOauth2CoreConstants.USER_EVENT_LOGIN_SUCCESS,
             IgniteOauth2CoreConstants.USER_EVENT_LOGIN_SUCCESS_MSG, userDetailsResponse.getId());
         
@@ -293,11 +424,12 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
      * @param status the status of the user event
      * @param message the message of the user event
      * @param userId the id of the user
+     * @return UserEventResponse containing user status and lock duration information
      */
-    private void addUserEvent(UserEvent userEvent, String status, String message, String userId) {
+    private UserEventResponse addUserEvent(UserEvent userEvent, String status, String message, String userId) {
         userEvent.setResult(status);
         userEvent.setMessage(message);
-        userManagementClient.addUserEvent(userEvent, userId);
+        return userManagementClient.addUserEvent(userEvent, userId);
     }
 
     /**

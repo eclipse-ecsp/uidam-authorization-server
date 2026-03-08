@@ -417,7 +417,7 @@ class AuthorizationServiceTest {
         testAuth2.setRegisteredClientId("testClient");
         testAuth2.setAccessTokenExpiresAt(Instant.now().plusSeconds(INT_1800));
         List<Authorization> activeTokens = List.of(testAuth1, testAuth2);
-        when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(eq("testUser"), eq("testClient"),
+        when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(eq("testuser"), eq("testClient"),
                 any(Instant.class))).thenReturn(activeTokens);
         when(this.authorizationRepository.saveAll(any())).thenReturn(activeTokens);
 
@@ -439,7 +439,7 @@ class AuthorizationServiceTest {
         
         List<Authorization> emptyTokens = List.of();
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("testClient"), any(Instant.class))).thenReturn(emptyTokens);
+            eq("testuser"), eq("testClient"), any(Instant.class))).thenReturn(emptyTokens);
         
         String result = this.authorizationService.revokenTokenByPrincipalAndClientId("testUser", "testClient");
         
@@ -458,7 +458,7 @@ class AuthorizationServiceTest {
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("testClient"), any(Instant.class)))
+            eq("testuser"), eq("testClient"), any(Instant.class)))
             .thenThrow(new RuntimeException("Database connection failed"));
         
         assertThrows(RuntimeException.class, () -> 
@@ -545,7 +545,7 @@ class AuthorizationServiceTest {
         
         List<Authorization> singleToken = List.of(testAuth);
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("singleUser"), eq("singleClient"), any(Instant.class))).thenReturn(singleToken);
+            eq("singleuser"), eq("singleClient"), any(Instant.class))).thenReturn(singleToken);
         when(this.authorizationRepository.saveAll(any())).thenReturn(singleToken);
         
         String result = this.authorizationService.revokenTokenByPrincipalAndClientId("singleUser", "singleClient");
@@ -572,7 +572,7 @@ class AuthorizationServiceTest {
         
         List<Authorization> activeTokens = List.of(testAuth);
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("testClient"), any(Instant.class))).thenReturn(activeTokens);
+            eq("testuser"), eq("testClient"), any(Instant.class))).thenReturn(activeTokens);
         when(this.authorizationRepository.saveAll(any())).thenThrow(new RuntimeException("Save operation failed"));
         
         assertThrows(RuntimeException.class, () -> 
@@ -666,7 +666,7 @@ class AuthorizationServiceTest {
         // The query specifically looks for tokens where accessTokenExpiresAt > current time
         List<Authorization> emptyTokens = List.of();
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("testClient"), any(Instant.class))).thenReturn(emptyTokens);
+            eq("testuser"), eq("testClient"), any(Instant.class))).thenReturn(emptyTokens);
         
         String result = this.authorizationService.revokenTokenByPrincipalAndClientId("testUser", "testClient");
         
@@ -674,7 +674,7 @@ class AuthorizationServiceTest {
         
         // Verify that the repository was called with the correct parameters including time filter
         verify(this.authorizationRepository).findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("testClient"), any(Instant.class));
+            eq("testuser"), eq("testClient"), any(Instant.class));
     }
 
     /**
@@ -696,7 +696,7 @@ class AuthorizationServiceTest {
         
         List<Authorization> specificClientTokens = List.of(testAuth);
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("specificClient"), any(Instant.class))).thenReturn(specificClientTokens);
+            eq("testuser"), eq("specificClient"), any(Instant.class))).thenReturn(specificClientTokens);
         when(this.authorizationRepository.saveAll(any())).thenReturn(specificClientTokens);
         
         String result = this.authorizationService.revokenTokenByPrincipalAndClientId("testUser", "specificClient");
@@ -723,7 +723,7 @@ class AuthorizationServiceTest {
         
         List<Authorization> activeTokens = List.of(testAuth);
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("logTestUser"), eq("logTestClient"), any(Instant.class))).thenReturn(activeTokens);
+            eq("logtestuser"), eq("logTestClient"), any(Instant.class))).thenReturn(activeTokens);
         when(this.authorizationRepository.saveAll(any())).thenReturn(activeTokens);
         
         String result = this.authorizationService.revokenTokenByPrincipalAndClientId("logTestUser", "logTestClient");
@@ -770,7 +770,7 @@ class AuthorizationServiceTest {
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
         when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
-            eq("testUser"), eq("testClient"), any(Instant.class))).thenReturn(null);
+            eq("testuser"), eq("testClient"), any(Instant.class))).thenReturn(null);
         
         // This should throw an exception as the code expects a non-null list
         assertThrows(RuntimeException.class, () -> 

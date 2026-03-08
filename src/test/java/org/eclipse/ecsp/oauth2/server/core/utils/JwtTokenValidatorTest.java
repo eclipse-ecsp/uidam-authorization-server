@@ -18,11 +18,14 @@
 
 package org.eclipse.ecsp.oauth2.server.core.utils;
 
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSelector;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantAwareKeyStoreFactory;
-import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
-import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,26 +34,27 @@ import org.mockito.MockitoAnnotations;
 import org.mockito.junit.jupiter.MockitoExtension;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.interfaces.RSAPublicKey;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.REVOKE_TOKEN_SCOPE;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class JwtTokenValidatorTest {
 
     public static final int EXPIRATION_MILLIS = 60000;
-    @Mock
-    private TenantProperties tenantProperties;
 
     @Mock
-    private TenantConfigurationService tenantConfigurationService;
-
+    private JWKSource<SecurityContext> jwkSource;
+    
     @Mock
-    private TenantAwareKeyStoreFactory keyStoreFactory;
+    private AuthorizationRepository authorizationRepository;
 
     private JwtTokenValidator jwtTokenValidator;
     
@@ -62,17 +66,14 @@ class JwtTokenValidatorTest {
                 .getResourceAsStream("uidampubkey.pem"));
 
         MockitoAnnotations.openMocks(this);
-        //when(tenantProperties.getKeyStore()).thenReturn(getKeyStore());
-        //when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        when(keyStoreFactory.getCurrentTenantPublicKey()).thenReturn(this.publicKey);
-        // Initialize JwtTokenValidator
-        jwtTokenValidator = new JwtTokenValidator(tenantConfigurationService, keyStoreFactory);
-    }
-
-    public HashMap<String, String> getKeyStore() {
-        HashMap<String, String> keyStore = new HashMap<>();
-        keyStore.put("jwt-public-key-path", "uidampubkey.pem");
-        return keyStore;
+        
+        // Mock JWKSource to return RSA key with the public key
+        RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) this.publicKey).build();
+        when(jwkSource.get(any(JWKSelector.class), any()))
+                .thenReturn(Collections.singletonList((JWK) rsaKey));
+        
+        // Initialize JwtTokenValidator with JWKSource and AuthorizationRepository
+        jwtTokenValidator = new JwtTokenValidator(jwkSource, authorizationRepository);
     }
 
     @Test
@@ -118,6 +119,91 @@ class JwtTokenValidatorTest {
         String invalidToken = "invalid.token";
         // Test validateToken with invalid token
         assertFalse(jwtTokenValidator.validateToken(invalidToken));
+    }
+    
+    @Test
+    void testIntrospectToken_RevokedTokenWithRealMetadata() throws Exception {
+        // Arrange - create valid JWT
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("scope", "SelfManage");
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        final String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        
+        // Mock authorization with real-world metadata showing revoked token
+        org.eclipse.ecsp.oauth2.server.core.entities.Authorization authorization = 
+                new org.eclipse.ecsp.oauth2.server.core.entities.Authorization();
+        authorization.setAccessTokenValue("hashed-token");
+        final int tokenValiditySeconds = 3600;
+        authorization.setAccessTokenExpiresAt(java.time.Instant.now().plusSeconds(tokenValiditySeconds));
+        
+        // Real metadata format from production with "invalidated":true
+        String metadata = "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false,"
+                + "\"invalidated\":true,"
+                + "\"invalidationReason\":\"User requested logout\"}";
+        authorization.setAccessTokenMetadata(metadata);
+        
+        when(authorizationRepository.findByAccessTokenValue(any()))
+                .thenReturn(java.util.Optional.of(authorization));
+        
+        // Act
+        boolean result = jwtTokenValidator.introspectToken(token, "SelfManage");
+        
+        // Assert
+        assertFalse(result, "Token with invalidated:true in metadata should be rejected");
+    }
+    
+    @Test
+    void testIntrospectToken_ActiveTokenWithRealMetadata() throws Exception {
+        // Arrange - create valid JWT
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("scope", "SessionManagement");
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        final String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        
+        // Mock authorization with metadata showing active token
+        org.eclipse.ecsp.oauth2.server.core.entities.Authorization authorization = 
+                new org.eclipse.ecsp.oauth2.server.core.entities.Authorization();
+        authorization.setAccessTokenValue("hashed-token");
+        final int tokenValiditySeconds = 3600;
+        authorization.setAccessTokenExpiresAt(java.time.Instant.now().plusSeconds(tokenValiditySeconds));
+        
+        // Metadata with invalidated:false (active token)
+        String metadata = "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false,"
+                + "\"invalidated\":false}";
+        authorization.setAccessTokenMetadata(metadata);
+        
+        when(authorizationRepository.findByAccessTokenValue(any()))
+                .thenReturn(java.util.Optional.of(authorization));
+        
+        // Act
+        boolean result = jwtTokenValidator.introspectToken(token, "SessionManagement");
+        
+        // Assert
+        assertTrue(result, "Token with invalidated:false in metadata should be accepted");
+    }
+    
+    @Test
+    void testIntrospectToken_TokenNotFoundInDatabase() throws Exception {
+        // Arrange
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("scope", "SessionManagement");
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        final String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        
+        // Mock repository to return empty (token not in database)
+        when(authorizationRepository.findByAccessTokenValue(any()))
+                .thenReturn(java.util.Optional.empty());
+        
+        // Act
+        boolean result = jwtTokenValidator.introspectToken(token, "SessionManagement");
+        
+        // Assert
+        assertFalse(result, "Token not in database should be rejected");
     }
 
     public static String createValidToken(Map<String, Object> claims, long expirationMillis, PrivateKey privateKey) {
