@@ -279,7 +279,7 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         try {
             // Normalize principal name to lowercase for case-insensitive matching
             String normalizedPrincipalName = principalName != null ? principalName.toLowerCase() : principalName;
-            LOGGER.info("## revoking token for principalName: {}", normalizedPrincipalName);
+            LOGGER.info("Revoking tokens for principal");
             List<Authorization> result = this.authorizationRepository
                 .findByPrincipalNameAndAccessTokenExpiresAt(normalizedPrincipalName, Instant.now());
             List<OAuth2Authorization> oauth2Authorizations = result.stream().map(this::toObject).toList();
@@ -287,11 +287,11 @@ public class AuthorizationService implements OAuth2AuthorizationService {
                     authorization -> toEntity(invalidate(authorization, authorization.getAccessToken().getToken())))
                 .toList();
             if (authorizations.isEmpty()) {
-                LOGGER.info("## no active token for user/client id!");
+                LOGGER.info("No active token found for principal");
                 return IgniteOauth2CoreConstants.NO_ACTIVE_TOKEN_EXIST;
             }
             this.authorizationRepository.saveAll(authorizations);
-            LOGGER.debug("## token revoked successfully");
+            LOGGER.debug("Token revoked successfully");
         } catch (Exception ex) {
             LOGGER.error("## Failed to process revoke token, exception occurs: ", ex);
             throw new CustomOauth2AuthorizationException(CustomOauth2TokenGenErrorCodes.SERVER_ERROR);

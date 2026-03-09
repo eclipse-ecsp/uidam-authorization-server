@@ -84,7 +84,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
     @Transactional(readOnly = true)
     public ActiveSessionsResponseDto getActiveSessionsForUser(
             String username, String currentTokenString, String tenantId) {
-        LOGGER.info("Fetching active sessions for user: {}", username);
+        LOGGER.info("Fetching active sessions for user");
         
         // Phase 1: Fetch from database using optimized indexed query
         // This query filters at the database level by principal_name, grant_type, and expiry time
@@ -92,8 +92,8 @@ public class SessionManagementServiceImpl implements SessionManagementService {
                 .findActiveSessionsByPrincipalNameAndGrantType(
                         username, AUTHORIZATION_CODE, Instant.now());
         
-        LOGGER.debug("Retrieved {} authorization records from database for user: {}", 
-                authorizations.size(), username);
+        LOGGER.debug("Retrieved {} authorization records from database", 
+                authorizations.size());
         
         // Phase 2: Programmatic filtering - filter out invalidated tokens
         List<Authorization> activeAuthorizations = authorizations.stream()
@@ -120,7 +120,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
             sessions.add(session);
         }
         
-        LOGGER.info("Found {} active sessions for user: {}", sessions.size(), username);
+        LOGGER.info("Found {} active sessions for user", sessions.size());
         
         return ActiveSessionsResponseDto.builder()
                 .tokens(sessions)
@@ -133,7 +133,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
     @Transactional
     public InvalidateSessionsResponseDto invalidateSessionsForUser(
             String username, List<String> tokenIds, String tenantId) {
-        LOGGER.info("Invalidating {} sessions for user: {}", tokenIds.size(), username);
+        LOGGER.info("Invalidating sessions for user");
         
         // Normalize username to lowercase for case-insensitive comparison
         String normalizedUsername = username != null ? username.toLowerCase() : username;
@@ -195,7 +195,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
             }
         }
         
-        LOGGER.info("Successfully invalidated {} sessions for user: {}", invalidatedCount, username);
+        LOGGER.info("Successfully invalidated {} sessions", invalidatedCount);
         
         String message = failedSessions.isEmpty() 
                 ? "Sessions invalidated successfully" 

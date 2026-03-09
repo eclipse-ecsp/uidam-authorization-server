@@ -96,14 +96,14 @@ public class SessionManagementController {
         String token = authorization.substring(BEGIN_INDEX);
         String username = jwtTokenValidator.getClaimsFromToken(token).get("username", String.class);
         
-        LOGGER.info("Fetching active sessions for user: {} in tenant: {}", username, tenantId);
+        LOGGER.info("Fetching active sessions for authenticated user");
         
         try {
             ActiveSessionsResponseDto response = sessionManagementService.getActiveSessionsForUser(
                     username, token, tenantId);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
-            LOGGER.error("Error fetching active sessions for user {}: {}", username, e.getMessage(), e);
+            LOGGER.error("Error fetching active sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("INTERNAL_ERROR", 
                             "An error occurred while fetching tokens"));
@@ -138,8 +138,7 @@ public class SessionManagementController {
         String token = authorization.substring(BEGIN_INDEX);
         String username = jwtTokenValidator.getClaimsFromToken(token).get("username", String.class);
         
-        LOGGER.info("Invalidating {} sessions for user: {} in tenant: {}", 
-                request.getTokenIds().size(), username, tenantId);
+        LOGGER.info("Invalidating sessions for authenticated user");
         
         try {
             InvalidateSessionsResponseDto response = sessionManagementService.invalidateSessionsForUser(
@@ -153,7 +152,7 @@ public class SessionManagementController {
             
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
-            LOGGER.error("Error invalidating sessions for user {}: {}", username, e.getMessage(), e);
+            LOGGER.error("Error invalidating sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("INTERNAL_ERROR", 
                             "An error occurred while invalidating tokens"));
@@ -186,14 +185,14 @@ public class SessionManagementController {
         
         String username = request.getUsername();
         
-        LOGGER.info("Admin fetching active sessions for user: {} in tenant: {}", username, tenantId);
+        LOGGER.info("Admin fetching active sessions for target user");
         
         try {
             ActiveSessionsResponseDto response = sessionManagementService.getActiveSessionsForUser(
                     username, null, tenantId);
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
-            LOGGER.error("Error fetching active sessions for user {}: {}", username, e.getMessage(), e);
+            LOGGER.error("Error fetching active sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("INTERNAL_ERROR", 
                             "An error occurred while fetching tokens"));
@@ -226,8 +225,7 @@ public class SessionManagementController {
         
         String username = request.getUsername();
         
-        LOGGER.info("Admin invalidating {} sessions for user: {} in tenant: {}", 
-                request.getTokenIds().size(), username, tenantId);
+        LOGGER.info("Admin invalidating sessions for target user");
         
         try {
             InvalidateSessionsResponseDto response = sessionManagementService.invalidateSessionsForUser(
@@ -242,7 +240,7 @@ public class SessionManagementController {
             
             return ResponseEntity.ok(ApiResponse.success(response));
         } catch (Exception e) {
-            LOGGER.error("Error invalidating sessions for user {}: {}", username, e.getMessage(), e);
+            LOGGER.error("Error invalidating sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("INTERNAL_ERROR", 
                             "An error occurred while invalidating tokens"));
