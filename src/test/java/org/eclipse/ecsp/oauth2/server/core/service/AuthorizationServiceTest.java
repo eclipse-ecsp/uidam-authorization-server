@@ -79,7 +79,8 @@ class AuthorizationServiceTest {
 
     private static final int INT_1800 = 1800;
     private static final int INT_500 = 500;
-    private static final int INT_3600 = 3600;    
+    private static final int INT_3600 = 3600;
+    private static final int INT_2 = 2;    
     @Mock
     AuthorizationService authorizationService;
     @Mock
@@ -873,6 +874,409 @@ class AuthorizationServiceTest {
             any(),  // actorContext - should have clientId as userId
             isNull()  // targetContext
         );
+    }
+    
+    @Test
+    void testFindByToken_WithNullTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = DUMMY_TOKEN;
+        Authorization auth = createAccTokenAuthorization();
+        
+        when(authorizationRepository
+                .findByStateOrAuthCodeOrAccessTokenOrRefreshTokenOrOidcIdTokenOrUserCodeOrDeviceCode(
+                        anyString(), anyString()))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2Authorization result = authorizationService.findByToken(token, null);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository)
+                .findByStateOrAuthCodeOrAccessTokenOrRefreshTokenOrOidcIdTokenOrUserCodeOrDeviceCode(
+                        eq(token), anyString());
+    }
+    
+    @Test
+    void testFindByToken_WithStateTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "state-value";
+        Authorization auth = createAuthorization();
+        
+        when(authorizationRepository.findByState(token)).thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.STATE);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByState(eq(token));
+    }
+    
+    @Test
+    void testFindByToken_WithCodeTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "auth-code-value";
+        Authorization auth = createAuthorization();
+        
+        when(authorizationRepository.findByAuthorizationCodeValue(token))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.CODE);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByAuthorizationCodeValue(eq(token));
+    }
+    
+    @Test
+    void testFindByToken_WithAccessTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "access-token-value";
+        Authorization auth = createAccTokenAuthorization();
+        
+        when(authorizationRepository.findByAccessTokenValue(anyString()))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.ACCESS_TOKEN);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByAccessTokenValue(anyString());
+    }
+    
+    @Test
+    void testFindByToken_WithRefreshTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "refresh-token-value";
+        Authorization auth = createRefreshTokenAuthorization();
+        
+        when(authorizationRepository.findByRefreshTokenValue(anyString()))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.REFRESH_TOKEN);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByRefreshTokenValue(anyString());
+    }
+    
+    @Test
+    void testFindByToken_WithIdTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "id-token-value";
+        Authorization auth = createAccTokenAuthorization();
+        
+        when(authorizationRepository.findByOidcIdTokenValue(anyString()))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OidcParameterNames.ID_TOKEN);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByOidcIdTokenValue(anyString());
+    }
+    
+    @Test
+    void testFindByToken_WithUserCodeTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "user-code-value";
+        Authorization auth = createUserCodeAuthorization();
+        
+        when(authorizationRepository.findByUserCodeValue(token))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.USER_CODE);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByUserCodeValue(eq(token));
+    }
+    
+    @Test
+    void testFindByToken_WithDeviceCodeTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        String token = "device-code-value";
+        Authorization auth = createDeviceCodeAuthorization();
+        
+        when(authorizationRepository.findByDeviceCodeValue(token))
+                .thenReturn(Optional.of(auth));
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.DEVICE_CODE);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByDeviceCodeValue(eq(token));
+    }
+    
+    @Test
+    void testFindByToken_WithUnknownTokenType() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        String token = "some-token";
+        OAuth2Authorization result = authorizationService.findByToken(token, new OAuth2TokenType("unknown-type"));
+        
+        assertThat(result).isNull();
+    }
+    
+    @Test
+    void testFindByToken_NotFound() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        String token = "non-existent-token";
+        
+        when(authorizationRepository.findByAccessTokenValue(anyString()))
+                .thenReturn(Optional.empty());
+        
+        OAuth2TokenType tokenType = new OAuth2TokenType(OAuth2ParameterNames.ACCESS_TOKEN);
+        OAuth2Authorization result = authorizationService.findByToken(token, tokenType);
+        
+        assertThat(result).isNull();
+    }
+    
+    @Test
+    void testRevokeToken_WithoutBearerPrefix() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        request.setUsername("testUser");
+        String invalidToken = "no-bearer-prefix";
+        
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokeToken(request, invalidToken));
+    }
+    
+    @Test
+    void testRevokeToken_MissingPrincipalName() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        // No username or clientId set
+        String validToken = "Bearer valid-token";
+        
+        when(jwtTokenValidator.validateToken(anyString())).thenReturn(true);
+        
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokeToken(request, validToken));
+    }
+    
+    @Test
+    void testRevokeToken_DatabaseException() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        request.setUsername("testUser");
+        String validToken = "Bearer valid-token";
+        
+        when(jwtTokenValidator.validateToken(anyString())).thenReturn(true);
+        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(anyString(), any(Instant.class)))
+                .thenThrow(new RuntimeException("Database error"));
+        
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokeToken(request, validToken));
+    }
+    
+    @Test
+    void testRevokenTokenByPrincipalAndClientId_WithRefreshToken() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        // Create authorization with both access and refresh tokens
+        Authorization testAuth = createAccTokenAuthorization();
+        testAuth.setPrincipalName("testUser");
+        testAuth.setRegisteredClientId("testClient");
+        testAuth.setAccessTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        testAuth.setRefreshTokenValue("refresh_token_value");
+        testAuth.setRefreshTokenMetadata(
+                "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"metadata.token.invalidated\":false}");
+        testAuth.setRefreshTokenExpiresAt(Instant.now().plusSeconds(INT_3600 * INT_2));
+        
+        List<Authorization> activeTokens = List.of(testAuth);
+        when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
+            eq("testuser"), eq("testClient"), any(Instant.class))).thenReturn(activeTokens);
+        when(this.authorizationRepository.saveAll(any())).thenReturn(activeTokens);
+        
+        String result = this.authorizationService.revokenTokenByPrincipalAndClientId("testUser", "testClient");
+        
+        assertThat(result).isEqualTo("Token revoked successfully!");
+    }
+    
+    @Test
+    void testRevokenTokensInDb_Success() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Authorization testAuth = createAccTokenAuthorization();
+        testAuth.setPrincipalName("testUser");
+        testAuth.setAccessTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        
+        List<Authorization> activeTokens = List.of(testAuth);
+        when(this.authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(
+            eq("testuser"), any(Instant.class))).thenReturn(activeTokens);
+        when(this.authorizationRepository.saveAll(any())).thenReturn(activeTokens);
+        
+        String result = this.authorizationService.revokenTokensInDb("testUser");
+        
+        assertThat(result).isEqualTo("Token revoked successfully!");
+    }
+    
+    @Test
+    void testRevokenTokensInDb_NoActiveTokens() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        List<Authorization> emptyTokens = List.of();
+        when(this.authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(
+            eq("testuser"), any(Instant.class))).thenReturn(emptyTokens);
+        
+        String result = this.authorizationService.revokenTokensInDb("testUser");
+        
+        assertThat(result).isEqualTo("No active token exist for the provided id!");
+    }
+    
+    @Test
+    void testRevokenTokensInDb_DatabaseException() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        when(this.authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(
+            anyString(), any(Instant.class))).thenThrow(new RuntimeException("Database error"));
+        
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokenTokensInDb("testUser"));
+    }
+    
+    @Test
+    void testRevokenTokenByPrincipalAndClientId_DatabaseException() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
+            anyString(), anyString(), any(Instant.class))).thenThrow(new RuntimeException("Database error"));
+        
+        assertThrows(CustomOauth2AuthorizationException.class, () -> 
+            authorizationService.revokenTokenByPrincipalAndClientId("testUser", "testClient"));
+    }
+    
+    @Test
+    void testSave_NormalizesUsername() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization auth = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName("TestUser")
+            .authorizationGrantType(AUTHORIZATION_GRANT_TYPE)
+            .build();
+        
+        authorizationService.save(auth);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testRevokeToken_WithClientId() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        RevokeTokenRequest request = new RevokeTokenRequest();
+        request.setClientId("testClient");
+        
+        when(jwtTokenValidator.validateToken(anyString())).thenReturn(true);
+        final String validToken = "Bearer valid-token";
+        
+        Authorization testAuth = createAccTokenAuthorization();
+        testAuth.setPrincipalName("testclient");
+        testAuth.setAccessTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        
+        List<Authorization> activeTokens = List.of(testAuth);
+        when(this.authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(
+            eq("testclient"), any(Instant.class))).thenReturn(activeTokens);
+        when(this.authorizationRepository.saveAll(any())).thenReturn(activeTokens);
+        
+        String result = authorizationService.revokeToken(request, validToken);
+        
+        assertThat(result).isEqualTo("Token revoked successfully!");
+    }
+    
+    @Test
+    void testRevokenTokenByPrincipalAndClientId_NullPrincipalName() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        List<Authorization> emptyTokens = List.of();
+        when(this.authorizationRepository.findByPrincipalNameClientAndValidTokens(
+            isNull(), eq("testClient"), any(Instant.class))).thenReturn(emptyTokens);
+        
+        String result = this.authorizationService.revokenTokenByPrincipalAndClientId(null, "testClient");
+        
+        assertThat(result).isEqualTo("No active token exist for the provided id!");
+    }
+    
+    @Test
+    void testRevokenTokensInDb_NullPrincipalName() {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        
+        List<Authorization> emptyTokens = List.of();
+        when(this.authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(
+            isNull(), any(Instant.class))).thenReturn(emptyTokens);
+        
+        String result = this.authorizationService.revokenTokensInDb(null);
+        
+        assertThat(result).isEqualTo("No active token exist for the provided id!");
     }
 }
 

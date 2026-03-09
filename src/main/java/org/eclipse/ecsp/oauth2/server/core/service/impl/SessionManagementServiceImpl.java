@@ -471,11 +471,12 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      * @return the native app platform or null if not detected
      */
     private String detectNativeApp(String userAgent) {
-        if (userAgent.matches(".*[Aa]ndroid[Aa]pp.*") 
-                || userAgent.matches(".*[Nn]ative[Aa]ndroid.*")) {
+        String lowerUserAgent = userAgent.toLowerCase();
+        if (lowerUserAgent.contains("androidapp") 
+                || lowerUserAgent.contains("nativeandroid")) {
             return "Android App";
-        } else if (userAgent.matches(".*iOS[Aa]pp.*") 
-                || userAgent.matches(".*[Nn]ative[Ii][Oo][Ss].*")) {
+        } else if (lowerUserAgent.contains("iosapp") 
+                || lowerUserAgent.contains("nativeios")) {
             return "iOS App";
         }
         return null;

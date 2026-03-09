@@ -356,9 +356,9 @@ class SessionManagementServiceImplTest {
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesFlutterAppUserAgent() {
+    void testGetActiveSessionsForUser_ParsesFlutterApp() {
         // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"Dart/2.18 Flutter/3.3.0 (iPhone; iOS 16.0)\"}}";
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Dart/2.19 (dart:io) Flutter/3.7.0\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -376,14 +376,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Flutter App on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Flutter App on Unknown OS", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesChromeMobileUserAgent() {
+    void testGetActiveSessionsForUser_ParsesExpoApp() {
         // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (Linux; Android 12) Chrome/108.0.0.0 Mobile Safari/537.36\"}}";
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Expo/49.0.0 (iOS; iPhone14,2)\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -401,14 +400,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Chrome Mobile on Android", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Expo App on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesSafariMobileUserAgent() {
+    void testGetActiveSessionsForUser_ParsesAlamofireClient() {
         // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0) Safari/604.1\"}}";
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Alamofire/5.6.2 (iOS; iPhone)\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -426,14 +424,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Safari Mobile on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Alamofire Client (iOS (iPhone))", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_FallsBackToLegacyFormat() {
-        // Arrange - old format without browser_details
-        String attributes = "{\"java.security.Principal\":{\"details\":{\"userAgent\":\""
-                + "Mozilla/5.0 (Windows NT 10.0) Firefox/110.0\"}}}";
+    void testGetActiveSessionsForUser_ParsesRetrofitClient() {
+        // Arrange
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Retrofit/2.9.0 (Android)\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -451,13 +448,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Firefox on Windows", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Retrofit Client (Android)", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_HandlesUnknownUserAgent() {
+    void testGetActiveSessionsForUser_ParsesInsomniaClient() {
         // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"UnknownClient/1.0\"}}";
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Insomnia/2023.5.8\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -475,36 +472,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("UnknownClient"));
+        assertEquals("Insomnia", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_HandlesEmptyAttributes() {
+    void testGetActiveSessionsForUser_ParsesHttpieClient() {
         // Arrange
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, "{}");
-        
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-        
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-        
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-        
-        // Assert
-        assertNotNull(result);
-        assertEquals(1, result.getTotalTokens());
-        assertEquals("Unknown Device", result.getTokens().get(0).getDeviceInfo());
-    }
-    
-    @Test
-    void testGetActiveSessionsForUser_ParsesOkHttpClient() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"okhttp/4.9.0 (Linux; Android 12)\"}}";
+        String attributes = "{\"browser_details\":{\"user_agent\":\"HTTPie/3.2.1\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -522,13 +496,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("OkHttp Client (Android)", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("HTTPie", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesReactNativeApp() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"ReactNative/0.70.0 (Android 11)\"}}";
+    void testGetActiveSessionsForUser_ParsesIosAppWithCaseVariation() {
+        // Arrange - test case insensitive matching
+        String attributes = "{\"browser_details\":{\"user_agent\":\"MyIOSApp/1.0 (iPhone; iOS 16.0)\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -546,62 +520,13 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("React Native App on Android", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("iOS App on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesIonicApp() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"Capacitor/4.0.0 (iPhone; iOS 16.0)\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-        
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-        
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-        
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-        
-        // Assert
-        assertNotNull(result);
-        assertEquals(1, result.getTotalTokens());
-        assertEquals("Ionic/Capacitor App on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
-    }
-    
-    @Test
-    void testGetActiveSessionsForUser_ParsesCordovaApp() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"Apache Cordova/9.0.0 (Android 10)\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-        
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-        
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-        
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-        
-        // Assert
-        assertNotNull(result);
-        assertEquals(1, result.getTotalTokens());
-        assertEquals("Cordova App on Android", result.getTokens().get(0).getDeviceInfo());
-    }
-    
-    @Test
-    void testGetActiveSessionsForUser_ParsesNativeAndroidApp() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "MyAndroidApp/1.0 NativeAndroid (Linux; Android 11)\"}}";
+    void testGetActiveSessionsForUser_ParsesAndroidAppCaseInsensitive() {
+        // Arrange - test case insensitive matching
+        String attributes = "{\"browser_details\":{\"user_agent\":\"MyANDROIDAPP/1.0 (Android)\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -623,34 +548,10 @@ class SessionManagementServiceImplTest {
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesCurlClient() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"curl/7.68.0\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-        
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-        
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-        
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-        
-        // Assert
-        assertNotNull(result);
-        assertEquals(1, result.getTotalTokens());
-        assertEquals("cURL", result.getTokens().get(0).getDeviceInfo());
-    }
-    
-    @Test
-    void testGetActiveSessionsForUser_ParsesSamsungBrowser() {
+    void testGetActiveSessionsForUser_ParsesIpad() {
         // Arrange
         String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (Linux; Android 12) SamsungBrowser/16.0 Safari/537.36\"}}";
+                + "Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) Safari/605.1.15\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -668,14 +569,14 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Samsung Browser on Android", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Safari Mobile on iOS (iPad)", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesUcBrowser() {
+    void testGetActiveSessionsForUser_ParsesIpod() {
         // Arrange
         String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (Linux; Android 11) UCBrowser/13.4.0 Safari/537.36\"}}";
+                + "Mozilla/5.0 (iPod touch; CPU iPhone OS 15_0 like Mac OS X) Safari/605.1.15\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -693,38 +594,14 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("UC Browser on Android", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Safari Mobile on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesFirefoxMobile() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"Mozilla/5.0 (Android 12) Firefox/110.0\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-        
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-        
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-        
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-        
-        // Assert
-        assertNotNull(result);
-        assertEquals(1, result.getTotalTokens());
-        assertEquals("Firefox Mobile on Android", result.getTokens().get(0).getDeviceInfo());
-    }
-    
-    @Test
-    void testGetActiveSessionsForUser_ParsesSafariDesktop() {
+    void testGetActiveSessionsForUser_ParsesWindowsPhone() {
         // Arrange
         String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (Macintosh; Mac OS X 13_0) Safari/605.1.15\"}}";
+                + "Mozilla/5.0 (Windows Phone 10.0; Android 6.0.1) Edge/40.15254.603\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -742,14 +619,14 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Safari on macOS", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Mozilla on Android", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesInternetExplorer() {
+    void testGetActiveSessionsForUser_ParsesLinux() {
         // Arrange
         String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0)\"}}";
+                + "Mozilla/5.0 (X11; Linux x86_64) Firefox/110.0\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -767,13 +644,63 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Internet Explorer on Windows", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Firefox on Linux", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesPythonClient() {
+    void testGetActiveSessionsForUser_ParsesEdgeDesktop() {
         // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"python-requests/2.28.0\"}}";
+        String attributes = "{\"browser_details\":{\"user_agent\":\""
+                + "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/110.0.1587.57\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+        
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+        
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+        assertEquals("Edge on Windows", result.getTokens().get(0).getDeviceInfo());
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_ParsesOperaDesktop() {
+        // Arrange
+        String attributes = "{\"browser_details\":{\"user_agent\":\""
+                + "Mozilla/5.0 (Windows NT 10.0) OPR/95.0.4635.37\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+        
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+        
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+        assertEquals("Opera on Windows", result.getTokens().get(0).getDeviceInfo());
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_ParsesPythonUrllib() {
+        // Arrange
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Python-urllib/3.9\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -795,9 +722,9 @@ class SessionManagementServiceImplTest {
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesJavaClient() {
-        // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\"Apache-HttpClient/4.5.13 (Java/11.0.12)\"}}";
+    void testGetActiveSessionsForUser_FallbackToFirstToken() {
+        // Arrange - unknown user agent should extract first token
+        String attributes = "{\"browser_details\":{\"user_agent\":\"CustomClient/1.0 SomeOtherInfo\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -815,39 +742,171 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Java Client", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("CustomClient", result.getTokens().get(0).getDeviceInfo());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesOperaMobile() {
+    void testGetActiveSessionsForUser_ClientNameFromCacheFails() {
         // Arrange
-        String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (Linux; Android 12) Opera/75.0 Safari/537.36\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-        
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
                 eq(USERNAME), eq("authorization_code"), any(Instant.class)))
                 .thenReturn(Collections.singletonList(auth));
         
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        // Simulate cache failure
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString()))
+                .thenThrow(new RuntimeException("Cache error"));
         
         // Act
         ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
         
-        // Assert
+        // Assert - should fallback to clientId
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Opera Mobile on Android", result.getTokens().get(0).getDeviceInfo());
+        assertEquals(CLIENT_ID, result.getTokens().get(0).getClientName());
     }
     
     @Test
-    void testGetActiveSessionsForUser_ParsesChromeOs() {
+    void testGetActiveSessionsForUser_ClientNameNullFromCache() {
         // Arrange
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        // Simulate null response from cache
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(null);
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+        
+        // Assert - should fallback to clientId
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+        assertEquals(CLIENT_ID, result.getTokens().get(0).getClientName());
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_ClientCacheDetailsWithNullRegisteredClient() {
+        // Arrange
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        // Simulate cache returning details with null RegisteredClient
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(null);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+        
+        // Assert - should fallback to clientId
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+        assertEquals(CLIENT_ID, result.getTokens().get(0).getClientName());
+    }
+    
+    @Test
+    void testInvalidateSessionsForUser_AlreadyExpired() {
+        // Arrange
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        auth.setAccessTokenExpiresAt(Instant.now().minusSeconds(TOKEN_EXPIRY_SECONDS)); // Expired 1 hour ago
+        
+        when(authorizationRepository.findById(TOKEN_ID_1)).thenReturn(Optional.of(auth));
+        
+        // Act
+        InvalidateSessionsResponseDto result = service.invalidateSessionsForUser(
+                USERNAME, Collections.singletonList(TOKEN_ID_1), TENANT_ID);
+        
+        // Assert
+        assertNotNull(result);
+        assertEquals(0, result.getInvalidatedSessions());
+        assertNotNull(result.getFailedSessions());
+        assertEquals(1, result.getFailedSessions().size());
+        assertEquals("Session already expired", result.getFailedSessions().get(0).getReason());
+    }
+    
+    @Test
+    void testInvalidateSessionsForUser_ExceptionDuringInvalidation() {
+        // Arrange
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        when(authorizationRepository.findById(TOKEN_ID_1)).thenReturn(Optional.of(auth));
+        when(authorizationRepository.save(any(Authorization.class)))
+                .thenThrow(new RuntimeException("Database error"));
+        
+        // Act
+        InvalidateSessionsResponseDto result = service.invalidateSessionsForUser(
+                USERNAME, Collections.singletonList(TOKEN_ID_1), TENANT_ID);
+        
+        // Assert
+        assertNotNull(result);
+        assertEquals(0, result.getInvalidatedSessions());
+        assertNotNull(result.getFailedSessions());
+        assertEquals(1, result.getFailedSessions().size());
+        assertTrue(result.getFailedSessions().get(0).getReason().contains("Internal error"));
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_IsCurrentSessionCollectionAudience() {
+        // Arrange - test with collection audience claim
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        
+        // Mock claims with collection audience
+        when(claims.get("username", String.class)).thenReturn(USERNAME);
+        when(claims.get("aud")).thenReturn(java.util.Collections.singleton(CLIENT_ID));
+        when(claims.getIssuedAt()).thenReturn(new Date(auth.getAccessTokenIssuedAt().toEpochMilli()));
+        when(claims.getExpiration()).thenReturn(new Date(auth.getAccessTokenExpiresAt().toEpochMilli()));
+        when(jwtTokenValidator.getClaimsFromToken(TEST_TOKEN)).thenReturn(claims);
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, TEST_TOKEN, TENANT_ID);
+        
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.getTokens().get(0).getIsCurrentSession());
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_IsCurrentSessionExceptionHandling() {
+        // Arrange
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        
+        // Mock exception when parsing token
+        when(jwtTokenValidator.getClaimsFromToken(TEST_TOKEN))
+                .thenThrow(new RuntimeException("Invalid token"));
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, TEST_TOKEN, TENANT_ID);
+        
+        // Assert - should handle exception gracefully
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+        assertEquals(false, result.getTokens().get(0).getIsCurrentSession());
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_ParsesChromeMobileOnIphone() {
+        // Arrange - Chrome on iPhone should use Safari Mobile
         String attributes = "{\"browser_details\":{\"user_agent\":\""
-                + "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) Chrome/145.0.0.0 Safari/537.36\"}}";
+                + "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Chrome/110.0 Safari/537.36\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
         
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -865,7 +924,32 @@ class SessionManagementServiceImplTest {
         // Assert
         assertNotNull(result);
         assertEquals(1, result.getTotalTokens());
-        assertEquals("Chrome on Chrome OS", result.getTokens().get(0).getDeviceInfo());
+        assertEquals("Chrome Mobile on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
+    }
+    
+    @Test
+    void testGetActiveSessionsForUser_ParsesSafariMobileOnIphone() {
+        // Arrange
+        String attributes = "{\"browser_details\":{\"user_agent\":\""
+                + "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Safari/605.1.15\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+        
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+        
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+        
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+        
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+        assertEquals("Safari Mobile on iOS (iPhone)", result.getTokens().get(0).getDeviceInfo());
     }
     
     /**

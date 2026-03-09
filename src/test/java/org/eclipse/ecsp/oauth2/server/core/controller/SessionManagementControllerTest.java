@@ -331,4 +331,248 @@ class SessionManagementControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
     }
+    
+    @Test
+    void testGetSelfActiveSessions_UnauthorizedInvalidToken() {
+        // Arrange
+        lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(SELF_MANAGE_SCOPE))).thenReturn(false);
+        
+        // Act
+        ResponseEntity<?> response = controller.getSelfActiveSessions(TENANT_ID, VALID_TOKEN);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+    
+    @Test
+    void testInvalidateSelfSessions_UnauthorizedInvalidToken() {
+        // Arrange
+        lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(SELF_MANAGE_SCOPE))).thenReturn(false);
+        
+        InvalidateSessionsRequestDto request = InvalidateSessionsRequestDto.builder()
+                .tokenIds(Arrays.asList(TOKEN_ID_1))
+                .build();
+        
+        // Act
+        ResponseEntity<?> response = controller.invalidateSelfSessions(TENANT_ID, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+    
+    @Test
+    void testGetAdminActiveSessions_UnauthorizedInvalidToken() {
+        // Arrange
+        lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(MANAGE_USERS_SCOPE))).thenReturn(false);
+        
+        AdminGetActiveSessionsRequestDto request = AdminGetActiveSessionsRequestDto.builder()
+                .username(USERNAME)
+                .build();
+        
+        // Act
+        ResponseEntity<?> response = controller.getAdminActiveSessions(TENANT_ID, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+    
+    @Test
+    void testInvalidateAdminSessions_UnauthorizedInvalidToken() {
+        // Arrange
+        lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(MANAGE_USERS_SCOPE))).thenReturn(false);
+        
+        AdminInvalidateSessionsRequestDto request = AdminInvalidateSessionsRequestDto.builder()
+                .username(USERNAME)
+                .tokenIds(Arrays.asList(TOKEN_ID_1))
+                .build();
+        
+        // Act
+        ResponseEntity<?> response = controller.invalidateAdminSessions(TENANT_ID, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+    
+    @Test
+    void testInvalidateSelfSessions_PartialSuccessAllFailed() {
+        // Arrange
+        InvalidateSessionsRequestDto request = InvalidateSessionsRequestDto.builder()
+                .tokenIds(Arrays.asList(TOKEN_ID_1, TOKEN_ID_2))
+                .build();
+        
+        FailedSessionDto failedSession1 = FailedSessionDto.builder()
+                .tokenId(TOKEN_ID_1)
+                .reason("Session not found")
+                .build();
+        
+        FailedSessionDto failedSession2 = FailedSessionDto.builder()
+                .tokenId(TOKEN_ID_2)
+                .reason("Session already expired")
+                .build();
+        
+        InvalidateSessionsResponseDto expectedResponse = InvalidateSessionsResponseDto.builder()
+                .invalidatedSessions(0)
+                .failedSessions(Arrays.asList(failedSession1, failedSession2))
+                .message("Some sessions could not be invalidated")
+                .build();
+        
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), eq(TENANT_ID)))
+                .thenReturn(expectedResponse);
+        
+        // Act
+        ResponseEntity<?> response = controller.invalidateSelfSessions(TENANT_ID, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
+    
+    @Test
+    void testInvalidateAdminSessions_PartialSuccessAllFailed() {
+        // Arrange
+        AdminInvalidateSessionsRequestDto request = AdminInvalidateSessionsRequestDto.builder()
+                .username(USERNAME)
+                .tokenIds(Arrays.asList(TOKEN_ID_1, TOKEN_ID_2))
+                .build();
+        
+        FailedSessionDto failedSession1 = FailedSessionDto.builder()
+                .tokenId(TOKEN_ID_1)
+                .reason("Session not found")
+                .build();
+        
+        FailedSessionDto failedSession2 = FailedSessionDto.builder()
+                .tokenId(TOKEN_ID_2)
+                .reason("Session already expired")
+                .build();
+        
+        InvalidateSessionsResponseDto expectedResponse = InvalidateSessionsResponseDto.builder()
+                .invalidatedSessions(0)
+                .failedSessions(Arrays.asList(failedSession1, failedSession2))
+                .message("Some sessions could not be invalidated")
+                .build();
+        
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), eq(TENANT_ID)))
+                .thenReturn(expectedResponse);
+        
+        // Act
+        ResponseEntity<?> response = controller.invalidateAdminSessions(TENANT_ID, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
+    
+    @Test
+    void testGetSelfActiveSessions_WithNullTenantId() {
+        // Arrange - null tenantId should be resolved
+        ActiveSessionDto session = ActiveSessionDto.builder()
+                .id(TOKEN_ID_1)
+                .clientName("Web Portal")
+                .accessTokenIssuedAt(Instant.now())
+                .accessTokenExpiresAt(Instant.now().plusSeconds(TOKEN_EXPIRY_SECONDS))
+                .deviceInfo("Chrome on Windows")
+                .isCurrentSession(true)
+                .build();
+        
+        ActiveSessionsResponseDto expectedResponse = ActiveSessionsResponseDto.builder()
+                .tokens(Collections.singletonList(session))
+                .totalTokens(1)
+                .build();
+        
+        when(sessionManagementService.getActiveSessionsForUser(
+                eq(USERNAME), eq("valid-jwt-token"), anyString()))
+                .thenReturn(expectedResponse);
+        
+        // Act - pass null as tenantId
+        ResponseEntity<?> response = controller.getSelfActiveSessions(null, VALID_TOKEN);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
+    
+    @Test
+    void testInvalidateSelfSessions_WithNullTenantId() {
+        // Arrange
+        InvalidateSessionsRequestDto request = InvalidateSessionsRequestDto.builder()
+                .tokenIds(Arrays.asList(TOKEN_ID_1))
+                .build();
+        
+        InvalidateSessionsResponseDto expectedResponse = InvalidateSessionsResponseDto.builder()
+                .invalidatedSessions(1)
+                .failedSessions(null)
+                .message("Sessions invalidated successfully")
+                .build();
+        
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), anyString()))
+                .thenReturn(expectedResponse);
+        
+        // Act - pass null as tenantId
+        ResponseEntity<?> response = controller.invalidateSelfSessions(null, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
+    
+    @Test
+    void testGetAdminActiveSessions_WithNullTenantId() {
+        // Arrange
+        AdminGetActiveSessionsRequestDto request = AdminGetActiveSessionsRequestDto.builder()
+                .username(USERNAME)
+                .build();
+        
+        ActiveSessionDto session = ActiveSessionDto.builder()
+                .id(TOKEN_ID_1)
+                .clientName("Mobile App")
+                .accessTokenIssuedAt(Instant.now())
+                .accessTokenExpiresAt(Instant.now().plusSeconds(TOKEN_EXPIRY_SECONDS))
+                .deviceInfo("Safari on iOS")
+                .build();
+        
+        ActiveSessionsResponseDto expectedResponse = ActiveSessionsResponseDto.builder()
+                .tokens(Collections.singletonList(session))
+                .totalTokens(1)
+                .username(USERNAME)
+                .build();
+        
+        when(sessionManagementService.getActiveSessionsForUser(eq(USERNAME), isNull(), anyString()))
+                .thenReturn(expectedResponse);
+        
+        // Act - pass null as tenantId
+        ResponseEntity<?> response = controller.getAdminActiveSessions(null, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
+    
+    @Test
+    void testInvalidateAdminSessions_WithNullTenantId() {
+        // Arrange
+        AdminInvalidateSessionsRequestDto request = AdminInvalidateSessionsRequestDto.builder()
+                .username(USERNAME)
+                .tokenIds(Arrays.asList(TOKEN_ID_1))
+                .build();
+        
+        InvalidateSessionsResponseDto expectedResponse = InvalidateSessionsResponseDto.builder()
+                .invalidatedSessions(1)
+                .failedSessions(null)
+                .message("Sessions invalidated successfully")
+                .build();
+        
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), anyString()))
+                .thenReturn(expectedResponse);
+        
+        // Act - pass null as tenantId
+        ResponseEntity<?> response = controller.invalidateAdminSessions(null, VALID_TOKEN, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+    }
 }
