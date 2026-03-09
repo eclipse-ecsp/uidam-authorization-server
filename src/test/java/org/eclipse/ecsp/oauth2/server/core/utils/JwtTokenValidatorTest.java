@@ -70,9 +70,9 @@ class JwtTokenValidatorTest {
 
         MockitoAnnotations.openMocks(this);
         
-        // Mock JWKSource to return RSA key with the public key
+        // Mock JWKSource to return RSA key with the public key (using lenient to avoid unnecessary stubbing errors)
         RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) this.publicKey).build();
-        when(jwkSource.get(any(JWKSelector.class), any()))
+        org.mockito.Mockito.lenient().when(jwkSource.get(any(JWKSelector.class), any()))
                 .thenReturn(Collections.singletonList((JWK) rsaKey));
         
         // Initialize JwtTokenValidator with JWKSource and AuthorizationRepository
@@ -473,7 +473,66 @@ class JwtTokenValidatorTest {
         assertTrue(result, "Token with multiple scopes should match one of them");
     }
 
-    public static String createValidToken(Map<String, Object> claims, long expirationMillis, PrivateKey privateKey) {
+    @Test
+    void testGetClaimsFromToken_WithNoRsaKeysFound() throws Exception {
+        // Arrange - create new mocks to avoid stubbing conflicts
+        JWKSource<SecurityContext> newJwkSource = org.mockito.Mockito.mock(JWKSource.class);
+        when(newJwkSource.get(any(JWKSelector.class), any())).thenReturn(Collections.emptyList());
+        
+        JwtTokenValidator validator = new JwtTokenValidator(newJwkSource, authorizationRepository);
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("sub", "testUser");
+        claims.put("scope", REVOKE_TOKEN_SCOPE);
+        String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        
+        // Act & Assert - should return false when no RSA keys found
+        assertFalse(validator.validateToken(token), 
+                "Should return false when no RSA keys found");
+    }
+
+    @Test
+    void testGetClaimsFromToken_WithNullJwkList() throws Exception {
+        // Arrange - create new mocks to avoid stubbing conflicts
+        JWKSource<SecurityContext> newJwkSource = org.mockito.Mockito.mock(JWKSource.class);
+        when(newJwkSource.get(any(JWKSelector.class), any())).thenReturn(null);
+        
+        JwtTokenValidator validator = new JwtTokenValidator(newJwkSource, authorizationRepository);
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("sub", "testUser");
+        claims.put("scope", REVOKE_TOKEN_SCOPE);
+        String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        
+        // Act & Assert - should return false when JWK list is null
+        assertFalse(validator.validateToken(token), 
+                "Should return false when JWK list is null");
+    }
+
+    @Test
+    void testIntrospectToken_WithMissingRequiredScope() throws Exception {
+        // Arrange
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("sub", "testUser");
+        claims.put("scope", "ReadData WriteData");  // Missing REVOKE_TOKEN_SCOPE
+        String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        
+        // Act
+        boolean result = jwtTokenValidator.introspectToken(token, REVOKE_TOKEN_SCOPE);
+        
+        // Assert
+        assertFalse(result, "Should return false when required scope is missing");
+    }
+
+    public static String createValidToken(Map<String, Object> claims, 
+                                           long expirationMillis, PrivateKey privateKey) {
         return Jwts.builder()
                 .setClaims(claims)
                 .setExpiration(new Date(System.currentTimeMillis() + expirationMillis))
