@@ -508,4 +508,125 @@ class CustomUserPwdAuthenticationProviderTest {
             OAuth2AuthorizationCodeRequestAuthenticationToken.class));
     }
 
+    @Test
+    void testAuthenticateUserBlocked() {
+        // Test lines 227-247: BLOCKED user status handling
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_FIVE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup session mock for failure case (needed for setRecaptchaSession)
+        when(request.getSession()).thenReturn(session);
+        
+        // Setup user details
+        UserDetailsResponse userDetailsResponse = getUser();
+        doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return BLOCKED status with lock duration
+        final int lockDuration = 30;
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("BLOCKED")
+            .lockDurationMinutes(lockDuration)
+            .message("User is blocked")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
+        
+        // Use WRONG password to trigger failed authentication and event check
+        final String wrongPassword = "wrongPassword";
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, wrongPassword, TEST_ACCOUNT_NAME, null);
+        
+        BadCredentialsException exception = assertThrows(BadCredentialsException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        assertEquals("Account is temporarily locked for 30 minutes due to multiple failed login attempts.", 
+                exception.getMessage());
+        
+        verify(authorizationMetricsService).incrementMetricsForTenant(eq("test-tenant"), 
+            eq(MetricType.FAILURE_LOGIN_USER_BLOCKED), eq(MetricType.FAILURE_LOGIN_ATTEMPTS));
+    }
+
+    @Test
+    void testAuthenticateUserDeactivated() {
+        // Test lines 227-247: DEACTIVATED user status handling
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_FIVE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup session mock for failure case (needed for setRecaptchaSession)
+        when(request.getSession()).thenReturn(session);
+        
+        // Setup user details
+        UserDetailsResponse userDetailsResponse = getUser();
+        doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return DEACTIVATED status
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("DEACTIVATED")
+            .lockDurationMinutes(0)
+            .message("User is deactivated")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
+        
+        // Use WRONG password to trigger failed authentication and event check
+        final String wrongPassword = "wrongPassword";
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, wrongPassword, TEST_ACCOUNT_NAME, null);
+        
+        BadCredentialsException exception = assertThrows(BadCredentialsException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        assertEquals("Account has been deactivated due to multiple failed login attempts. "
+                + "Please contact administrator.", exception.getMessage());
+        
+        verify(authorizationMetricsService).incrementMetricsForTenant(eq("test-tenant"), 
+            eq(MetricType.FAILURE_LOGIN_USER_BLOCKED), eq(MetricType.FAILURE_LOGIN_ATTEMPTS));
+    }
+
+    @Test
+    void testAuthenticateUserBlockedWithZeroLockDuration() {
+        // Test lines 227-247: BLOCKED with zero lock duration (permanent block)
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getUser()).thenReturn(userProperties);
+        when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(MAX_ATTEMPTS_FIVE);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        
+        // Setup session mock for failure case (needed for setRecaptchaSession)
+        when(request.getSession()).thenReturn(session);
+        
+        // Setup user details
+        UserDetailsResponse userDetailsResponse = getUser();
+        doReturn(userDetailsResponse).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        
+        // Mock addUserEvent to return BLOCKED status with 0 lock duration
+        UserEventResponse eventResponse = UserEventResponse.builder()
+            .userStatus("BLOCKED")
+            .lockDurationMinutes(0)
+            .message("User is blocked permanently")
+            .build();
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString())).thenReturn(eventResponse);
+        
+        // Use WRONG password to trigger failed authentication and event check
+        final String wrongPassword = "wrongPassword";
+        CustomUserPwdAuthenticationToken authentication = new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, wrongPassword, TEST_ACCOUNT_NAME, null);
+        
+        BadCredentialsException exception = assertThrows(BadCredentialsException.class,
+                () -> customUserPwdAuthenticationProvider.authenticate(authentication));
+        
+        assertEquals("Consecutive log-in failures exceeded the maximum allowed login attempt. "
+                + "Your account has been locked, Please contact admin!", exception.getMessage());
+        
+        verify(authorizationMetricsService).incrementMetricsForTenant(eq("test-tenant"), 
+            eq(MetricType.FAILURE_LOGIN_USER_BLOCKED), eq(MetricType.FAILURE_LOGIN_ATTEMPTS));
+    }
+
 }

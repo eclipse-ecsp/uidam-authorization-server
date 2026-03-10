@@ -217,4 +217,39 @@ class InvalidateSessionsRequestDtoTest {
         assertNotNull(toString);
         assertTrue(toString.contains("token1") || toString.contains("tokenIds"));
     }
+
+    @Test
+    void testBuilderAndEqualsHashCode() {
+        List<String> tokens = Arrays.asList("token1", "token2");
+        InvalidateSessionsRequestDto dto1 = InvalidateSessionsRequestDto.builder().tokenIds(tokens).build();
+        InvalidateSessionsRequestDto dto2 = new InvalidateSessionsRequestDto(tokens);
+        assertEquals(dto1, dto2);
+        assertEquals(dto1.hashCode(), dto2.hashCode());
+        assertEquals(tokens, dto1.getTokenIds());
+    }
+
+    @Test
+    void testValidationNotNullAndNotEmpty() {
+        InvalidateSessionsRequestDto validDto = new InvalidateSessionsRequestDto(Arrays.asList("token1"));
+        Set<ConstraintViolation<InvalidateSessionsRequestDto>> violations = validator.validate(validDto);
+        assertTrue(violations.isEmpty());
+
+        InvalidateSessionsRequestDto nullDto = new InvalidateSessionsRequestDto(null);
+        violations = validator.validate(nullDto);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("cannot be null")));
+
+        InvalidateSessionsRequestDto emptyDto = new InvalidateSessionsRequestDto(Collections.emptyList());
+        violations = validator.validate(emptyDto);
+        assertFalse(violations.isEmpty());
+        assertTrue(violations.stream().anyMatch(v -> v.getMessage().contains("cannot be empty")));
+    }
+
+    @Test
+    void testNoArgsConstructorAndSetters() {
+        InvalidateSessionsRequestDto dto = new InvalidateSessionsRequestDto();
+        assertNull(dto.getTokenIds());
+        dto.setTokenIds(Arrays.asList("tokenA", "tokenB"));
+        assertEquals(Arrays.asList("tokenA", "tokenB"), dto.getTokenIds());
+    }
 }

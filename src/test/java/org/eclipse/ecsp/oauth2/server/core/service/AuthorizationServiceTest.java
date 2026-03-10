@@ -1278,5 +1278,155 @@ class AuthorizationServiceTest {
         
         assertThat(result).isEqualTo("No active token exist for the provided id!");
     }
+
+    @Test
+    void testSave_TokenHashingWithAccessAndRefreshTokens() {
+        // Test lines 154-160: Token hashing for access and refresh tokens
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        // Create an authorization with both access and refresh tokens
+        Instant now = Instant.now();
+        OAuth2Authorization auth = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id(ID)
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AUTHORIZATION_GRANT_TYPE)
+                .accessToken(new org.springframework.security.oauth2.core.OAuth2AccessToken(
+                        org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType.BEARER,
+                        "access-token-value",
+                        now,
+                        now.plusSeconds(INT_3600)))
+                .refreshToken(new OAuth2RefreshToken(
+                        "refresh-token-value",
+                        now,
+                        now.plusSeconds(INT_3600 * INT_2)))
+                .build();
+        
+        authorizationService.save(auth);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+
+    @Test
+    void testRemove_DeletesByAuthorizationId() {
+        // Test lines 180-183: Remove authorization by deleting from repository
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization auth = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id("auth-id-123")
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AUTHORIZATION_GRANT_TYPE)
+                .build();
+        
+        authorizationService.remove(auth);
+        
+        verify(authorizationRepository).deleteById(eq("auth-id-123"));
+    }
+
+    @Test
+    void testFindById_WithAuthorizationCodeInDatabase() {
+        // Test lines 399-403, 454-459: Finding authorization with auth code and parsing it
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Instant now = Instant.now();
+        Authorization entity = new Authorization();
+        entity.setId("auth-123");
+        entity.setRegisteredClientId(REGISTERED_CLIENT.getClientId());
+        entity.setPrincipalName(PRINCIPAL_NAME);
+        entity.setAuthorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE.getValue());
+        entity.setAttributes("{\"@class\":\"java.util.Collections$UnmodifiableMap\"}");
+        entity.setAuthorizationCodeValue("code123");
+        entity.setAuthorizationCodeIssuedAt(now.minus(INT_1800, ChronoUnit.SECONDS));
+        entity.setAuthorizationCodeExpiresAt(now.plus(INT_1800, ChronoUnit.SECONDS));
+        entity.setAuthorizationCodeMetadata(
+                "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"metadata.token.invalidated\":false}");
+        entity.setAccessTokenValue("access-token");
+        entity.setAccessTokenIssuedAt(now);
+        entity.setAccessTokenExpiresAt(now.plusSeconds(INT_3600));
+        entity.setAccessTokenMetadata(
+                "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"metadata.token.invalidated\":false}");
+        entity.setAccessTokenType(
+                org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType.BEARER.getValue());
+        entity.setAccessTokenScopes("read,write");
+        
+        when(authorizationRepository.findById("auth-123")).thenReturn(Optional.of(entity));
+        
+        OAuth2Authorization result = authorizationService.findById("auth-123");
+        
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo("auth-123");
+    }
+
+    @Test
+    void testFindById_WithNullRegisteredClient() {
+        // Test lines 422-425: Null registered client throws DataRetrievalFailureException
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(null);
+        
+        Authorization entity = new Authorization();
+        entity.setId("auth-456");
+        entity.setRegisteredClientId("nonexistent-client");
+        entity.setPrincipalName(PRINCIPAL_NAME);
+        entity.setAuthorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS.getValue());
+        
+        when(authorizationRepository.findById("auth-456")).thenReturn(Optional.of(entity));
+        
+        assertThrows(org.springframework.dao.DataRetrievalFailureException.class, 
+                () -> authorizationService.findById("auth-456"));
+    }
+
+    @Test
+    void testFindById_WithOidcIdToken() {
+        // Test lines 475-480: Finding authorization with OIDC ID token and parsing it
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Instant now = Instant.now();
+        Authorization entity = new Authorization();
+        entity.setId("auth-789");
+        entity.setRegisteredClientId(REGISTERED_CLIENT.getClientId());
+        entity.setPrincipalName(PRINCIPAL_NAME);
+        entity.setAuthorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE.getValue());
+        entity.setAttributes("{\"@class\":\"java.util.Collections$UnmodifiableMap\"}");
+        entity.setOidcIdTokenValue("id-token-123");
+        entity.setOidcIdTokenIssuedAt(now.minus(INT_1800, ChronoUnit.SECONDS));
+        entity.setOidcIdTokenExpiresAt(now.plus(INT_1800, ChronoUnit.SECONDS));
+        entity.setOidcIdTokenClaims(
+                "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"sub\":\"user123\","
+                + "\"iss\":\"https://auth.example.com\","
+                + "\"aud\":[\"java.util.Collections$SingletonList\",[\"client\"]],"
+                + "\"exp\":[\"java.time.Instant\"," + now.plusSeconds(INT_3600).getEpochSecond() + "],"
+                + "\"iat\":[\"java.time.Instant\"," + now.getEpochSecond() + "]}");
+        entity.setOidcIdTokenMetadata(
+                "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"metadata.token.invalidated\":false}");
+        entity.setAccessTokenValue("access-token");
+        entity.setAccessTokenIssuedAt(now);
+        entity.setAccessTokenExpiresAt(now.plusSeconds(INT_3600));
+        entity.setAccessTokenMetadata(
+                "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"metadata.token.invalidated\":false}");
+        entity.setAccessTokenType(
+                org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType.BEARER.getValue());
+        entity.setAccessTokenScopes("openid,profile");
+        
+        when(authorizationRepository.findById("auth-789")).thenReturn(Optional.of(entity));
+        
+        OAuth2Authorization result = authorizationService.findById("auth-789");
+        
+        assertThat(result).isNotNull();
+        assertThat(result.getToken(OidcIdToken.class)).isNotNull();
+    }
+
 }
 
