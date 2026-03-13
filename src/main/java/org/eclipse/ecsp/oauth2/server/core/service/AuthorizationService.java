@@ -79,7 +79,7 @@ public class AuthorizationService implements OAuth2AuthorizationService {
     private static final int BEGIN_INDEX = 7;
     private static final String DEFAULT_HASH_ALGORITHM = "SHA-256";
 
-    private static final String COMPONENT_NAME = "uidam-authorization-server";
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
     
     private final AuthorizationRepository authorizationRepository;
     private final RegisteredClientRepository registeredClientRepository;

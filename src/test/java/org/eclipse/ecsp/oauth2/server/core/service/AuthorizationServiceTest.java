@@ -803,7 +803,7 @@ class AuthorizationServiceTest {
         // Verify audit logger was called with AUTHZ_FAILURE_REVOKED_TOKEN
         verify(auditLogger, times(1)).log(
             eq("AUTHZ_FAILURE_REVOKED_TOKEN"),
-            eq("uidam-authorization-server"),
+            eq("UIDAM_AUTHORIZATION_SERVER"),
             eq(AuditEventResult.FAILURE),
             eq("Authorization failed - token has been revoked"),
             any(),  // actorContext
@@ -867,7 +867,7 @@ class AuthorizationServiceTest {
         // Verify audit logger was called
         verify(auditLogger, times(1)).log(
             eq("AUTHZ_FAILURE_REVOKED_TOKEN"),
-            eq("uidam-authorization-server"),
+            eq("UIDAM_AUTHORIZATION_SERVER"),
             eq(AuditEventResult.FAILURE),
             eq("Authorization failed - token has been revoked"),
             any(),  // actorContext - should have clientId as userId
