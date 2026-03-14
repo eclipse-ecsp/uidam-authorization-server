@@ -356,24 +356,15 @@ public class SessionManagementServiceImpl implements SessionManagementService {
             JsonNode attributesNode = objectMapper.readTree(attributesJson);
             
             // First, try to get browser details from the new location (browser_details)
-            JsonNode browserDetailsNode = attributesNode.get("browser_details");
-            if (browserDetailsNode != null && browserDetailsNode.isObject()) {
-                String userAgent = browserDetailsNode.path("user_agent").asText(null);
-                if (userAgent != null && !userAgent.isEmpty() && !"unknown".equals(userAgent)) {
-                    return parseUserAgent(userAgent);
-                }
+            String userAgent = extractUserAgentFromBrowserDetails(attributesNode);
+            if (userAgent != null) {
+                return parseUserAgent(userAgent);
             }
             
             // Fallback: try to get from legacy location (java.security.Principal.details.userAgent)
-            JsonNode principalNode = attributesNode.get(DEVICE_INFO_KEY);
-            if (principalNode != null && principalNode.isObject()) {
-                JsonNode detailsNode = principalNode.get("details");
-                if (detailsNode != null && detailsNode.isObject()) {
-                    String userAgent = detailsNode.path("userAgent").asText(null);
-                    if (userAgent != null && !userAgent.isEmpty()) {
-                        return parseUserAgent(userAgent);
-                    }
-                }
+            userAgent = extractUserAgentFromLegacyLocation(attributesNode);
+            if (userAgent != null) {
+                return parseUserAgent(userAgent);
             }
             
             return UNKNOWN_DEVICE;
@@ -381,6 +372,53 @@ public class SessionManagementServiceImpl implements SessionManagementService {
             LOGGER.warn("Error parsing device info from attributes: {}", e.getMessage());
             return UNKNOWN_DEVICE;
         }
+    }
+    
+    /**
+     * Extracts user agent from browser_details node.
+     *
+     * @param attributesNode the attributes JSON node
+     * @return the user agent string or null if not found or invalid
+     */
+    private String extractUserAgentFromBrowserDetails(JsonNode attributesNode) {
+        JsonNode browserDetailsNode = attributesNode.get("browser_details");
+        if (browserDetailsNode != null && browserDetailsNode.isObject()) {
+            String userAgent = browserDetailsNode.path("user_agent").asText(null);
+            if (isValidUserAgent(userAgent)) {
+                return userAgent;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Extracts user agent from legacy location (java.security.Principal.details.userAgent).
+     *
+     * @param attributesNode the attributes JSON node
+     * @return the user agent string or null if not found or invalid
+     */
+    private String extractUserAgentFromLegacyLocation(JsonNode attributesNode) {
+        JsonNode principalNode = attributesNode.get(DEVICE_INFO_KEY);
+        if (principalNode != null && principalNode.isObject()) {
+            JsonNode detailsNode = principalNode.get("details");
+            if (detailsNode != null && detailsNode.isObject()) {
+                String userAgent = detailsNode.path("userAgent").asText(null);
+                if (isValidUserAgent(userAgent)) {
+                    return userAgent;
+                }
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Checks if a user agent string is valid (not null, not empty, not "unknown").
+     *
+     * @param userAgent the user agent string
+     * @return true if valid, false otherwise
+     */
+    private boolean isValidUserAgent(String userAgent) {
+        return userAgent != null && !userAgent.isEmpty() && !"unknown".equals(userAgent);
     }
     
     /**
