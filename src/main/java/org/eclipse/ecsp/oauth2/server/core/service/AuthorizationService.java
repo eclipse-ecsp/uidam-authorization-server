@@ -946,12 +946,18 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         
         // Create new metadata map with browser details
         Map<String, Object> metadata = new LinkedHashMap<>(accessToken.getMetadata());
-        metadata.put(USER_AGENT_KEY, browserDetailsMap.getOrDefault(USER_AGENT_KEY, UNKNOWN));
-        metadata.put(IP_ADDRESS_KEY, browserDetailsMap.getOrDefault(IP_ADDRESS_KEY, UNKNOWN));
-        metadata.put(ACCEPT_LANGUAGE_KEY, browserDetailsMap.getOrDefault(ACCEPT_LANGUAGE_KEY, UNKNOWN));
-        metadata.put(REFERER_KEY, browserDetailsMap.getOrDefault(REFERER_KEY, UNKNOWN));
-        metadata.put(SESSION_ID_KEY, browserDetailsMap.getOrDefault(SESSION_ID_KEY, UNKNOWN));
-        metadata.put(CAPTURED_AT_KEY, browserDetailsMap.getOrDefault(CAPTURED_AT_KEY, Instant.now().toString()));
+        Object userAgent = browserDetailsMap.get(USER_AGENT_KEY);
+        metadata.put(USER_AGENT_KEY, userAgent != null ? userAgent : UNKNOWN);
+        Object ipAddress = browserDetailsMap.get(IP_ADDRESS_KEY);
+        metadata.put(IP_ADDRESS_KEY, ipAddress != null ? ipAddress : UNKNOWN);
+        Object acceptLanguage = browserDetailsMap.get(ACCEPT_LANGUAGE_KEY);
+        metadata.put(ACCEPT_LANGUAGE_KEY, acceptLanguage != null ? acceptLanguage : UNKNOWN);
+        Object referer = browserDetailsMap.get(REFERER_KEY);
+        metadata.put(REFERER_KEY, referer != null ? referer : UNKNOWN);
+        Object sessionId = browserDetailsMap.get(SESSION_ID_KEY);
+        metadata.put(SESSION_ID_KEY, sessionId != null ? sessionId : UNKNOWN);
+        Object capturedAt = browserDetailsMap.get(CAPTURED_AT_KEY);
+        metadata.put(CAPTURED_AT_KEY, capturedAt != null ? capturedAt : Instant.now().toString());
         
         // Rebuild authorization with updated access token metadata
         OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);

@@ -20,6 +20,7 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 
 import org.eclipse.ecsp.audit.enums.AuditEventResult;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetails;
 import org.eclipse.ecsp.oauth2.server.core.entities.Authorization;
 import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationException;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
@@ -28,8 +29,10 @@ import org.eclipse.ecsp.oauth2.server.core.test.TestRegisteredClients;
 import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2DeviceCode;
@@ -1698,12 +1701,22 @@ class AuthorizationServiceTest {
     }
     
     @Test
-    void testAddBrowserDetailsToAccessToken_WithCustomWebAuthenticationDetails() {
-        // Test lines 964-992: addBrowserDetailsToAccessToken method
+    void testAddBrowserDetailsToAccessToken_WithExistingBrowserDetails() {
+        // Test lines 937-965: addBrowserDetailsToAccessTokenFromMap method
+        // Tests that browser details from attributes are added to access token metadata
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        // Create browser details map (serializable)
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", "Mozilla/5.0 Chrome/91.0");
+        browserDetails.put("ip_address", "192.168.1.100");
+        browserDetails.put("accept_language", "en-US,en;q=0.9");
+        browserDetails.put("referer", "https://login.example.com");
+        browserDetails.put("session_id", "sess-abc-123");
+        browserDetails.put("captured_at", Instant.now().toString());
         
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
             OAuth2AccessToken.TokenType.BEARER, "access-token-with-details",
@@ -1714,20 +1727,43 @@ class AuthorizationServiceTest {
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .accessToken(accessToken)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
         authorizationService.save(authorization);
         
-        verify(authorizationRepository).save(any(Authorization.class));
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+        assertThat(savedAuth).isNotNull();
+        
+        // Verify the browser details were added to access token metadata
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata).isNotNull()
+            .contains("user_agent")
+            .contains("Mozilla/5.0 Chrome/91.0")
+            .contains("ip_address")
+            .contains("192.168.1.100")
+            .contains("accept_language")
+            .contains("referer")
+            .contains("session_id");
     }
     
     @Test
     void testAddBrowserDetailsToAccessToken_WithNullUserAgent() {
-        // Test lines 975-976: null user agent handling
+        // Test lines 988-989: null user agent handling in addBrowserDetailsToAccessToken
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        // Create browser details map with null user agent
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", null);  // Null user agent
+        browserDetails.put("ip_address", "192.168.1.1");
+        browserDetails.put("accept_language", "en-US");
+        browserDetails.put("referer", "https://example.com");
+        browserDetails.put("session_id", "session-123");
         
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
             OAuth2AccessToken.TokenType.BEARER, "access-token",
@@ -1738,20 +1774,36 @@ class AuthorizationServiceTest {
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .accessToken(accessToken)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
         authorizationService.save(authorization);
         
-        verify(authorizationRepository).save(any(Authorization.class));
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+        
+        // Verify metadata contains "unknown" for null user agent
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata)
+            .contains("user_agent")
+            .contains("unknown");
     }
     
     @Test
     void testAddBrowserDetailsToAccessToken_WithNullAcceptLanguage() {
-        // Test lines 977-978: null accept language handling
+        // Test lines 990-991: null accept language handling in addBrowserDetailsToAccessToken
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", "Mozilla/5.0");
+        browserDetails.put("ip_address", "192.168.1.1");
+        browserDetails.put("accept_language", null);  // Null accept language
+        browserDetails.put("referer", "https://example.com");
+        browserDetails.put("session_id", "session-123");
         
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
             OAuth2AccessToken.TokenType.BEARER, "access-token",
@@ -1762,20 +1814,36 @@ class AuthorizationServiceTest {
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .accessToken(accessToken)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
         authorizationService.save(authorization);
         
-        verify(authorizationRepository).save(any(Authorization.class));
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+        
+        // Verify metadata contains "unknown" for null accept language
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata)
+            .contains("accept_language")
+            .contains("unknown");
     }
     
     @Test
     void testAddBrowserDetailsToAccessToken_WithNullReferer() {
-        // Test lines 979: null referer handling
+        // Test lines 992: null referer handling in addBrowserDetailsToAccessToken
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", "Mozilla/5.0");
+        browserDetails.put("ip_address", "192.168.1.1");
+        browserDetails.put("accept_language", "en-US");
+        browserDetails.put("referer", null);  // Null referer
+        browserDetails.put("session_id", "session-123");
         
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
             OAuth2AccessToken.TokenType.BEARER, "access-token",
@@ -1786,21 +1854,36 @@ class AuthorizationServiceTest {
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .accessToken(accessToken)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
         authorizationService.save(authorization);
         
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
         
-        verify(authorizationRepository).save(any(Authorization.class));
+        // Verify metadata contains "unknown" for null referer
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata)
+            .contains("referer")
+            .contains("unknown");
     }
     
     @Test
     void testAddBrowserDetailsToAccessToken_WithNullSessionId() {
-        // Test lines 980-981: null session ID handling
+        // Test lines 993-994: null session ID handling in addBrowserDetailsToAccessToken
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", "Mozilla/5.0");
+        browserDetails.put("ip_address", "192.168.1.1");
+        browserDetails.put("accept_language", "en-US");
+        browserDetails.put("referer", "https://example.com");
+        browserDetails.put("session_id", null);  // Null session ID
         
         OAuth2AccessToken accessToken = new OAuth2AccessToken(
             OAuth2AccessToken.TokenType.BEARER, "access-token",
@@ -1811,106 +1894,124 @@ class AuthorizationServiceTest {
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .accessToken(accessToken)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+        
+        // Verify metadata contains "unknown" for null session ID
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata)
+            .contains("session_id")
+            .contains("unknown");
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithNullAccessToken() {
+        // Test lines 978-981: handles null access token gracefully
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", "Mozilla/5.0");
+        browserDetails.put("ip_address", "192.168.1.1");
+        
+        // Authorization without access token
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .attribute("browser_details", browserDetails)
+            .build();
+        
+        // Should not throw exception when access token is null
         authorizationService.save(authorization);
         
         verify(authorizationRepository).save(any(Authorization.class));
     }
     
     @Test
-    void testAddBrowserDetailsToAttributes_WithCustomWebAuthenticationDetails() {
-        // Test lines 1009-1027: addBrowserDetailsToAttributes method
+    void testAddBrowserDetailsToAttributes_WithAllBrowserDetails() {
+        // Test lines 1020-1048: addBrowserDetailsToAttributes method
+        // This test verifies browser details are added to attributes (not just metadata)
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        // The addBrowserDetailsToAttributes is called indirectly through enrichAuthorizationWithBrowserDetails
+        // We can test it by verifying the attributes contain browser_details after save
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", "Safari/14.0");
+        browserDetails.put("ip_address", "10.0.0.5");
+        browserDetails.put("accept_language", "fr-FR");
+        browserDetails.put("referer", "https://app.example.com");
+        browserDetails.put("session_id", "sess-xyz-789");
         
         OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
             .id(ID)
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
         authorizationService.save(authorization);
         
-        verify(authorizationRepository).save(any(Authorization.class));
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+        assertThat(savedAuth).isNotNull();
+        
+        // Verify the browser details were captured in attributes
+        String attributes = savedAuth.getAttributes();
+        assertThat(attributes).isNotNull()
+            .contains("browser_details")
+            .contains("user_agent")
+            .contains("Safari/14.0")
+            .contains("ip_address")
+            .contains("10.0.0.5")
+            .contains("accept_language")
+            .contains("fr-FR")
+            .contains("referer")
+            .contains("session_id");
     }
     
     @Test
-    void testAddBrowserDetailsToAttributes_WithNullUserAgent() {
-        // Test lines 1010: null user agent in addBrowserDetailsToAttributes
+    void testAddBrowserDetailsToAttributes_WithPartialNullValues() {
+        // Test lines 1023-1029: null handling in addBrowserDetailsToAttributes
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
-            .id(ID)
-            .principalName(PRINCIPAL_NAME)
-            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-            .build();
-        
-        authorizationService.save(authorization);
-        
-        verify(authorizationRepository).save(any(Authorization.class));
-    }
-    
-    @Test
-    void testAddBrowserDetailsToAttributes_WithNullAcceptLanguage() {
-        // Test lines 1012-1013: null accept language in addBrowserDetailsToAttributes
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        Map<String, Object> browserDetails = new LinkedHashMap<>();
+        browserDetails.put("user_agent", null);
+        browserDetails.put("ip_address", "192.168.1.1");
+        browserDetails.put("accept_language", null);
+        browserDetails.put("referer", null);
+        browserDetails.put("session_id", null);
         
         OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
             .id(ID)
             .principalName(PRINCIPAL_NAME)
             .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .attribute("browser_details", browserDetails)
             .build();
         
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
         authorizationService.save(authorization);
         
-        verify(authorizationRepository).save(any(Authorization.class));
-    }
-    
-    @Test
-    void testAddBrowserDetailsToAttributes_WithNullReferer() {
-        // Test lines 1014: null referer in addBrowserDetailsToAttributes
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
         
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
-            .id(ID)
-            .principalName(PRINCIPAL_NAME)
-            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-            .build();
-        
-        authorizationService.save(authorization);
-        
-        verify(authorizationRepository).save(any(Authorization.class));
-    }
-    
-    @Test
-    void testAddBrowserDetailsToAttributes_WithNullSessionId() {
-        // Test lines 1015-1016: null session ID in addBrowserDetailsToAttributes
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
-        
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
-            .id(ID)
-            .principalName(PRINCIPAL_NAME)
-            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-            .build();
-        
-        authorizationService.save(authorization);
-        
-        verify(authorizationRepository).save(any(Authorization.class));
+        // Verify attributes contains browser_details even with null values
+        String attributes = savedAuth.getAttributes();
+        assertThat(attributes).contains("browser_details");
     }
 }
-
