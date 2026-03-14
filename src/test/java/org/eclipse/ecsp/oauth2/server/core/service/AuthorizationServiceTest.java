@@ -83,6 +83,7 @@ class AuthorizationServiceTest {
     private static final int INT_1800 = 1800;
     private static final int INT_500 = 500;
     private static final int INT_3600 = 3600;
+    private static final int INT_7200 = 7200;
     private static final int INT_2 = 2;
     private static final int INT_300 = 300;
     
@@ -1491,8 +1492,26 @@ class AuthorizationServiceTest {
         
         Authorization auth = createAccTokenAuthorization();
         auth.setAccessTokenValue("hashed-access");
+        auth.setAccessTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        
         auth.setRefreshTokenValue("hashed-refresh");
+        auth.setRefreshTokenIssuedAt(Instant.now());
+        auth.setRefreshTokenExpiresAt(Instant.now().plusSeconds(INT_7200));
+        final String refreshTokenMetadata =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false}";
+        auth.setRefreshTokenMetadata(refreshTokenMetadata);
+        
         auth.setOidcIdTokenValue("hashed-id");
+        auth.setOidcIdTokenIssuedAt(Instant.now());
+        auth.setOidcIdTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        final String idTokenMetadata =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false}";
+        auth.setOidcIdTokenMetadata(idTokenMetadata);
+        final String idTokenClaims =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"sub\":\"testUser\"}";
+        auth.setOidcIdTokenClaims(idTokenClaims);
         
         // Test access token update
         when(authorizationRepository.findByAccessTokenValue(anyString()))
@@ -1718,9 +1737,18 @@ class AuthorizationServiceTest {
                 auditLogger);
         when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
         
-        String plainIdToken = "plain-id-token-456";
+        final String plainIdToken = "plain-id-token-456";
         Authorization auth = createAuthorization();
         auth.setOidcIdTokenValue("hashed-id-value");
+        auth.setOidcIdTokenIssuedAt(Instant.now());
+        auth.setOidcIdTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        final String idTokenMetadata =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false}";
+        auth.setOidcIdTokenMetadata(idTokenMetadata);
+        final String idTokenClaims =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"sub\":\"testUser\"}";
+        auth.setOidcIdTokenClaims(idTokenClaims);
         
         when(authorizationRepository.findByOidcIdTokenValue(anyString()))
             .thenReturn(Optional.of(auth));
