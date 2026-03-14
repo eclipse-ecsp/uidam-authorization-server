@@ -54,6 +54,9 @@ public class SessionManagementController {
     
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionManagementController.class);
     private static final int BEGIN_INDEX = 7;
+    private static final String INVALID_OR_INSUFFICIENT_PERMISSIONS = "Invalid or insufficient permissions";
+    private static final String INVALID_TOKEN = "INVALID_TOKEN";
+    private static final String INTERNAL_ERROR = "INTERNAL_ERROR";
     
     private final SessionManagementService sessionManagementService;
     private final JwtTokenValidator jwtTokenValidator;
@@ -89,7 +92,7 @@ public class SessionManagementController {
         if (!isValidToken(authorization, SELF_MANAGE_SCOPE)) {
             LOGGER.error("Token validation failed for getSelfActiveSessions");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("INVALID_TOKEN", "Invalid or insufficient permissions"));
+                    .body(ApiResponse.error(INVALID_TOKEN, INVALID_OR_INSUFFICIENT_PERMISSIONS));
         }
         
         // Extract username and token from Bearer token
@@ -105,7 +108,7 @@ public class SessionManagementController {
         } catch (Exception e) {
             LOGGER.error("Error fetching active sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("INTERNAL_ERROR", 
+                    .body(ApiResponse.error(INTERNAL_ERROR, 
                             "An error occurred while fetching tokens"));
         }
     }
@@ -131,7 +134,7 @@ public class SessionManagementController {
         if (!isValidToken(authorization, SELF_MANAGE_SCOPE)) {
             LOGGER.error("Token validation failed for invalidateSelfSessions");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("INVALID_TOKEN", "Invalid or insufficient permissions"));
+                    .body(ApiResponse.error(INVALID_TOKEN, INVALID_OR_INSUFFICIENT_PERMISSIONS));
         }
         
         // Extract username from Bearer token
@@ -154,7 +157,7 @@ public class SessionManagementController {
         } catch (Exception e) {
             LOGGER.error("Error invalidating sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("INTERNAL_ERROR", 
+                    .body(ApiResponse.error(INTERNAL_ERROR, 
                             "An error occurred while invalidating tokens"));
         }
     }
@@ -180,7 +183,7 @@ public class SessionManagementController {
         if (!isValidToken(authorization, MANAGE_USERS_SCOPE)) {
             LOGGER.error("Token validation failed for getAdminActiveSessions");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("INVALID_TOKEN", "Invalid or insufficient permissions"));
+                    .body(ApiResponse.error(INVALID_TOKEN, INVALID_OR_INSUFFICIENT_PERMISSIONS));
         }
         
         String username = request.getUsername();
@@ -194,7 +197,7 @@ public class SessionManagementController {
         } catch (Exception e) {
             LOGGER.error("Error fetching active sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("INTERNAL_ERROR", 
+                    .body(ApiResponse.error(INTERNAL_ERROR, 
                             "An error occurred while fetching tokens"));
         }
     }
@@ -220,7 +223,7 @@ public class SessionManagementController {
         if (!isValidToken(authorization, MANAGE_USERS_SCOPE)) {
             LOGGER.error("Token validation failed for invalidateAdminSessions");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("INVALID_TOKEN", "Invalid or insufficient permissions"));
+                    .body(ApiResponse.error(INVALID_TOKEN, INVALID_OR_INSUFFICIENT_PERMISSIONS));
         }
         
         String username = request.getUsername();
@@ -242,7 +245,7 @@ public class SessionManagementController {
         } catch (Exception e) {
             LOGGER.error("Error invalidating sessions: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("INTERNAL_ERROR", 
+                    .body(ApiResponse.error(INTERNAL_ERROR, 
                             "An error occurred while invalidating tokens"));
         }
     }

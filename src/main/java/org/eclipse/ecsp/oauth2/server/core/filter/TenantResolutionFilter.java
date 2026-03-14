@@ -171,34 +171,9 @@ public class TenantResolutionFilter implements Filter {
                 }
             }
             
-            // First, try to resolve tenant from request (path, header, parameter)
-            tenantId = resolveTenantFromRequest(httpRequest);
-            if (StringUtils.hasText(tenantId)) {
-                LOGGER.debug("Tenant resolved from request: {}", tenantId);
-            } else {
-                // Fallback: try to get tenant from session
-                //tenantId = getTenantFromSession(httpRequest);
-                if (StringUtils.hasText(tenantId)) {
-                    LOGGER.debug("Tenant resolved from session: {}", tenantId);
-                } else if (tenantConfigurationService.isMultitenantEnabled()) {
-                    // No tenant could be resolved - throw exception
-                    LOGGER.error("No tenant could be resolved for request: {}", requestUri);
-                    throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
-                }
-            }
+            // Resolve and validate tenant
+            tenantId = resolveTenant(httpRequest, requestUri);
 
-            // Additional validation: if multitenant is disabled, set tenantId to default
-            if (!StringUtils.hasText(tenantId) && !tenantConfigurationService.isMultitenantEnabled()) {
-                tenantId = tenantConfigurationService.getDefaultTenantId();
-                LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
-            }
-
-            // Validate that the resolved tenant actually exists in configuration
-            if (!isValidConfiguredTenant(tenantId)) {
-                LOGGER.error("Tenant is not configured in the system for request: {}", requestUri);
-                throw TenantResolutionException.invalidTenant(tenantId, requestUri);
-            }
-            
             // Set tenant context
             TenantContext.setCurrentTenant(tenantId);
             MDC.put(TENANT_HEADER, tenantId);
@@ -221,6 +196,43 @@ public class TenantResolutionFilter implements Filter {
                 MDC.remove(SOURCE_IP);
             }
         }
+    }
+
+    /**
+     * Resolves and validates the tenant ID from the request.
+     *
+     * @param httpRequest the HTTP request
+     * @param requestUri the request URI
+     * @return the resolved and validated tenant ID
+     * @throws TenantResolutionException if tenant cannot be resolved or is invalid
+     */
+    private String resolveTenant(HttpServletRequest httpRequest, String requestUri) 
+            throws TenantResolutionException {
+        String tenantId;
+        
+        // First, try to resolve tenant from request (path, header, parameter)
+        tenantId = resolveTenantFromRequest(httpRequest);
+        if (StringUtils.hasText(tenantId)) {
+            LOGGER.debug("Tenant resolved from request: {}", tenantId);
+        } else if (tenantConfigurationService.isMultitenantEnabled()) {
+            // No tenant could be resolved - throw exception
+            LOGGER.error("No tenant could be resolved for request: {}", requestUri);
+            throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
+        }
+
+        // Additional validation: if multitenant is disabled, set tenantId to default
+        if (!StringUtils.hasText(tenantId) && !tenantConfigurationService.isMultitenantEnabled()) {
+            tenantId = tenantConfigurationService.getDefaultTenantId();
+            LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
+        }
+
+        // Validate that the resolved tenant actually exists in configuration
+        if (!isValidConfiguredTenant(tenantId)) {
+            LOGGER.error("Tenant is not configured in the system for request: {}", requestUri);
+            throw TenantResolutionException.invalidTenant(tenantId, requestUri);
+        }
+        
+        return tenantId;
     }
 
     @Override

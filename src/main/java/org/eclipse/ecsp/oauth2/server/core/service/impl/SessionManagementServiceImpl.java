@@ -56,6 +56,12 @@ public class SessionManagementServiceImpl implements SessionManagementService {
     private static final String INVALIDATED_KEY = "invalidated";
     private static final String INVALIDATION_REASON_KEY = "invalidationReason";
     
+    // Device and browser name constants
+    private static final String UNKNOWN_DEVICE = "Unknown Device";
+    private static final String INSOMNIA = "Insomnia";
+    private static final String HTTPIE = "HTTPie";
+    private static final String OPERA = "Opera";
+    
     private final AuthorizationRepository authorizationRepository;
     private final CacheClientService cacheClientService;
     private final ObjectMapper objectMapper;
@@ -142,56 +148,12 @@ public class SessionManagementServiceImpl implements SessionManagementService {
         List<FailedSessionDto> failedSessions = new ArrayList<>();
         
         for (String tokenId : tokenIds) {
-            try {
-                Authorization authorization = authorizationRepository.findById(tokenId).orElse(null);
-                
-                if (authorization == null) {
-                    failedSessions.add(FailedSessionDto.builder()
-                            .tokenId(tokenId)
-                            .reason("Session not found")
-                            .build());
-                    continue;
-                }
-                
-                // Verify the session belongs to the user (case-insensitive comparison)
-                if (!normalizedUsername.equals(authorization.getPrincipalName())) {
-                    failedSessions.add(FailedSessionDto.builder()
-                            .tokenId(tokenId)
-                            .reason("Session does not belong to user")
-                            .build());
-                    continue;
-                }
-                
-                // Check if already invalidated
-                if (isInvalidated(authorization)) {
-                    failedSessions.add(FailedSessionDto.builder()
-                            .tokenId(tokenId)
-                            .reason("Session already invalidated")
-                            .build());
-                    continue;
-                }
-                
-                // Check if expired
-                if (authorization.getAccessTokenExpiresAt() != null 
-                        && authorization.getAccessTokenExpiresAt().isBefore(Instant.now())) {
-                    failedSessions.add(FailedSessionDto.builder()
-                            .tokenId(tokenId)
-                            .reason("Session already expired")
-                            .build());
-                    continue;
-                }
-                
-                // Invalidate the token
-                invalidateToken(authorization);
-                authorizationRepository.save(authorization);
+            InvalidationResult result = attemptInvalidateSession(tokenId, normalizedUsername);
+            
+            if (result.isSuccess()) {
                 invalidatedCount++;
-                
-            } catch (Exception e) {
-                LOGGER.error("Error invalidating session {}: {}", tokenId, e.getMessage(), e);
-                failedSessions.add(FailedSessionDto.builder()
-                        .tokenId(tokenId)
-                        .reason("Internal error: " + e.getMessage())
-                        .build());
+            } else {
+                failedSessions.add(result.getFailedSession());
             }
         }
         
@@ -206,6 +168,93 @@ public class SessionManagementServiceImpl implements SessionManagementService {
                 .failedSessions(failedSessions.isEmpty() ? null : failedSessions)
                 .message(message)
                 .build();
+    }
+    
+    /**
+     * Attempts to invalidate a single session.
+     *
+     * @param tokenId the token ID to invalidate
+     * @param normalizedUsername the normalized username
+     * @return the invalidation result
+     */
+    private InvalidationResult attemptInvalidateSession(String tokenId, String normalizedUsername) {
+        try {
+            Authorization authorization = authorizationRepository.findById(tokenId).orElse(null);
+            
+            // Validate authorization exists
+            if (authorization == null) {
+                return InvalidationResult.failure(tokenId, "Session not found");
+            }
+            
+            // Validate ownership
+            if (!normalizedUsername.equals(authorization.getPrincipalName())) {
+                return InvalidationResult.failure(tokenId, "Session does not belong to user");
+            }
+            
+            // Validate not already invalidated
+            if (isInvalidated(authorization)) {
+                return InvalidationResult.failure(tokenId, "Session already invalidated");
+            }
+            
+            // Validate not expired
+            if (isExpired(authorization)) {
+                return InvalidationResult.failure(tokenId, "Session already expired");
+            }
+            
+            // Invalidate the token
+            invalidateToken(authorization);
+            authorizationRepository.save(authorization);
+            
+            return InvalidationResult.success();
+            
+        } catch (Exception e) {
+            LOGGER.error("Error invalidating session {}: {}", tokenId, e.getMessage(), e);
+            return InvalidationResult.failure(tokenId, "Internal error: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Checks if an authorization is expired.
+     *
+     * @param authorization the authorization entity
+     * @return true if expired
+     */
+    private boolean isExpired(Authorization authorization) {
+        return authorization.getAccessTokenExpiresAt() != null 
+                && authorization.getAccessTokenExpiresAt().isBefore(Instant.now());
+    }
+    
+    /**
+     * Inner class to hold invalidation result.
+     */
+    private static class InvalidationResult {
+        private final boolean success;
+        private final FailedSessionDto failedSession;
+        
+        private InvalidationResult(boolean success, FailedSessionDto failedSession) {
+            this.success = success;
+            this.failedSession = failedSession;
+        }
+        
+        static InvalidationResult success() {
+            return new InvalidationResult(true, null);
+        }
+        
+        static InvalidationResult failure(String tokenId, String reason) {
+            FailedSessionDto failedSession = FailedSessionDto.builder()
+                    .tokenId(tokenId)
+                    .reason(reason)
+                    .build();
+            return new InvalidationResult(false, failedSession);
+        }
+        
+        boolean isSuccess() {
+            return success;
+        }
+        
+        FailedSessionDto getFailedSession() {
+            return failedSession;
+        }
     }
     
     /**
@@ -300,7 +349,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      */
     private String parseDeviceInfo(String attributesJson) {
         if (attributesJson == null || attributesJson.isEmpty()) {
-            return "Unknown Device";
+            return UNKNOWN_DEVICE;
         }
         
         try {
@@ -327,10 +376,10 @@ public class SessionManagementServiceImpl implements SessionManagementService {
                 }
             }
             
-            return "Unknown Device";
+            return UNKNOWN_DEVICE;
         } catch (JsonProcessingException e) {
             LOGGER.warn("Error parsing device info from attributes: {}", e.getMessage());
-            return "Unknown Device";
+            return UNKNOWN_DEVICE;
         }
     }
     
@@ -344,7 +393,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      */
     private String parseUserAgent(String userAgent) {
         if (userAgent == null || userAgent.isEmpty()) {
-            return "Unknown Device";
+            return UNKNOWN_DEVICE;
         }
         
         OsInfo osInfo = detectOperatingSystem(userAgent);
@@ -491,12 +540,12 @@ public class SessionManagementServiceImpl implements SessionManagementService {
     private String detectApiClient(String userAgent) {
         if (userAgent.contains("PostmanRuntime")) {
             return "Postman";
-        } else if (userAgent.contains("Insomnia")) {
-            return "Insomnia";
+        } else if (userAgent.contains(INSOMNIA)) {
+            return INSOMNIA;
         } else if (userAgent.startsWith("curl/") || userAgent.contains("curl")) {
             return "cURL";
-        } else if (userAgent.contains("HTTPie")) {
-            return "HTTPie";
+        } else if (userAgent.contains(HTTPIE)) {
+            return HTTPIE;
         } else if (userAgent.contains("Python-urllib") || userAgent.contains("python-requests")) {
             return "Python Client";
         } else if (userAgent.contains("Java/") || userAgent.contains("Apache-HttpClient")) {
@@ -544,7 +593,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      * @return the mobile browser name or null if not detected
      */
     private String detectMobileBrowser(String userAgent) {
-        if (userAgent.contains("Opera") || userAgent.contains("OPR/")) {
+        if (userAgent.contains(OPERA) || userAgent.contains("OPR/")) {
             return "Opera Mobile";
         } else if (userAgent.contains("Firefox/")) {
             return "Firefox Mobile";
@@ -588,8 +637,8 @@ public class SessionManagementServiceImpl implements SessionManagementService {
             return "Firefox";
         } else if (userAgent.contains("MSIE") || userAgent.contains("Trident/")) {
             return "Internet Explorer";
-        } else if (userAgent.contains("Opera") || userAgent.contains("OPR/")) {
-            return "Opera";
+        } else if (userAgent.contains(OPERA) || userAgent.contains("OPR/")) {
+            return OPERA;
         }
         return null;
     }
@@ -616,8 +665,8 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      * @return formatted device info string
      */
     private String formatDeviceInfo(String client, String os) {
-        if (client.equals("Postman") || client.equals("Insomnia") || client.equals("cURL") 
-                || client.equals("HTTPie") || client.endsWith("Client")) {
+        if (client.equals("Postman") || client.equals(INSOMNIA) || client.equals("cURL") 
+                || client.equals(HTTPIE) || client.endsWith("Client")) {
             return os.equals("Unknown OS") ? client : client + " (" + os + ")";
         } else if (client.endsWith("App")) {
             return client + " on " + os;
@@ -652,11 +701,11 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      *
      * @param authorization the authorization entity
      * @param currentTokenString the current JWT token string
-     * @return true if it's the current session
+     * @return true if it's the current session, false otherwise
      */
     private Boolean isCurrentSession(Authorization authorization, String currentTokenString) {
         if (currentTokenString == null || currentTokenString.isEmpty()) {
-            return null;
+            return false;
         }
         
         try {

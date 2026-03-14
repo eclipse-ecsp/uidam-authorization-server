@@ -436,7 +436,6 @@ public class UserManagementClient {
                 errorCode = CustomOauth2TokenGenErrorCodes.RESOURCE_NOT_FOUND.name();
             } else if (HttpStatus.METHOD_NOT_ALLOWED == ex.getStatusCode()) {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
-                errorDesc = UNEXPECTED_ERROR;
             } else if (HttpStatus.CONFLICT == ex.getStatusCode()) {
                 errorCode = CustomOauth2TokenGenErrorCodes.RECORD_ALREADY_EXISTS.name();
                 errorDesc = USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN;

@@ -86,6 +86,15 @@ public class AuthorizationService implements OAuth2AuthorizationService {
 
     private static final String COMPONENT_NAME = "uidam-authorization-server";
     
+    // Browser details constants
+    private static final String UNKNOWN = "unknown";
+    private static final String USER_AGENT_KEY = "user_agent";
+    private static final String IP_ADDRESS_KEY = "ip_address";
+    private static final String ACCEPT_LANGUAGE_KEY = "accept_language";
+    private static final String REFERER_KEY = "referer";
+    private static final String SESSION_ID_KEY = "session_id";
+    private static final String CAPTURED_AT_KEY = "captured_at";
+    
     private final AuthorizationRepository authorizationRepository;
     private final RegisteredClientRepository registeredClientRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -937,12 +946,12 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         
         // Create new metadata map with browser details
         Map<String, Object> metadata = new LinkedHashMap<>(accessToken.getMetadata());
-        metadata.put("user_agent", browserDetailsMap.getOrDefault("user_agent", "unknown"));
-        metadata.put("ip_address", browserDetailsMap.getOrDefault("ip_address", "unknown"));
-        metadata.put("accept_language", browserDetailsMap.getOrDefault("accept_language", "unknown"));
-        metadata.put("referer", browserDetailsMap.getOrDefault("referer", "unknown"));
-        metadata.put("session_id", browserDetailsMap.getOrDefault("session_id", "unknown"));
-        metadata.put("captured_at", browserDetailsMap.getOrDefault("captured_at", Instant.now().toString()));
+        metadata.put(USER_AGENT_KEY, browserDetailsMap.getOrDefault(USER_AGENT_KEY, UNKNOWN));
+        metadata.put(IP_ADDRESS_KEY, browserDetailsMap.getOrDefault(IP_ADDRESS_KEY, UNKNOWN));
+        metadata.put(ACCEPT_LANGUAGE_KEY, browserDetailsMap.getOrDefault(ACCEPT_LANGUAGE_KEY, UNKNOWN));
+        metadata.put(REFERER_KEY, browserDetailsMap.getOrDefault(REFERER_KEY, UNKNOWN));
+        metadata.put(SESSION_ID_KEY, browserDetailsMap.getOrDefault(SESSION_ID_KEY, UNKNOWN));
+        metadata.put(CAPTURED_AT_KEY, browserDetailsMap.getOrDefault(CAPTURED_AT_KEY, Instant.now().toString()));
         
         // Rebuild authorization with updated access token metadata
         OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);
@@ -973,14 +982,14 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         
         // Create new metadata map with browser details
         Map<String, Object> metadata = new LinkedHashMap<>(accessToken.getMetadata());
-        metadata.put("user_agent", details.getUserAgent() != null ? details.getUserAgent() : "unknown");
-        metadata.put("ip_address", details.getRemoteAddress());
-        metadata.put("accept_language", 
-            details.getAcceptLanguage() != null ? details.getAcceptLanguage() : "unknown");
-        metadata.put("referer", details.getReferer() != null ? details.getReferer() : "unknown");
-        metadata.put("session_id", 
-            details.getSessionId() != null ? details.getSessionId() : "unknown");
-        metadata.put("captured_at", Instant.now().toString());
+        metadata.put(USER_AGENT_KEY, details.getUserAgent() != null ? details.getUserAgent() : UNKNOWN);
+        metadata.put(IP_ADDRESS_KEY, details.getRemoteAddress());
+        metadata.put(ACCEPT_LANGUAGE_KEY, 
+            details.getAcceptLanguage() != null ? details.getAcceptLanguage() : UNKNOWN);
+        metadata.put(REFERER_KEY, details.getReferer() != null ? details.getReferer() : UNKNOWN);
+        metadata.put(SESSION_ID_KEY, 
+            details.getSessionId() != null ? details.getSessionId() : UNKNOWN);
+        metadata.put(CAPTURED_AT_KEY, Instant.now().toString());
         
         // Rebuild authorization with updated access token metadata
         OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);
@@ -1007,14 +1016,14 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         try {
             // Create a map with browser details
             Map<String, Object> browserDetailsMap = new LinkedHashMap<>();
-            browserDetailsMap.put("user_agent", details.getUserAgent() != null ? details.getUserAgent() : "unknown");
-            browserDetailsMap.put("ip_address", details.getRemoteAddress());
-            browserDetailsMap.put("accept_language", 
-                details.getAcceptLanguage() != null ? details.getAcceptLanguage() : "unknown");
-            browserDetailsMap.put("referer", details.getReferer() != null ? details.getReferer() : "unknown");
-            browserDetailsMap.put("session_id", 
-                details.getSessionId() != null ? details.getSessionId() : "unknown");
-            browserDetailsMap.put("captured_at", Instant.now().toString());
+            browserDetailsMap.put(USER_AGENT_KEY, details.getUserAgent() != null ? details.getUserAgent() : UNKNOWN);
+            browserDetailsMap.put(IP_ADDRESS_KEY, details.getRemoteAddress());
+            browserDetailsMap.put(ACCEPT_LANGUAGE_KEY, 
+                details.getAcceptLanguage() != null ? details.getAcceptLanguage() : UNKNOWN);
+            browserDetailsMap.put(REFERER_KEY, details.getReferer() != null ? details.getReferer() : UNKNOWN);
+            browserDetailsMap.put(SESSION_ID_KEY, 
+                details.getSessionId() != null ? details.getSessionId() : UNKNOWN);
+            browserDetailsMap.put(CAPTURED_AT_KEY, Instant.now().toString());
             
             // Rebuild authorization with browser details attribute
             OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);
