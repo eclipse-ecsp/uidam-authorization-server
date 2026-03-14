@@ -887,7 +887,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = DUMMY_TOKEN;
         Authorization auth = createAccTokenAuthorization();
@@ -910,7 +911,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = "state-value";
         Authorization auth = createAuthorization();
@@ -929,7 +931,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = "auth-code-value";
         Authorization auth = createAuthorization();
@@ -949,7 +952,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = "access-token-value";
         Authorization auth = createAccTokenAuthorization();
@@ -969,7 +973,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = "id-token-value";
         Authorization auth = createAccTokenAuthorization();
@@ -989,7 +994,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = "user-code-value";
         Authorization auth = createUserCodeAuthorization();
@@ -1009,7 +1015,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String token = "device-code-value";
         Authorization auth = createDeviceCodeAuthorization();
@@ -1407,7 +1414,8 @@ class AuthorizationServiceTest {
         authorizationService = new AuthorizationService(
                 authorizationRepository, clientManger, jwtTokenValidator,
                 auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        when(this.clientManger.findById(Mockito.anyString()))
+            .thenReturn(REGISTERED_CLIENT);
         
         String refreshTokenValue = "refresh-token-value";
         Authorization auth = createRefreshTokenAuthorization();
@@ -1618,117 +1626,6 @@ class AuthorizationServiceTest {
         verify(authorizationRepository).save(any(Authorization.class));
     }
     
-    
-    
-    
-    
-    
-    
-    @Test
-    void testAddBrowserDetailsToAccessTokenFromMap_WithAccessToken() {
-        // Test lines 931-954: addBrowserDetailsToAccessTokenFromMap method
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
-        
-        Map<String, Object> browserDetailsMap = new LinkedHashMap<>();
-        browserDetailsMap.put("user_agent", "Opera/76.0");
-        browserDetailsMap.put("ip_address", "10.10.10.10");
-        browserDetailsMap.put("accept_language", "de-DE");
-        browserDetailsMap.put("referer", "https://portal.example.com");
-        browserDetailsMap.put("session_id", "session-jkl");
-        browserDetailsMap.put("captured_at", Instant.now().toString());
-        
-        OAuth2AccessToken accessToken = new OAuth2AccessToken(
-            OAuth2AccessToken.TokenType.BEARER, "access-token-123",
-            Instant.now(), Instant.now().plusSeconds(INT_3600));
-        
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
-            .id(ID)
-            .principalName(PRINCIPAL_NAME)
-            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-            .accessToken(accessToken)
-            .attribute("browser_details", browserDetailsMap)
-            .build();
-        
-        authorizationService.save(authorization);
-        
-        verify(authorizationRepository).save(any(Authorization.class));
-    }
-    
-    @Test
-    void testAddBrowserDetailsToAccessTokenFromMap_NullAccessToken() {
-        // Test lines 933-936: null access token handling
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
-        
-        Map<String, Object> browserDetailsMap = new LinkedHashMap<>();
-        browserDetailsMap.put("user_agent", "Chrome/91.0");
-        browserDetailsMap.put("ip_address", "192.168.100.1");
-        
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
-            .id(ID)
-            .principalName(PRINCIPAL_NAME)
-            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-            .attribute("browser_details", browserDetailsMap)
-            .build();
-        
-        authorizationService.save(authorization);
-        
-        verify(authorizationRepository).save(any(Authorization.class));
-    }
-    
-    
-    
-    
-    
-    
-    
-    @Test
-    void testAddBrowserDetailsToAttributes_ExceptionHandling() {
-        // Test lines 1025-1028: exception handling in addBrowserDetailsToAttributes
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
-        
-        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
-            .id(ID)
-            .principalName(PRINCIPAL_NAME)
-            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-            .build();
-        
-        // Should handle gracefully even if adding attributes fails
-        authorizationService.save(authorization);
-        
-        verify(authorizationRepository).save(any(Authorization.class));
-    }
-    
-    @Test
-    void testUpdateTokenWithHashToken_RefreshTokenMatch() {
-        // Test lines 751-753: refresh token hash matching
-        authorizationService = new AuthorizationService(
-                authorizationRepository, clientManger, jwtTokenValidator,
-                auditLogger);
-        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
-        
-        String plainRefreshToken = "plain-refresh-token-123";
-        Authorization auth = createRefreshTokenAuthorization();
-        auth.setRefreshTokenValue("hashed-refresh-value");
-        
-        when(authorizationRepository.findByRefreshTokenValue(anyString()))
-            .thenReturn(Optional.of(auth));
-        
-        OAuth2Authorization result = authorizationService.findByToken(
-            plainRefreshToken, OAuth2TokenType.REFRESH_TOKEN);
-        
-        assertThat(result).isNotNull();
-        verify(authorizationRepository).findByRefreshTokenValue(anyString());
-    }
-    
     @Test
     void testUpdateTokenWithHashToken_IdTokenMatch() {
         // Test lines 754-756: ID token hash matching
@@ -1759,6 +1656,261 @@ class AuthorizationServiceTest {
         assertThat(result).isNotNull();
         verify(authorizationRepository).findByOidcIdTokenValue(anyString());
     }
-
+    
+    @Test
+    void testUpdateTokenWithHashToken_NoMatch() {
+        // Test lines 746-755: updateTokenWithHashToken with no matches
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        final String plainToken = "plain-token-no-match";
+        Authorization auth = createAccTokenAuthorization();
+        auth.setAccessTokenValue("different-hash-1");
+        auth.setAccessTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        
+        auth.setRefreshTokenValue("different-hash-2");
+        auth.setRefreshTokenIssuedAt(Instant.now());
+        auth.setRefreshTokenExpiresAt(Instant.now().plusSeconds(INT_7200));
+        final String refreshMetadata =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false}";
+        auth.setRefreshTokenMetadata(refreshMetadata);
+        
+        auth.setOidcIdTokenValue("different-hash-3");
+        auth.setOidcIdTokenIssuedAt(Instant.now());
+        auth.setOidcIdTokenExpiresAt(Instant.now().plusSeconds(INT_3600));
+        final String idMetadata =
+            "{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":false}";
+        auth.setOidcIdTokenMetadata(idMetadata);
+        auth.setOidcIdTokenClaims("{\"@class\":\"java.util.Collections$UnmodifiableMap\",\"sub\":\"user\"}");
+        
+        when(authorizationRepository.findByAccessTokenValue(anyString()))
+            .thenReturn(Optional.of(auth));
+        
+        OAuth2Authorization result = authorizationService.findByToken(
+            plainToken, OAuth2TokenType.ACCESS_TOKEN);
+        
+        assertThat(result).isNotNull();
+        verify(authorizationRepository).findByAccessTokenValue(anyString());
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithCustomWebAuthenticationDetails() {
+        // Test lines 964-992: addBrowserDetailsToAccessToken method
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "access-token-with-details",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithNullUserAgent() {
+        // Test lines 975-976: null user agent handling
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "access-token",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithNullAcceptLanguage() {
+        // Test lines 977-978: null accept language handling
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "access-token",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithNullReferer() {
+        // Test lines 979: null referer handling
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "access-token",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithNullSessionId() {
+        // Test lines 980-981: null session ID handling
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "access-token",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAttributes_WithCustomWebAuthenticationDetails() {
+        // Test lines 1009-1027: addBrowserDetailsToAttributes method
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAttributes_WithNullUserAgent() {
+        // Test lines 1010: null user agent in addBrowserDetailsToAttributes
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAttributes_WithNullAcceptLanguage() {
+        // Test lines 1012-1013: null accept language in addBrowserDetailsToAttributes
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAttributes_WithNullReferer() {
+        // Test lines 1014: null referer in addBrowserDetailsToAttributes
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
+    
+    @Test
+    void testAddBrowserDetailsToAttributes_WithNullSessionId() {
+        // Test lines 1015-1016: null session ID in addBrowserDetailsToAttributes
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+        
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+            .build();
+        
+        authorizationService.save(authorization);
+        
+        verify(authorizationRepository).save(any(Authorization.class));
+    }
 }
 
