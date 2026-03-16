@@ -84,7 +84,7 @@ public class AuthorizationService implements OAuth2AuthorizationService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthorizationService.class);
     private static final int BEGIN_INDEX = 7;
 
-    private static final String COMPONENT_NAME = "uidam-authorization-server";
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
     
     // Browser details constants
     private static final String UNKNOWN = "unknown";

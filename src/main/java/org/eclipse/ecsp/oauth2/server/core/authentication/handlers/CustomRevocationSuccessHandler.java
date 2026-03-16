@@ -20,6 +20,11 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.handlers;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.service.DatabaseSecurityContextRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,26 +50,34 @@ import java.security.Principal;
 public class CustomRevocationSuccessHandler implements AuthenticationSuccessHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomRevocationSuccessHandler.class);
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private final OAuth2AuthorizationService authorizationService;
 
     private final DatabaseSecurityContextRepository databaseSecurityContextRepository;
 
+    private final AuditLogger auditLogger;
+
     /**
      * This is a parameterized constructor for the CustomRevocationSuccessHandler class.
-     * It initializes the OAuth2AuthorizationService and DatabaseSecurityContextRepository instances.
+     * It initializes the OAuth2AuthorizationService, DatabaseSecurityContextRepository,
+     * and AuditLogger instances.
      *
      * @param authorizationService an instance of OAuth2AuthorizationService, used to interact with OAuth2
      *                             authorizations
      * @param databaseSecurityContextRepository an instance of DatabaseSecurityContextRepository, used to interact with
      *                                          the security context stored in the database
+     * @param auditLogger an instance of AuditLogger, used to log audit events for token revocation
      */
     public CustomRevocationSuccessHandler(OAuth2AuthorizationService authorizationService,
-                                          DatabaseSecurityContextRepository databaseSecurityContextRepository) {
+                                          DatabaseSecurityContextRepository databaseSecurityContextRepository,
+                                          AuditLogger auditLogger) {
         Assert.notNull(authorizationService, "authorizationService cannot be null");
         Assert.notNull(databaseSecurityContextRepository, "databaseSecurityContextRepository cannot be null");
+        Assert.notNull(auditLogger, "auditLogger cannot be null");
         this.authorizationService = authorizationService;
         this.databaseSecurityContextRepository = databaseSecurityContextRepository;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -92,7 +105,8 @@ public class CustomRevocationSuccessHandler implements AuthenticationSuccessHand
             tokenRevocationAuthentication.getToken(), OAuth2TokenType.ACCESS_TOKEN);
         // OAuth2TokenType.ACCESS_TOKEN - Invalidate session when access token is revoked
         if (authorization == null) {
-            LOGGER.info("Token not found");
+            LOGGER.info("Token not found - may be already revoked or invalid");
+            logRevocationFailure(request, tokenRevocationAuthentication);
             return;
         }
 
@@ -111,6 +125,43 @@ public class CustomRevocationSuccessHandler implements AuthenticationSuccessHand
 
         response.setStatus(HttpStatus.OK.value());
         LOGGER.debug("## onAuthenticationSuccess - END");
+    }
+
+    /**
+     * Logs an audit event when token revocation fails because the token was not found
+     * (already revoked or invalid token submitted to the user-facing /oauth2/revoke endpoint).
+     *
+     * @param request the HTTP request
+     * @param tokenRevocationAuthentication the revocation authentication token
+     */
+    private void logRevocationFailure(HttpServletRequest request,
+                                      OAuth2TokenRevocationAuthenticationToken tokenRevocationAuthentication) {
+        try {
+            String clientId = null;
+            if (tokenRevocationAuthentication.getPrincipal() instanceof Authentication auth) {
+                clientId = auth.getName();
+            }
+
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(clientId)
+                .username(null)
+                .build();
+
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+
+            auditLogger.log(
+                AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN.getDescription(),
+                actorContext,
+                requestContext
+            );
+
+            LOGGER.debug("Audit log created for AUTHZ_FAILURE_REVOKED_TOKEN: clientId={}", clientId);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for AUTHZ_FAILURE_REVOKED_TOKEN: {}", e.getMessage(), e);
+        }
     }
 
 }

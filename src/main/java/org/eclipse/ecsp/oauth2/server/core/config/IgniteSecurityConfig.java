@@ -229,7 +229,7 @@ public class IgniteSecurityConfig {
                         .errorResponseHandler(customAccessTokenFailureHandler))
                 .tokenRevocationEndpoint(tokenRevocationEndpointConfigurer -> tokenRevocationEndpointConfigurer
                         .revocationResponseHandler(new CustomRevocationSuccessHandler(oauth2AuthorizationService,
-                                databaseSecurityContextRepository))));
+                                databaseSecurityContextRepository, auditLogger))));
 
         http.exceptionHandling(c -> c.defaultAuthenticationEntryPointFor(
                 customLoginAuthenticationEntryPoint(), new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
