@@ -36,6 +36,7 @@ import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -67,6 +68,9 @@ public class TenantResolutionFilter implements Filter {
     
     private final TenantConfigurationService tenantConfigurationService;
     
+    @Value("${source.ip.logging.enabled:false}")
+    private boolean sourceIpLoggingEnabled;
+    
     // Static resource patterns to bypass tenant resolution (includes standalone /favicon.ico)
     private static final Pattern STATIC_RESOURCE_PATTERN =
         Pattern.compile("^/(actuator|css|js|images|fonts|favicon\\.ico|static)(/.*)?$", Pattern.CASE_INSENSITIVE);
@@ -82,6 +86,15 @@ public class TenantResolutionFilter implements Filter {
     private static final int JWT_PARTS_COUNT = 3; // JWT has 3 parts: header.payload.signature
     private static final String TENANT_PARAM = "tenant";
     private static final String TENANT_SESSION_KEY = "RESOLVED_TENANT_ID";
+    
+    // Source IP related constants
+    private static final String SOURCE_IP = "sourceIp";
+    private static final String X_FORWARDED_FOR_HEADER = "X-Forwarded-For";
+    private static final String X_REAL_IP_HEADER = "X-Real-IP";
+    private static final String PROXY_CLIENT_IP_HEADER = "Proxy-Client-IP";
+    private static final String WL_PROXY_CLIENT_IP_HEADER = "WL-Proxy-Client-IP";
+    private static final String HTTP_CLIENT_IP_HEADER = "HTTP_CLIENT_IP";
+    private static final String HTTP_X_FORWARDED_FOR_HEADER = "HTTP_X_FORWARDED_FOR";
     
     // Well-known endpoint paths
     private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server/";
@@ -132,6 +145,13 @@ public class TenantResolutionFilter implements Filter {
         HttpServletResponse httpResponse = (HttpServletResponse) response;
         String requestUri = httpRequest.getRequestURI();
         
+        // Extract and log source IP address only if enabled
+        if (sourceIpLoggingEnabled) {
+            String sourceIp = extractClientIp(httpRequest);
+            MDC.put(SOURCE_IP, sourceIp);
+            LOGGER.debug("Source IP for request: {}", sourceIp);
+        }
+        
         // Skip tenant resolution for static resources (including /favicon.ico)
         if (isStaticResource(requestUri)) {
             LOGGER.debug("Skipping tenant resolution for static resource: {}", requestUri);
@@ -151,34 +171,9 @@ public class TenantResolutionFilter implements Filter {
                 }
             }
             
-            // First, try to resolve tenant from request (path, header, parameter)
-            tenantId = resolveTenantFromRequest(httpRequest);
-            if (StringUtils.hasText(tenantId)) {
-                LOGGER.debug("Tenant resolved from request: {}", tenantId);
-            } else {
-                // Fallback: try to get tenant from session
-                //tenantId = getTenantFromSession(httpRequest);
-                if (StringUtils.hasText(tenantId)) {
-                    LOGGER.debug("Tenant resolved from session: {}", tenantId);
-                } else if (tenantConfigurationService.isMultitenantEnabled()) {
-                    // No tenant could be resolved - throw exception
-                    LOGGER.error("No tenant could be resolved for request: {}", requestUri);
-                    throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
-                }
-            }
+            // Resolve and validate tenant
+            tenantId = resolveTenant(httpRequest, requestUri);
 
-            // Additional validation: if multitenant is disabled, set tenantId to default
-            if (!StringUtils.hasText(tenantId) && !tenantConfigurationService.isMultitenantEnabled()) {
-                tenantId = tenantConfigurationService.getDefaultTenantId();
-                LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
-            }
-
-            // Validate that the resolved tenant actually exists in configuration
-            if (!isValidConfiguredTenant(tenantId)) {
-                LOGGER.error("Tenant is not configured in the system for request: {}", requestUri);
-                throw TenantResolutionException.invalidTenant(tenantId, requestUri);
-            }
-            
             // Set tenant context
             TenantContext.setCurrentTenant(tenantId);
             MDC.put(TENANT_HEADER, tenantId);
@@ -197,7 +192,47 @@ public class TenantResolutionFilter implements Filter {
             TenantContext.clear();
             LOGGER.debug("Tenant context cleared for request: {}", requestUri);
             MDC.remove(TENANT_HEADER);
+            if (sourceIpLoggingEnabled) {
+                MDC.remove(SOURCE_IP);
+            }
         }
+    }
+
+    /**
+     * Resolves and validates the tenant ID from the request.
+     *
+     * @param httpRequest the HTTP request
+     * @param requestUri the request URI
+     * @return the resolved and validated tenant ID
+     * @throws TenantResolutionException if tenant cannot be resolved or is invalid
+     */
+    private String resolveTenant(HttpServletRequest httpRequest, String requestUri) 
+            throws TenantResolutionException {
+        String tenantId;
+        
+        // First, try to resolve tenant from request (path, header, parameter)
+        tenantId = resolveTenantFromRequest(httpRequest);
+        if (StringUtils.hasText(tenantId)) {
+            LOGGER.debug("Tenant resolved from request: {}", tenantId);
+        } else if (tenantConfigurationService.isMultitenantEnabled()) {
+            // No tenant could be resolved - throw exception
+            LOGGER.error("No tenant could be resolved for request: {}", requestUri);
+            throw TenantResolutionException.tenantNotFoundInRequest(requestUri);
+        }
+
+        // Additional validation: if multitenant is disabled, set tenantId to default
+        if (!StringUtils.hasText(tenantId) && !tenantConfigurationService.isMultitenantEnabled()) {
+            tenantId = tenantConfigurationService.getDefaultTenantId();
+            LOGGER.debug("Multitenant disabled, setting tenantId to default: {}", tenantId);
+        }
+
+        // Validate that the resolved tenant actually exists in configuration
+        if (!isValidConfiguredTenant(tenantId)) {
+            LOGGER.error("Tenant is not configured in the system for request: {}", requestUri);
+            throw TenantResolutionException.invalidTenant(tenantId, requestUri);
+        }
+        
+        return tenantId;
     }
 
     @Override
@@ -233,6 +268,78 @@ public class TenantResolutionFilter implements Filter {
         return null;
     }
 
+    /**
+     * Extract the client IP address from the request.
+     * This method checks various headers to handle proxy and load balancer scenarios:
+     * 1. X-Forwarded-For (standard proxy header, may contain multiple IPs)
+     * 2. X-Real-IP (common in nginx reverse proxies)
+     * 3. Proxy-Client-IP (WebLogic and other proxies)
+     * 4. WL-Proxy-Client-IP (WebLogic specific)
+     * 5. HTTP_CLIENT_IP (some proxies)
+     * 6. HTTP_X_FORWARDED_FOR (alternative header name)
+     * 7. RemoteAddr (fallback to direct connection IP)
+     *
+     * @param request The HTTP servlet request
+     * @return The client IP address, or "unknown" if not found
+     */
+    private String extractClientIp(HttpServletRequest request) {
+        String ip = request.getHeader(X_FORWARDED_FOR_HEADER);
+        if (isValidIp(ip)) {
+            // X-Forwarded-For can contain multiple IPs (client, proxy1, proxy2, ...)
+            // The first IP is typically the original client
+            int commaIndex = ip.indexOf(',');
+            if (commaIndex != NOT_FOUND_INDEX) {
+                ip = ip.substring(0, commaIndex).trim();
+            }
+            return ip;
+        }
+        
+        ip = request.getHeader(X_REAL_IP_HEADER);
+        if (isValidIp(ip)) {
+            return ip;
+        }
+        
+        ip = request.getHeader(PROXY_CLIENT_IP_HEADER);
+        if (isValidIp(ip)) {
+            return ip;
+        }
+        
+        ip = request.getHeader(WL_PROXY_CLIENT_IP_HEADER);
+        if (isValidIp(ip)) {
+            return ip;
+        }
+        
+        ip = request.getHeader(HTTP_CLIENT_IP_HEADER);
+        if (isValidIp(ip)) {
+            return ip;
+        }
+        
+        ip = request.getHeader(HTTP_X_FORWARDED_FOR_HEADER);
+        if (isValidIp(ip)) {
+            return ip;
+        }
+        
+        // Fallback to remote address
+        ip = request.getRemoteAddr();
+        if (isValidIp(ip)) {
+            return ip;
+        }
+        
+        return "unknown";
+    }
+
+    /**
+     * Validate if the IP address is valid and not a placeholder value.
+     * Note: Localhost IPs (127.0.0.1, ::1) are considered valid for local development/testing.
+     *
+     * @param ip The IP address to validate
+     * @return true if the IP is valid, false otherwise
+     */
+    private boolean isValidIp(String ip) {
+        return StringUtils.hasText(ip) 
+            && !"unknown".equalsIgnoreCase(ip);
+    }
+    
     /**
      * Store tenant ID in HTTP session.
      */

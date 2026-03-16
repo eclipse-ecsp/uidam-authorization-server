@@ -114,9 +114,12 @@ class IgniteSecurityConfigTest {
 
     @BeforeEach
     void setUp() {
-        config = new IgniteSecurityConfig(tenantConfigurationService,
-                                        authorizationMetricsService,
-                                        mock(AuditLogger.class));
+        config = new IgniteSecurityConfig(
+                tenantConfigurationService,
+                authorizationMetricsService,
+                mock(AuditLogger.class),
+                new org.eclipse.ecsp.oauth2.server.core.authentication
+                        .CustomWebAuthenticationDetailsSource());
         
         // Set required field values using ReflectionTestUtils
         ReflectionTestUtils.setField(config, "sessionTimeout", "1800");

@@ -67,7 +67,7 @@
             </fullPatternLayout>
             <shortPatternLayout
                 class="ch.qos.logback.classic.PatternLayout">
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{sourceIp}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
             </shortPatternLayout>
             <staticField>app:uidam-authorization-server</staticField>
             <staticField>ms:uidam-authorization-server</staticField>
@@ -88,7 +88,7 @@
     <appender name="STDOUT"
         class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{sourceIp}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
         </encoder>
     </appender>
 
@@ -111,7 +111,7 @@
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{sourceIp}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
         </encoder>
     </appender>
 
