@@ -41,5 +41,7 @@ public class UserErrorResponse {
     private Integer quantity;
     private String requestProperty;
     private List<String> parameters = new ArrayList<>();
+    private Long minutesLeftToUnlock;
+    private Boolean isTemporaryLock;
 
 }

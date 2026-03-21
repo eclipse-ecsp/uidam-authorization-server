@@ -41,6 +41,7 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.UserErrorResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
 import org.slf4j.Logger;
@@ -222,8 +223,7 @@ public class UserManagementClient {
             }
             TenantProperties tenantProperties = getCurrentTenantProperties();
             String tenantId = tenantProperties.getTenantId();
-            String errorMessage = userErrorResponse != null ? userErrorResponse.getMessage() : null;
-            OAuth2Error error = handleUserFetchError(ex.getStatusCode(), errorMessage, tenantId);
+            OAuth2Error error = handleUserFetchError(ex.getStatusCode(), userErrorResponse, tenantId);
             metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_ATTEMPTS);
             throw new OAuth2AuthenticationException(error);
         } catch (Exception ex) {
@@ -243,9 +243,9 @@ public class UserManagementClient {
      *
      * @param userEvent the user event to be added
      * @param userId the ID of the user for whom the event is to be added
-     * @return a string response from the User Management Service
+     * @return UserEventResponse containing user status and lock duration information
      */
-    public String addUserEvent(UserEvent userEvent, String userId) {
+    public UserEventResponse addUserEvent(UserEvent userEvent, String userId) {
         LOGGER.debug("Adding user event {} details for userId {} to user-mgmt", userEvent.getType(), userId);
 
         try {
@@ -253,13 +253,18 @@ public class UserManagementClient {
             WebClient currentWebClient = getWebClientForCurrentTenant();
 
             String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_ADD_USER_EVENTS_ENDPOINT);
-            String response;
+            UserEventResponse response;
 
             response = currentWebClient.method(HttpMethod.POST).uri(uri, userId)
                     .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
                     .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
-                    .contentType(MediaType.APPLICATION_JSON).bodyValue(userEvent).retrieve().bodyToMono(String.class)
+                    .contentType(MediaType.APPLICATION_JSON).bodyValue(userEvent).retrieve()
+                    .bodyToMono(UserEventResponse.class)
                     .block();
+            
+            LOGGER.info("User event processed for userId {}: status={}, lockDurationMinutes={}", 
+                userId, response.getUserStatus(), response.getLockDurationMinutes());
+            
             return response;
         } catch (Exception ex) {
             LOGGER.error("error while processing user event details for userId {} from user-mgmt, ex: {}", userId,
@@ -431,7 +436,6 @@ public class UserManagementClient {
                 errorCode = CustomOauth2TokenGenErrorCodes.RESOURCE_NOT_FOUND.name();
             } else if (HttpStatus.METHOD_NOT_ALLOWED == ex.getStatusCode()) {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
-                errorDesc = UNEXPECTED_ERROR;
             } else if (HttpStatus.CONFLICT == ex.getStatusCode()) {
                 errorCode = CustomOauth2TokenGenErrorCodes.RECORD_ALREADY_EXISTS.name();
                 errorDesc = USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN;
@@ -526,15 +530,18 @@ public class UserManagementClient {
 
     /**
      * Handles user fetch errors and creates appropriate OAuth2Error with metrics tracking.
+     * Enhanced to support temporary lock information from the user management service.
      *
      * @param statusCode the HTTP status code from the error response
-     * @param errorMessage the error message from the user management service (can be null)
+     * @param userErrorResponse the error response from the user management service (can be null)
      * @param tenantId the tenant ID for metrics tracking
-     * @return OAuth2Error with appropriate error code and description
+     * @return OAuth2Error with appropriate error code and description, including temporary lock info if applicable
      */
-    private OAuth2Error handleUserFetchError(HttpStatusCode statusCode, String errorMessage, String tenantId) {
+    private OAuth2Error handleUserFetchError(HttpStatusCode statusCode, UserErrorResponse userErrorResponse, 
+                                            String tenantId) {
         String errorCode;
         String errorDesc;
+        String errorMessage = userErrorResponse != null ? userErrorResponse.getMessage() : null;
 
         if (errorMessage != null) {
             if (HttpStatus.NOT_FOUND.isSameCodeAs(statusCode)) {
@@ -542,9 +549,24 @@ public class UserManagementClient {
                 errorDesc = errorMessage;
                 metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_NOT_FOUND);
             } else if (HttpStatus.FORBIDDEN.isSameCodeAs(statusCode)) {
-                errorCode = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.name();
-                errorDesc = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.getDescription();
-                metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_BLOCKED);
+                // IMPORTANT: Check for temporary lock FIRST before checking message content
+                // because temporary lock messages contain "account" which would match the wrong condition
+                if (Boolean.TRUE.equals(userErrorResponse.getIsTemporaryLock()) 
+                        && userErrorResponse.getMinutesLeftToUnlock() != null) {
+                    errorCode = "USER_TEMPORARILY_BLOCKED";
+                    // Use the detailed message from user-management service which includes minutes
+                    errorDesc = errorMessage;
+                    metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_BLOCKED);
+                } else if (errorMessage.toLowerCase().contains("account")) {
+                    // Check if it's account not found
+                    errorCode = CustomOauth2TokenGenErrorCodes.ACCOUNT_NOT_FOUND.name();
+                    errorDesc = CustomOauth2TokenGenErrorCodes.ACCOUNT_NOT_FOUND.getDescription();
+                } else {
+                    // Generic user not active
+                    errorCode = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.name();
+                    errorDesc = CustomOauth2TokenGenErrorCodes.USER_NOT_ACTIVE.getDescription();
+                    metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_BLOCKED);
+                }
             } else {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
                 errorDesc = errorMessage;

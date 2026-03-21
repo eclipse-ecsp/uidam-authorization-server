@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.config;
 import com.nimbusds.jose.jwk.RSAKey;
 import org.eclipse.ecsp.oauth2.server.core.exception.KeyGenerationException;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;

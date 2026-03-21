@@ -20,6 +20,13 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 
 import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
+import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetails;
+import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetailsMixin;
+import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetailsSource;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationTokenMixin;
 import org.eclipse.ecsp.oauth2.server.core.common.CustomOauth2TokenGenErrorCodes;
@@ -29,10 +36,13 @@ import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationEx
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RevokeTokenRequest;
 import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
+import org.eclipse.ecsp.oauth2.server.core.utils.TokenHashingUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataRetrievalFailureException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.jackson2.SecurityJackson2Modules;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
@@ -53,13 +63,13 @@ import org.springframework.security.oauth2.server.authorization.jackson2.OAuth2A
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -73,17 +83,28 @@ import static org.eclipse.ecsp.oauth2.server.core.utils.ObjectMapperUtils.writeM
 public class AuthorizationService implements OAuth2AuthorizationService {    
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthorizationService.class);
     private static final int BEGIN_INDEX = 7;
-    private static final String DEFAULT_HASH_ALGORITHM = "SHA-256";
 
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
+    
+    // Browser details constants
+    private static final String UNKNOWN = "unknown";
+    private static final String USER_AGENT_KEY = "user_agent";
+    private static final String IP_ADDRESS_KEY = "ip_address";
+    private static final String ACCEPT_LANGUAGE_KEY = "accept_language";
+    private static final String REFERER_KEY = "referer";
+    private static final String SESSION_ID_KEY = "session_id";
+    private static final String CAPTURED_AT_KEY = "captured_at";
+    
     private final AuthorizationRepository authorizationRepository;
     private final RegisteredClientRepository registeredClientRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final JwtTokenValidator jwtTokenValidator;
+    private final AuditLogger auditLogger;
    
     @Value("${uidam.oauth2.token.hash.algorithm}")
     private String tokenHashAlgorithm;
     
-    @Value("${uidam.oauth2.token.hash.salt}")
+    @Value("${uidam.oauth2.token.hash.salt:}")
     private String tokenHashSalt;
 
     /**
@@ -92,23 +113,28 @@ public class AuthorizationService implements OAuth2AuthorizationService {
      * @param authorizationRepository the repository to use for interacting with Authorization instances in the database
      * @param registeredClientRepository the repository to use for retrieving RegisteredClient instances
      * @param jwtTokenValidator the validator to use for JWT token validation
+     * @param auditLogger the audit logger for logging authorization events
      */
     public AuthorizationService(AuthorizationRepository authorizationRepository,
                                 RegisteredClientRepository registeredClientRepository,
-                                JwtTokenValidator jwtTokenValidator) {
+                                JwtTokenValidator jwtTokenValidator,
+                                AuditLogger auditLogger) {
         LOGGER.debug("## IgniteOAuth2AuthorizationService - START");
         Assert.notNull(authorizationRepository, "authorizationRepository cannot be null");
         Assert.notNull(registeredClientRepository, "registeredClientRepository cannot be null");
         Assert.notNull(jwtTokenValidator, "jwtTokenValidator cannot be null");
+        Assert.notNull(auditLogger, "auditLogger cannot be null");
         this.authorizationRepository = authorizationRepository;
         this.registeredClientRepository = registeredClientRepository;
         this.jwtTokenValidator = jwtTokenValidator;
+        this.auditLogger = auditLogger;
 
         ClassLoader classLoader = AuthorizationService.class.getClassLoader();
         List<Module> securityModules = SecurityJackson2Modules.getModules(classLoader);
         this.objectMapper.registerModules(securityModules);
         this.objectMapper.registerModule(new OAuth2AuthorizationServerJackson2Module());
         this.objectMapper.addMixIn(CustomUserPwdAuthenticationToken.class, CustomUserPwdAuthenticationTokenMixin.class);
+        this.objectMapper.addMixIn(CustomWebAuthenticationDetails.class, CustomWebAuthenticationDetailsMixin.class);
         LOGGER.debug("## IgniteOAuth2AuthorizationService - END");
     }
 
@@ -121,7 +147,19 @@ public class AuthorizationService implements OAuth2AuthorizationService {
     public void save(OAuth2Authorization authorization) {
         LOGGER.debug("## save - START");
         Assert.notNull(authorization, "authorization cannot be null");
-        Authorization uidamAuthorization = toEntity(authorization);
+        
+        // Capture browser details from authentication if available
+        OAuth2Authorization enrichedAuthorization = enrichAuthorizationWithBrowserDetails(authorization);
+        
+        Authorization uidamAuthorization = toEntity(enrichedAuthorization);
+        
+        // Normalize username to lowercase for case-insensitive username handling
+        if (StringUtils.hasText(uidamAuthorization.getPrincipalName())) {
+            String normalizedPrincipalName = uidamAuthorization.getPrincipalName().toLowerCase();
+            uidamAuthorization.setPrincipalName(normalizedPrincipalName);
+            LOGGER.debug("## Normalized principalName to lowercase: {}", normalizedPrincipalName);
+        }
+        
         if (StringUtils.hasText(uidamAuthorization.getAccessTokenValue())) {
             String hashedToken = hashToken(uidamAuthorization.getAccessTokenValue());
             uidamAuthorization.setAccessTokenValue(hashedToken);
@@ -220,6 +258,9 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         LOGGER.debug("revokeToken START");
         if (!isValidToken(token)) {
             LOGGER.error("## Token validation failed!");
+            logAuthorizationFailure(AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN, 
+                                   revokeTokenRequest.getUsername(), 
+                                   revokeTokenRequest.getClientId());
             throw new CustomOauth2AuthorizationException(CustomOauth2TokenGenErrorCodes.INVALID_TOKEN);
         }
         String principalName;
@@ -245,19 +286,21 @@ public class AuthorizationService implements OAuth2AuthorizationService {
      */
     public String revokenTokensInDb(String principalName) {
         try {
-            LOGGER.info("## revoking token for principalName: {}", principalName);
+            // Normalize principal name to lowercase for case-insensitive matching
+            String normalizedPrincipalName = principalName != null ? principalName.toLowerCase() : principalName;
+            LOGGER.info("Revoking tokens for principal");
             List<Authorization> result = this.authorizationRepository
-                .findByPrincipalNameAndAccessTokenExpiresAt(principalName, Instant.now());
+                .findByPrincipalNameAndAccessTokenExpiresAt(normalizedPrincipalName, Instant.now());
             List<OAuth2Authorization> oauth2Authorizations = result.stream().map(this::toObject).toList();
             List<Authorization> authorizations = oauth2Authorizations.stream().map(
                     authorization -> toEntity(invalidate(authorization, authorization.getAccessToken().getToken())))
                 .toList();
             if (authorizations.isEmpty()) {
-                LOGGER.info("## no active token for user/client id!");
+                LOGGER.info("No active token found for principal");
                 return IgniteOauth2CoreConstants.NO_ACTIVE_TOKEN_EXIST;
             }
             this.authorizationRepository.saveAll(authorizations);
-            LOGGER.debug("## token revoked successfully");
+            LOGGER.debug("Token revoked successfully");
         } catch (Exception ex) {
             LOGGER.error("## Failed to process revoke token, exception occurs: ", ex);
             throw new CustomOauth2AuthorizationException(CustomOauth2TokenGenErrorCodes.SERVER_ERROR);
@@ -277,10 +320,12 @@ public class AuthorizationService implements OAuth2AuthorizationService {
      */
     public String revokenTokenByPrincipalAndClientId(String principalName, String clientId) {
         try {
-            LOGGER.info("## revoking token for principalName: {}", principalName);
+            // Normalize principal name to lowercase for case-insensitive matching
+            String normalizedPrincipalName = principalName != null ? principalName.toLowerCase() : principalName;
+            LOGGER.info("## revoking token for principalName: {}", normalizedPrincipalName);
             // Use the new repository method that considers both access and refresh token validity
             List<Authorization> result = this.authorizationRepository
-                    .findByPrincipalNameClientAndValidTokens(principalName, clientId, Instant.now());
+                    .findByPrincipalNameClientAndValidTokens(normalizedPrincipalName, clientId, Instant.now());
             List<OAuth2Authorization> oauth2Authorizations = result.stream().map(this::toObject).toList();
             
             // Process each authorization to invalidate all tokens properly
@@ -695,15 +740,7 @@ public class AuthorizationService implements OAuth2AuthorizationService {
      * @return the hashed token
      */
     private String hashToken(String token) {
-        try {
-            tokenHashAlgorithm = tokenHashAlgorithm == null ? DEFAULT_HASH_ALGORITHM : tokenHashAlgorithm;
-            token += tokenHashSalt;
-            MessageDigest digest = MessageDigest.getInstance(tokenHashAlgorithm);
-            byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
-            return tokenHashAlgorithm + ":" + Base64.getEncoder().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(tokenHashAlgorithm + " algorithm not available", e);
-        }
+        return TokenHashingUtil.hashToken(token, tokenHashAlgorithm, tokenHashSalt);
     }
     
     
@@ -727,6 +764,282 @@ public class AuthorizationService implements OAuth2AuthorizationService {
             authorization.setOidcIdTokenValue(token);
         }
         
+    }
+
+    /**
+     * Logs authorization failure audit events.
+     *
+     * @param eventType the authorization failure event type
+     * @param username the username (may be null for client credentials)
+     * @param clientId the client ID (may be null for user tokens)
+     */
+    private void logAuthorizationFailure(AuditEventType eventType, String username, String clientId) {
+        try {
+            // Determine actor information - either username or clientId
+            String actorId = username != null ? username : clientId;
+            String actorType = username != null ? "USER" : "CLIENT";
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(actorId)
+                .username(username)
+                .build();
+            
+            auditLogger.log(
+                eventType.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                eventType.getDescription(),
+                actorContext,
+                null  // RequestContext - not available in service layer
+            );
+            
+            LOGGER.debug("Audit log created for {}: actorId={}, actorType={}", 
+                eventType, actorId, actorType);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for {}: {}", eventType, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Enriches the OAuth2Authorization with browser details from the authentication context.
+     * Captures user-agent, IP address, language preferences, and other browser metadata
+     * from CustomWebAuthenticationDetails if available.
+     *
+     * @param authorization the original OAuth2Authorization
+     * @return enriched OAuth2Authorization with browser details in access token metadata and attributes
+     */
+    private OAuth2Authorization enrichAuthorizationWithBrowserDetails(OAuth2Authorization authorization) {
+        try {
+            // First, check if browser_details already exist in attributes
+            // This happens during token exchange when the authorization already has browser details from login
+            Object existingBrowserDetails = authorization.getAttribute("browser_details");
+            
+            if (existingBrowserDetails != null) {
+                LOGGER.debug("## Browser details already exist in authorization, preserving them");
+                // Browser details already captured during authentication, now add to access token metadata
+                if (existingBrowserDetails instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> browserDetailsMap = (Map<String, Object>) existingBrowserDetails;
+                    return addBrowserDetailsToAccessTokenFromMap(authorization, browserDetailsMap);
+                }
+                return authorization;
+            }
+            
+            // No existing browser details, try to capture them
+            CustomWebAuthenticationDetails details = extractCustomWebAuthenticationDetails(authorization);
+            
+            if (details != null) {
+                LOGGER.debug("## Capturing new browser details from authentication");
+                // Add browser details to authorization attributes
+                OAuth2Authorization enrichedAuth = addBrowserDetailsToAttributes(authorization, details);
+                
+                // Also add browser details to access token metadata (if token exists)
+                enrichedAuth = addBrowserDetailsToAccessToken(enrichedAuth, details);
+                
+                return enrichedAuth;
+            } else {
+                LOGGER.debug("## No CustomWebAuthenticationDetails found for capturing");
+            }
+        } catch (Exception e) {
+            LOGGER.error("## Failed to enrich authorization with browser details: {}", e.getMessage(), e);
+        }
+        
+        // Return original authorization if enrichment fails or details not available
+        return authorization;
+    }
+
+    /**
+     * Extracts CustomWebAuthenticationDetails from SecurityContext or authorization principal.
+     * Prioritizes the authorization's principal attribute (from authentication step) over
+     * the current security context to preserve browser details from the actual login.
+     *
+     * @param authorization the OAuth2Authorization to extract details from
+     * @return CustomWebAuthenticationDetails if found, null otherwise
+     */
+    private CustomWebAuthenticationDetails extractCustomWebAuthenticationDetails(
+            OAuth2Authorization authorization) {
+        // First priority: try to get from the authorization's principal attribute
+        // This contains the details from the actual authentication/login step
+        CustomWebAuthenticationDetails details = extractDetailsFromAuthorizationPrincipal(authorization);
+        if (details != null) {
+            LOGGER.debug("## Found CustomWebAuthenticationDetails from authorization principal");
+            return details;
+        }
+        
+        // Second priority: try to get authentication from current security context
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getDetails() instanceof CustomWebAuthenticationDetails) {
+            LOGGER.debug("## Found CustomWebAuthenticationDetails from security context");
+            return (CustomWebAuthenticationDetails) authentication.getDetails();
+        }
+        
+        // Last resort: create from current HTTP request context
+        // This may capture the wrong user agent (e.g., Postman during token exchange)
+        LOGGER.debug("## Attempting to create CustomWebAuthenticationDetails from current request");
+        return extractDetailsFromCurrentRequest();
+    }
+
+    /**
+     * Extracts CustomWebAuthenticationDetails from the authorization's principal attribute.
+     *
+     * @param authorization the OAuth2Authorization to extract details from
+     * @return CustomWebAuthenticationDetails if found, null otherwise
+     */
+    private CustomWebAuthenticationDetails extractDetailsFromAuthorizationPrincipal(
+            OAuth2Authorization authorization) {
+        Object principal = authorization.getAttribute("java.security.Principal");
+        
+        if (principal instanceof Authentication) {
+            Authentication principalAuth = (Authentication) principal;
+            Object principalDetails = principalAuth.getDetails();
+            
+            if (principalDetails instanceof CustomWebAuthenticationDetails) {
+                return (CustomWebAuthenticationDetails) principalDetails;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts CustomWebAuthenticationDetails from the current HTTP request context.
+     * This is a fallback for existing sessions where the authentication object
+     * was created before the custom details source was configured.
+     *
+     * @return CustomWebAuthenticationDetails created from current request, or null if not available
+     */
+    private CustomWebAuthenticationDetails extractDetailsFromCurrentRequest() {
+        try {
+            ServletRequestAttributes attributes = 
+                (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
+            if (attributes != null) {
+                jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
+                CustomWebAuthenticationDetailsSource detailsSource = 
+                    new CustomWebAuthenticationDetailsSource();
+                return detailsSource.buildDetails(request);
+            }
+        } catch (IllegalStateException e) {
+            LOGGER.debug("## No HTTP request context available: {}", e.getMessage());
+        } catch (Exception e) {
+            LOGGER.warn("## Failed to extract details from current request: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Adds browser details from an existing map to the access token metadata.
+     * Used when browser details were already captured during authentication
+     * and need to be applied to the access token during token generation.
+     *
+     * @param authorization the OAuth2Authorization
+     * @param browserDetailsMap the map containing browser details
+     * @return enriched OAuth2Authorization with browser details in access token metadata
+     */
+    private OAuth2Authorization addBrowserDetailsToAccessTokenFromMap(
+            OAuth2Authorization authorization, Map<String, Object> browserDetailsMap) {
+        
+        OAuth2Authorization.Token<OAuth2AccessToken> accessToken = authorization.getAccessToken();
+        
+        if (accessToken == null) {
+            LOGGER.debug("## Access token is null, skipping token metadata enrichment");
+            return authorization;
+        }
+        
+        // Create new metadata map with browser details
+        Map<String, Object> metadata = new LinkedHashMap<>(accessToken.getMetadata());
+        Object userAgent = browserDetailsMap.get(USER_AGENT_KEY);
+        metadata.put(USER_AGENT_KEY, userAgent != null ? userAgent : UNKNOWN);
+        Object ipAddress = browserDetailsMap.get(IP_ADDRESS_KEY);
+        metadata.put(IP_ADDRESS_KEY, ipAddress != null ? ipAddress : UNKNOWN);
+        Object acceptLanguage = browserDetailsMap.get(ACCEPT_LANGUAGE_KEY);
+        metadata.put(ACCEPT_LANGUAGE_KEY, acceptLanguage != null ? acceptLanguage : UNKNOWN);
+        Object referer = browserDetailsMap.get(REFERER_KEY);
+        metadata.put(REFERER_KEY, referer != null ? referer : UNKNOWN);
+        Object sessionId = browserDetailsMap.get(SESSION_ID_KEY);
+        metadata.put(SESSION_ID_KEY, sessionId != null ? sessionId : UNKNOWN);
+        Object capturedAt = browserDetailsMap.get(CAPTURED_AT_KEY);
+        metadata.put(CAPTURED_AT_KEY, capturedAt != null ? capturedAt : Instant.now().toString());
+        
+        // Rebuild authorization with updated access token metadata
+        OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);
+        builder.token(accessToken.getToken(), meta -> {
+            meta.clear();
+            meta.putAll(metadata);
+        });
+        
+        return builder.build();
+    }
+
+    /**
+     * Adds browser details to the access token metadata.
+     *
+     * @param authorization the OAuth2Authorization
+     * @param details the CustomWebAuthenticationDetails containing browser information
+     * @return enriched OAuth2Authorization with browser details in access token metadata
+     */
+    private OAuth2Authorization addBrowserDetailsToAccessToken(
+            OAuth2Authorization authorization, CustomWebAuthenticationDetails details) {
+        
+        OAuth2Authorization.Token<OAuth2AccessToken> accessToken = authorization.getAccessToken();
+        
+        if (accessToken == null) {
+            LOGGER.debug("## Access token is null, skipping token metadata enrichment");
+            return authorization;
+        }
+        
+        // Create new metadata map with browser details
+        Map<String, Object> metadata = new LinkedHashMap<>(accessToken.getMetadata());
+        metadata.put(USER_AGENT_KEY, details.getUserAgent() != null ? details.getUserAgent() : UNKNOWN);
+        metadata.put(IP_ADDRESS_KEY, details.getRemoteAddress());
+        metadata.put(ACCEPT_LANGUAGE_KEY, 
+            details.getAcceptLanguage() != null ? details.getAcceptLanguage() : UNKNOWN);
+        metadata.put(REFERER_KEY, details.getReferer() != null ? details.getReferer() : UNKNOWN);
+        metadata.put(SESSION_ID_KEY, 
+            details.getSessionId() != null ? details.getSessionId() : UNKNOWN);
+        metadata.put(CAPTURED_AT_KEY, Instant.now().toString());
+        
+        // Rebuild authorization with updated access token metadata
+        OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);
+        builder.token(accessToken.getToken(), meta -> {
+            meta.clear();
+            meta.putAll(metadata);
+        });
+        
+        return builder.build();
+    }
+
+    /**
+     * Adds browser details to the authorization attributes.
+     * This makes browser information available throughout the OAuth2 flow,
+     * not just in the access token metadata.
+     *
+     * @param authorization the OAuth2Authorization
+     * @param details the CustomWebAuthenticationDetails containing browser information
+     * @return enriched OAuth2Authorization with browser details in attributes
+     */
+    private OAuth2Authorization addBrowserDetailsToAttributes(
+            OAuth2Authorization authorization, CustomWebAuthenticationDetails details) {
+        
+        try {
+            // Create a map with browser details
+            Map<String, Object> browserDetailsMap = new LinkedHashMap<>();
+            browserDetailsMap.put(USER_AGENT_KEY, details.getUserAgent() != null ? details.getUserAgent() : UNKNOWN);
+            browserDetailsMap.put(IP_ADDRESS_KEY, details.getRemoteAddress());
+            browserDetailsMap.put(ACCEPT_LANGUAGE_KEY, 
+                details.getAcceptLanguage() != null ? details.getAcceptLanguage() : UNKNOWN);
+            browserDetailsMap.put(REFERER_KEY, details.getReferer() != null ? details.getReferer() : UNKNOWN);
+            browserDetailsMap.put(SESSION_ID_KEY, 
+                details.getSessionId() != null ? details.getSessionId() : UNKNOWN);
+            browserDetailsMap.put(CAPTURED_AT_KEY, Instant.now().toString());
+            
+            // Rebuild authorization with browser details attribute
+            OAuth2Authorization.Builder builder = OAuth2Authorization.from(authorization);
+            builder.attribute("browser_details", browserDetailsMap);
+            
+            return builder.build();
+        } catch (Exception e) {
+            LOGGER.error("## Failed to add browser details to attributes: {}", e.getMessage(), e);
+            return authorization;
+        }
     }
 
 }

@@ -19,10 +19,10 @@
 package org.eclipse.ecsp.oauth2.server.core.client;
 
 import io.prometheus.client.CollectorRegistry;
-import org.eclipse.ecsp.oauth2.server.core.config.TenantContext;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
