@@ -141,11 +141,11 @@ class MultitenantConfigurationMainTest {
         @DisplayName("Should throw exception when tenant has missing database properties")
         void shouldThrowExceptionForMissingDatabaseProperties() {
             // Given - Incomplete properties (missing password)
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.driver.class.name"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.driver.class.name"))
                 .thenReturn("org.postgresql.Driver");
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.username"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.username"))
                 .thenReturn("testuser");
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.jdbc.url"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.jdbc.url"))
                 .thenReturn("jdbc:postgresql://localhost/test");
             // Missing password property
 
@@ -186,7 +186,7 @@ class MultitenantConfigurationMainTest {
             String propertyKey = "postgres.username";
             String expectedValue = "env_user";
             
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.username"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.username"))
                 .thenReturn(expectedValue);
 
             // When
@@ -205,11 +205,11 @@ class MultitenantConfigurationMainTest {
             String propertyKey = "postgres.username";
             String expectedValue = "file_user";
             
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.username")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.ecsp.postgres.username")).thenReturn(null);
             when(resourceLoader.getResource("classpath:tenant-ecsp.properties")).thenReturn(resource);
             when(resource.exists()).thenReturn(true);
             
-            String propertiesContent = "tenant.tenants.ecsp.postgres.username=" + expectedValue;
+            String propertiesContent = "tenants.profile.ecsp.postgres.username=" + expectedValue;
             InputStream inputStream = new ByteArrayInputStream(propertiesContent.getBytes());
             when(resource.getInputStream()).thenReturn(inputStream);
 
@@ -234,8 +234,8 @@ class MultitenantConfigurationMainTest {
             when(resource.exists()).thenReturn(true);
             
             String propertiesContent = """
-                tenant.tenants.ecsp.postgres.username=cached_user
-                tenant.tenants.ecsp.postgres.password=cached_pass
+                tenants.profile.ecsp.postgres.username=cached_user
+                tenants.profile.ecsp.postgres.password=cached_pass
                 """;
             InputStream inputStream1 = new ByteArrayInputStream(propertiesContent.getBytes());
             InputStream inputStream2 = new ByteArrayInputStream(propertiesContent.getBytes());
@@ -260,10 +260,10 @@ class MultitenantConfigurationMainTest {
             String propertyKey = "postgres.username";
             String expectedValue = "k8s_user";
             
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.username")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.ecsp.postgres.username")).thenReturn(null);
             when(resourceLoader.getResource("classpath:tenant-ecsp.properties")).thenReturn(resource);
             when(resource.exists()).thenReturn(false);
-            when(environment.getProperty("TENANT_TENANTS_ECSP_POSTGRES_USERNAME")).thenReturn(expectedValue);
+            when(environment.getProperty("TENANTS_PROFILE_ECSP_POSTGRES_USERNAME")).thenReturn(expectedValue);
 
             // When
             String result = invokeResolveProperty(tenantId, propertyKey);
@@ -279,7 +279,7 @@ class MultitenantConfigurationMainTest {
             String tenantId = "ecsp";
             String propertyKey = "postgres.username";
             
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.username")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.ecsp.postgres.username")).thenReturn(null);
             when(resourceLoader.getResource("classpath:tenant-ecsp.properties")).thenReturn(resource);
             when(resource.exists()).thenReturn(true);
             when(resource.getInputStream()).thenThrow(new IOException("File read error"));
@@ -318,11 +318,11 @@ class MultitenantConfigurationMainTest {
         @DisplayName("Should handle missing driver class name")
         void shouldHandleMissingDriverClassName() {
             // Given - Missing driver class name
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.username"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.username"))
                 .thenReturn("testuser");
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.password"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.password"))
                 .thenReturn("testpass");
-            when(environment.getProperty("tenant.tenants.ecsp.postgres.jdbc.url"))
+            when(environment.getProperty("tenants.profile.ecsp.postgres.jdbc.url"))
                 .thenReturn("jdbc:postgresql://localhost/test");
             // driver class name is null
 
@@ -337,13 +337,13 @@ class MultitenantConfigurationMainTest {
         @DisplayName("Should handle empty string properties")
         void shouldHandleEmptyStringProperties() {
             // Given - Empty string properties
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.driver.class.name"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.driver.class.name"))
                 .thenReturn("");
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.username"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.username"))
                 .thenReturn("testuser");
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.password"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.password"))
                 .thenReturn("testpass");
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.jdbc.url"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.jdbc.url"))
                 .thenReturn("jdbc:postgresql://localhost/test");
 
             // When & Then
@@ -357,13 +357,13 @@ class MultitenantConfigurationMainTest {
         @DisplayName("Should handle whitespace-only properties")
         void shouldHandleWhitespaceOnlyProperties() {
             // Given - Whitespace-only properties
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.driver.class.name"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.driver.class.name"))
                 .thenReturn("   ");
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.username"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.username"))
                 .thenReturn("testuser");
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.password"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.password"))
                 .thenReturn("testpass");
-            lenient().when(environment.getProperty("tenant.tenants.ecsp.postgres.jdbc.url"))
+            lenient().when(environment.getProperty("tenants.profile.ecsp.postgres.jdbc.url"))
                 .thenReturn("jdbc:postgresql://localhost/test");
 
             // When & Then
@@ -385,19 +385,19 @@ class MultitenantConfigurationMainTest {
             setupValidTenantProperties("ecsp");
             
             // SDP from file
-            when(environment.getProperty("tenant.tenants.sdp.postgres.driver.class.name")).thenReturn(null);
-            when(environment.getProperty("tenant.tenants.sdp.postgres.username")).thenReturn(null);
-            when(environment.getProperty("tenant.tenants.sdp.postgres.password")).thenReturn(null);
-            when(environment.getProperty("tenant.tenants.sdp.postgres.jdbc.url")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.sdp.postgres.driver.class.name")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.sdp.postgres.username")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.sdp.postgres.password")).thenReturn(null);
+            when(environment.getProperty("tenants.profile.sdp.postgres.jdbc.url")).thenReturn(null);
             
             when(resourceLoader.getResource("classpath:tenant-sdp.properties")).thenReturn(resource);
             when(resource.exists()).thenReturn(true);
             
             String sdpPropertiesContent = """
-                tenant.tenants.sdp.postgres.driver.class.name=org.postgresql.Driver
-                tenant.tenants.sdp.postgres.username=sdp_user
-                tenant.tenants.sdp.postgres.password=sdp_pass
-                tenant.tenants.sdp.postgres.jdbc.url=jdbc:postgresql://localhost/sdp
+                tenants.profile.sdp.postgres.driver.class.name=org.postgresql.Driver
+                tenants.profile.sdp.postgres.username=sdp_user
+                tenants.profile.sdp.postgres.password=sdp_pass
+                tenants.profile.sdp.postgres.jdbc.url=jdbc:postgresql://localhost/sdp
                 """;
             when(resource.getInputStream()).thenReturn(new ByteArrayInputStream(sdpPropertiesContent.getBytes()));
 
@@ -423,13 +423,13 @@ class MultitenantConfigurationMainTest {
 
     // Helper methods
     private void setupValidTenantProperties(String tenantId) {
-        lenient().when(environment.getProperty("tenant.tenants." + tenantId + ".postgres.driver.class.name"))
+        lenient().when(environment.getProperty("tenants.profile." + tenantId + ".postgres.driver.class.name"))
             .thenReturn("org.postgresql.Driver");
-        lenient().when(environment.getProperty("tenant.tenants." + tenantId + ".postgres.username"))
+        lenient().when(environment.getProperty("tenants.profile." + tenantId + ".postgres.username"))
             .thenReturn(tenantId + "_user");
-        lenient().when(environment.getProperty("tenant.tenants." + tenantId + ".postgres.password"))
+        lenient().when(environment.getProperty("tenants.profile." + tenantId + ".postgres.password"))
             .thenReturn(tenantId + "_pass");
-        lenient().when(environment.getProperty("tenant.tenants." + tenantId + ".postgres.jdbc.url"))
+        lenient().when(environment.getProperty("tenants.profile." + tenantId + ".postgres.jdbc.url"))
             .thenReturn("jdbc:postgresql://localhost/" + tenantId);
     }
 

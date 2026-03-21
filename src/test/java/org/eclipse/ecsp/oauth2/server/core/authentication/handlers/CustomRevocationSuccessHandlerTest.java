@@ -18,6 +18,7 @@
 
 package org.eclipse.ecsp.oauth2.server.core.authentication.handlers;
 
+import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.service.DatabaseSecurityContextRepository;
 import org.eclipse.ecsp.oauth2.server.core.test.TestOauth2Authorizations;
@@ -43,7 +44,10 @@ import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_USER_N
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,6 +62,8 @@ class CustomRevocationSuccessHandlerTest {
     OAuth2AuthorizationService oauth2AuthorizationService;
     @Mock
     DatabaseSecurityContextRepository databaseSecurityContextRepository;
+    @Mock
+    AuditLogger auditLogger;
     private MockHttpServletRequest request;
     private MockHttpServletResponse response;
 
@@ -69,10 +75,11 @@ class CustomRevocationSuccessHandlerTest {
     void setUp() {
         this.oauth2AuthorizationService = mock(OAuth2AuthorizationService.class);
         this.databaseSecurityContextRepository = mock(DatabaseSecurityContextRepository.class);
+        this.auditLogger = mock(AuditLogger.class);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         successHandler = new CustomRevocationSuccessHandler(oauth2AuthorizationService,
-            databaseSecurityContextRepository);
+            databaseSecurityContextRepository, auditLogger);
     }
 
     /**
@@ -107,8 +114,9 @@ class CustomRevocationSuccessHandlerTest {
     /**
      * This method tests the scenario where the findByToken method returns null.
      * It sets up the necessary parameters and then calls the onAuthenticationSuccess method.
-     * The test asserts that no exception is thrown and that the unauthenticatedContextInDb method of the
-     * DatabaseSecurityContextRepository is not called.
+     * The test asserts that no exception is thrown, that the unauthenticatedContextInDb method of the
+     * DatabaseSecurityContextRepository is not called, and that the audit logger IS called
+     * with AUTHZ_FAILURE_REVOKED_TOKEN.
      */
     @Test
     void testOnAuthenticationFindByTokenNull() {
@@ -124,6 +132,15 @@ class CustomRevocationSuccessHandlerTest {
         assertDoesNotThrow(() -> this.successHandler.onAuthenticationSuccess(this.request, this.response,
             authenticationToken));
         verify(databaseSecurityContextRepository, times(0)).unauthenticatedContextInDb(anyString());
+        // Verify audit logger was called with AUTHZ_FAILURE_REVOKED_TOKEN
+        verify(auditLogger, times(1)).log(
+            eq("AUTHZ_FAILURE_REVOKED_TOKEN"),
+            eq("UIDAM_AUTHORIZATION_SERVER"),
+            any(),
+            eq("Authorization failed - token has been revoked"),
+            any(),
+            any()
+        );
     }
 
     /**

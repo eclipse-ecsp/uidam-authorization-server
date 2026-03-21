@@ -40,6 +40,8 @@
                     source="APP_SPRING_LOG_LEVEL" />
     <springProperty scope="context" name="LOG_FOLDER"
                     source="APP_LOG_FOLDER" />
+    <springProperty scope="context" name="PROP_LOAD_LOG_LEVEL"
+                    source="APP_PROP_LOAD_LOG_LEVEL" />
 
 
     <appender name="GELF"
@@ -65,7 +67,7 @@
             </fullPatternLayout>
             <shortPatternLayout
                 class="ch.qos.logback.classic.PatternLayout">
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{sourceIp}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
             </shortPatternLayout>
             <staticField>app:uidam-authorization-server</staticField>
             <staticField>ms:uidam-authorization-server</staticField>
@@ -86,7 +88,7 @@
     <appender name="STDOUT"
         class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{sourceIp}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
         </encoder>
     </appender>
 
@@ -109,7 +111,7 @@
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %thread [%X{tenantId}] [%X{sourceIp}] [%X{correlationId}] %-5level %logger{0} - %crlf(%msg){}%n</pattern>
         </encoder>
     </appender>
 
@@ -122,6 +124,20 @@
 
     <logger name="org.eclipse.ecsp" level="${IGNITE_LOG_LEVEL}"
         additivity="false">
+        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
+            <then><appender-ref ref="ASYNC-GELF" /></then>
+            <else><appender-ref ref="ASYNC-STDOUT" /></else>
+        </if>
+    </logger>
+    <logger name="org.eclipse.ecsp.uidam.config.TenantDefaultPropertiesProcessor"
+        level="${PROP_LOAD_LOG_LEVEL}" additivity="false">
+        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
+            <then><appender-ref ref="ASYNC-GELF" /></then>
+            <else><appender-ref ref="ASYNC-STDOUT" /></else>
+        </if>
+    </logger>
+    <logger name="org.eclipse.ecsp.uidam.config.ConfigRefreshListener"
+        level="${PROP_LOAD_LOG_LEVEL}" additivity="false">
         <if condition='p("GRAYLOG_ENABLED").contains("true")'>
             <then><appender-ref ref="ASYNC-GELF" /></then>
             <else><appender-ref ref="ASYNC-STDOUT" /></else>

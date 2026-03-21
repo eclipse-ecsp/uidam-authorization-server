@@ -20,6 +20,12 @@ package org.eclipse.ecsp.oauth2.server.core.authentication.providers;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.PasswordAuthenticationContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
@@ -28,6 +34,7 @@ import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
 import org.slf4j.Logger;
@@ -38,6 +45,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -58,11 +66,13 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessa
 public class CustomUserPwdAuthenticationProvider implements AuthenticationProvider {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomUserPwdAuthenticationProvider.class);
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private final UserManagementClient userManagementClient;
     private final TenantConfigurationService tenantConfigurationService;
     private final HttpServletRequest request;
     private final AuthorizationMetricsService metricsService;
+    private final AuditLogger auditLogger;
 
     /**
      * Constructor for CustomUserPwdAuthenticationProvider.
@@ -70,15 +80,19 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
      * @param userManagementClient the user management client
      * @param tenantConfigurationService the tenant configuration service
      * @param request the HTTP servlet request
+     * @param metricsService the authorization metrics service
+     * @param auditLogger the audit logger
      */
     public CustomUserPwdAuthenticationProvider(UserManagementClient userManagementClient,
                                                TenantConfigurationService tenantConfigurationService,
                                                HttpServletRequest request,
-                                               AuthorizationMetricsService metricsService) {
+                                               AuthorizationMetricsService metricsService,
+                                               AuditLogger auditLogger) {
         this.userManagementClient = userManagementClient;
         this.tenantConfigurationService = tenantConfigurationService;
         this.request = request;
         this.metricsService = metricsService;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -98,47 +112,305 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
         CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken =
             (CustomUserPwdAuthenticationToken) authentication;
-        UserEvent userEvent = new UserEvent();
-        userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
-        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
-        int maxAllowedLoginAttempt = tenantProperties.getUser().getMaxAllowedLoginAttempts();
-        String tenantId = tenantProperties.getTenantId();
+        
         String username = customUserPwdAuthenticationToken.getPrincipal() + "";
-        String password = customUserPwdAuthenticationToken.getCredentials() + "";
         String accountName = customUserPwdAuthenticationToken.getAccountName();
+        String password = customUserPwdAuthenticationToken.getCredentials() + "";
+        
+        TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        String tenantId = tenantProperties.getTenantId();
+        
         LOGGER.debug("Authenticating user details for username {}", username);
         metricsService.incrementMetricsForTenant(tenantId, MetricType.TOTAL_LOGIN_ATTEMPTS);
-        UserDetailsResponse userDetailsResponse = userManagementClient.getUserDetailsByUsername(username, accountName);
+        
+        UserDetailsResponse userDetailsResponse = getUserDetails(username, accountName);
+        
+        if (!validatePassword(password, userDetailsResponse)) {
+            handleFailedAuthentication(username, accountName, tenantId, tenantProperties, userDetailsResponse);
+        }
+        
+        return handleSuccessfulAuthentication(username, password, accountName, tenantId, userDetailsResponse);
+    }
+    
+    /**
+     * Retrieves user details from the user management service.
+     *
+     * @param username the username
+     * @param accountName the account name
+     * @return the user details response
+     * @throws OAuth2AuthenticationException if user retrieval fails
+     */
+    private UserDetailsResponse getUserDetails(String username, String accountName) {
+        try {
+            return userManagementClient.getUserDetailsByUsername(username, accountName);
+        } catch (OAuth2AuthenticationException ex) {
+            logAuthenticationException(ex, username, accountName);
+            throw ex;
+        }
+    }
+    
+    /**
+     * Validates the user's password.
+     *
+     * @param password the plain text password
+     * @param userDetailsResponse the user details response
+     * @return true if password is valid, false otherwise
+     */
+    private boolean validatePassword(String password, UserDetailsResponse userDetailsResponse) {
         String encryptedUserEnteredPassword = PasswordUtils.getSecurePassword(password,
             userDetailsResponse.getPasswordEncoder(), userDetailsResponse.getSalt());
-        if (!encryptedUserEnteredPassword.equals(userDetailsResponse.getPassword())) {
-            LOGGER.info("Password validation status: FAILED for username {}", username);
-            metricsService.incrementMetricsForTenant(tenantId,
-                                                    MetricType.FAILURE_LOGIN_WRONG_PASSWORD,
-                                                    MetricType.FAILURE_LOGIN_ATTEMPTS);
-            addUserEvent(userEvent, IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE,
-                IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE_BAD_CREDENTIALS_MSG,
-                userDetailsResponse.getId());
-            int loginAttempt = userDetailsResponse.getFailureLoginAttempts() + 1;
+        return encryptedUserEnteredPassword.equals(userDetailsResponse.getPassword());
+    }
+    
+    /**
+     * Handles failed authentication attempts.
+     *
+     * @param username the username
+     * @param accountName the account name
+     * @param tenantId the tenant ID
+     * @param tenantProperties the tenant properties
+     * @param userDetailsResponse the user details response
+     * @throws BadCredentialsException with appropriate message
+     */
+    private void handleFailedAuthentication(String username, String accountName, String tenantId,
+                                           TenantProperties tenantProperties,
+                                           UserDetailsResponse userDetailsResponse) {
+        LOGGER.info("Password validation status: FAILED for username {}", username);
+        metricsService.incrementMetricsForTenant(tenantId,
+                                                MetricType.FAILURE_LOGIN_WRONG_PASSWORD,
+                                                MetricType.FAILURE_LOGIN_ATTEMPTS);
+        
+        UserEvent userEvent = new UserEvent();
+        userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
+        UserEventResponse eventResponse = addUserEvent(userEvent, 
+            IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE,
+            IgniteOauth2CoreConstants.USER_EVENT_LOGIN_FAILURE_BAD_CREDENTIALS_MSG,
+            userDetailsResponse.getId());
+        
+        LOGGER.info("User event response for failed login - Status: {}, Lock Duration: {} minutes", 
+            eventResponse.getUserStatus(), eventResponse.getLockDurationMinutes());
+        
+        int loginAttempt = userDetailsResponse.getFailureLoginAttempts() + 1;
+        
+        logFailedAuthentication(userDetailsResponse, username, accountName, 
+            AuditEventType.AUTH_FAILURE_WRONG_PASSWORD, loginAttempt);
 
-            setRecaptchaSession(loginAttempt, userDetailsResponse.getCaptcha().get(USER_CAPTCHA_REQUIRED),
-                userDetailsResponse.getCaptcha().get(USER_ENFORCE_AFTER_NO_OF_FAILURES));
-            if (loginAttempt >= maxAllowedLoginAttempt) {
-                LOGGER.info("{} max allowed login attempt used ", maxAllowedLoginAttempt);
-                metricsService.incrementMetricsForTenant(tenantId,
-                                                        MetricType.FAILURE_LOGIN_USER_BLOCKED,
-                                                        MetricType.FAILURE_LOGIN_ATTEMPTS);
+        setRecaptchaSession(loginAttempt, userDetailsResponse.getCaptcha().get(USER_CAPTCHA_REQUIRED),
+            userDetailsResponse.getCaptcha().get(USER_ENFORCE_AFTER_NO_OF_FAILURES));
+        
+        checkUserBlockedOrDeactivated(eventResponse, tenantId, userDetailsResponse, 
+            username, accountName, loginAttempt);
+        
+        int maxAllowedLoginAttempt = tenantProperties.getUser().getMaxAllowedLoginAttempts();
+        if (loginAttempt >= maxAllowedLoginAttempt) {
+            handleMaxLoginAttemptsExceeded(tenantId, userDetailsResponse, username, accountName, 
+                loginAttempt, maxAllowedLoginAttempt);
+        }
+        
+        throw new BadCredentialsException("Bad credentials");
+    }
+    
+    /**
+     * Checks if the user is blocked or deactivated and throws appropriate exception.
+     *
+     * @param eventResponse the user event response
+     * @param tenantId the tenant ID
+     * @param userDetailsResponse the user details response
+     * @param username the username
+     * @param accountName the account name
+     * @param loginAttempt the current login attempt count
+     * @throws BadCredentialsException if user is blocked or deactivated
+     */
+    private void checkUserBlockedOrDeactivated(UserEventResponse eventResponse, String tenantId,
+                                              UserDetailsResponse userDetailsResponse,
+                                              String username, String accountName, int loginAttempt) {
+        String userStatus = eventResponse.getUserStatus();
+        if ("BLOCKED".equals(userStatus) || "DEACTIVATED".equals(userStatus)) {
+            LOGGER.info("User {} is {}. Lock duration: {} minutes", 
+                userDetailsResponse.getId(), userStatus, eventResponse.getLockDurationMinutes());
+            metricsService.incrementMetricsForTenant(tenantId,
+                                                    MetricType.FAILURE_LOGIN_USER_BLOCKED,
+                                                    MetricType.FAILURE_LOGIN_ATTEMPTS);
+            logFailedAuthentication(userDetailsResponse, username, accountName,
+                AuditEventType.AUTH_FAILURE_ACCOUNT_LOCKED, loginAttempt);
+            
+            if ("DEACTIVATED".equals(userStatus)) {
+                String msg = "Account has been deactivated due to multiple failed login attempts. "
+                    + "Please contact administrator.";
+                throw new BadCredentialsException(msg);
+            } else if (eventResponse.getLockDurationMinutes() > 0) {
+                String msg = String.format(
+                    "Account is temporarily locked for %d minutes due to multiple failed login attempts.", 
+                    eventResponse.getLockDurationMinutes());
+                throw new BadCredentialsException(msg);
+            } else {
                 throw new BadCredentialsException(USER_LOCKED_ERROR);
             }
-            throw new BadCredentialsException("Bad credentials");
         }
+    }
+    
+    /**
+     * Handles the case when maximum login attempts are exceeded.
+     *
+     * @param tenantId the tenant ID
+     * @param userDetailsResponse the user details response
+     * @param username the username
+     * @param accountName the account name
+     * @param loginAttempt the current login attempt count
+     * @param maxAllowedLoginAttempt the maximum allowed login attempts
+     * @throws BadCredentialsException with user locked message
+     */
+    private void handleMaxLoginAttemptsExceeded(String tenantId, UserDetailsResponse userDetailsResponse,
+                                               String username, String accountName,
+                                               int loginAttempt, int maxAllowedLoginAttempt) {
+        LOGGER.info("{} max allowed login attempt used ", maxAllowedLoginAttempt);
+        metricsService.incrementMetricsForTenant(tenantId,
+                                                MetricType.FAILURE_LOGIN_USER_BLOCKED,
+                                                MetricType.FAILURE_LOGIN_ATTEMPTS);
+        logFailedAuthentication(userDetailsResponse, username, accountName,
+            AuditEventType.AUTH_FAILURE_ACCOUNT_LOCKED, loginAttempt);
+        throw new BadCredentialsException(USER_LOCKED_ERROR);
+    }
+    
+    /**
+     * Handles successful authentication.
+     *
+     * @param username the username
+     * @param password the password
+     * @param accountName the account name
+     * @param tenantId the tenant ID
+     * @param userDetailsResponse the user details response
+     * @return the authenticated token
+     */
+    private Authentication handleSuccessfulAuthentication(String username, String password,
+                                                         String accountName, String tenantId,
+                                                         UserDetailsResponse userDetailsResponse) {
         LOGGER.info("Password validation status: SUCCESS for username {}", username);
         metricsService.incrementMetricsForTenant(tenantId, MetricType.SUCCESS_LOGIN_ATTEMPTS);
+        
+        UserEvent userEvent = new UserEvent();
+        userEvent.setType(IgniteOauth2CoreConstants.USER_EVENT_LOGIN_ATTEMPT);
         addUserEvent(userEvent, IgniteOauth2CoreConstants.USER_EVENT_LOGIN_SUCCESS,
             IgniteOauth2CoreConstants.USER_EVENT_LOGIN_SUCCESS_MSG, userDetailsResponse.getId());
+        
+        logSuccessfulAuthentication(userDetailsResponse, username, accountName);
+        
         List<GrantedAuthority> grantedAuthorities = userDetailsResponse.getScopes().stream()
             .map(SimpleGrantedAuthority::new).collect(Collectors.toList());
         return CustomUserPwdAuthenticationToken.authenticated(username, password, accountName, grantedAuthorities);
+    }
+    
+    private void logSuccessfulAuthentication(UserDetailsResponse userDetailsResponse,
+                                            String username,
+                                            String accountName) {
+        try {
+            String accountIdStr = userDetailsResponse.getAccountId();
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(userDetailsResponse.getId())
+                .username(username)
+                .accountId(accountIdStr)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            auditLogger.log(
+                AuditEventType.AUTH_SUCCESS_PASSWORD.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.SUCCESS,
+                AuditEventType.AUTH_SUCCESS_PASSWORD.getDescription(),
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for AUTH_SUCCESS_PASSWORD: userId={}", userDetailsResponse.getId());
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for AUTH_SUCCESS_PASSWORD: {}", e.getMessage(), e);
+        }
+    }
+    
+    private void logFailedAuthentication(UserDetailsResponse userDetailsResponse,
+                                        String username,
+                                        String accountName,
+                                        AuditEventType eventType,
+                                        int failedAttempts) {
+        try {
+            String accountIdStr = userDetailsResponse.getAccountId();
+            
+            UserActorContext actorContext = UserActorContext.builder()
+                .userId(userDetailsResponse.getId())
+                .username(username)
+                .accountId(accountIdStr)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            PasswordAuthenticationContext authContext = PasswordAuthenticationContext.builder()
+                .failedAttempts(failedAttempts)
+                .authType("password")
+                .build();
+            
+            auditLogger.log(
+                eventType.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                eventType.getDescription(),
+                actorContext,
+                null,  // TargetContext
+                requestContext,
+                authContext
+            );
+            
+            LOGGER.debug("Audit log created for {}: userId={}, failedAttempts={}", 
+                eventType, userDetailsResponse.getId(), failedAttempts);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for {}: {}", eventType, e.getMessage(), e);
+        }
+    }
+    
+    private void logAuthenticationException(OAuth2AuthenticationException ex, 
+                                           String username, 
+                                           String accountName) {
+        try {
+            String errorCode = ex.getError().getErrorCode();
+            AuditEventType eventType;
+            
+            if ("USER_NOT_FOUND".equals(errorCode)) {
+                eventType = AuditEventType.AUTH_FAILURE_USER_NOT_FOUND;
+            } else if ("USER_NOT_ACTIVE".equals(errorCode)) {
+                eventType = AuditEventType.AUTH_FAILURE_USER_BLOCKED;
+            } else if ("ACCOUNT_NOT_FOUND".equals(errorCode)) {
+                eventType = AuditEventType.AUTH_FAILURE_ACCOUNT_NOT_FOUND;
+            } else {
+                // Generic authentication failure - don't audit unknown error codes
+                LOGGER.warn("Unhandled authentication error code '{}'. Username: '{}', Account: '{}'. Exception: {}",
+                        errorCode, username, accountName, ex.getMessage());
+                return;
+            }
+            
+            // For user not found/blocked, we don't have userId
+            UserActorContext actorContext = UserActorContext.builder()
+                .username(username)
+                .accountName(accountName)
+                .build();
+            
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            
+            auditLogger.log(
+                eventType.getType(),
+                COMPONENT_NAME,
+                AuditEventResult.FAILURE,
+                ex.getError().getDescription(),
+                actorContext,
+                requestContext
+            );
+            
+            LOGGER.debug("Audit log created for {}: username={}", eventType, username);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create audit log for authentication exception: {}", e.getMessage(), e);
+        }
     }
 
     /**
@@ -152,11 +424,12 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
      * @param status the status of the user event
      * @param message the message of the user event
      * @param userId the id of the user
+     * @return UserEventResponse containing user status and lock duration information
      */
-    private void addUserEvent(UserEvent userEvent, String status, String message, String userId) {
+    private UserEventResponse addUserEvent(UserEvent userEvent, String status, String message, String userId) {
         userEvent.setResult(status);
         userEvent.setMessage(message);
-        userManagementClient.addUserEvent(userEvent, userId);
+        return userManagementClient.addUserEvent(userEvent, userId);
     }
 
     /**
