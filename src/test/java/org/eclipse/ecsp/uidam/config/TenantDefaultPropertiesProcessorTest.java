@@ -39,6 +39,7 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
@@ -71,6 +72,9 @@ class TenantDefaultPropertiesProcessorTest {
 
     @Mock
     private MutablePropertySources propertySources;
+
+    @Mock
+    private ConfigurableListableBeanFactory beanFactory;
 
     @InjectMocks
     private TenantDefaultPropertiesProcessor processor;
@@ -181,25 +185,43 @@ class TenantDefaultPropertiesProcessorTest {
         // Arrange
         final String tenantIds = "tenant1";
         
-        // Mock property sources
+        // Mock property sources with default properties
         Map<String, Object> defaultProps = new HashMap<>();
         defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.username", "defaultuser");
+        defaultProps.put("tenant.props.default.password", "defaultpass");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        
+        // Mock tenant-specific properties to trigger generation
+        Map<String, Object> tenant1Props = new HashMap<>();
+        tenant1Props.put("tenants.profile.tenant1.jdbc-url", "jdbc:postgresql://localhost:5432/tenant1");
+        MapPropertySource tenant1PropertySource = new MapPropertySource("tenant1Props", tenant1Props);
         
         List<PropertySource<?>> sources = new ArrayList<>();
         sources.add(defaultPropertySource);
+        sources.add(tenant1PropertySource);
         when(propertySources.iterator()).thenReturn(sources.iterator());
         when(propertySources.contains("generatedTenantProperties")).thenReturn(true);
         
         lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
             .thenReturn(true);
         lenient().when(configurableEnvironment.getProperty("tenant.ids")).thenReturn(tenantIds);
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/default");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.username"))
+            .thenReturn("defaultuser");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
+            .thenReturn("defaultpass");
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.tenant1.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/tenant1");
 
         // Act
         processor.setEnvironment(configurableEnvironment);
+        processor.postProcessBeanFactory(beanFactory);
 
-        // Assert - Cannot verify because it's private method in postProcessBeanFactory
-        // Just ensure no exception is thrown
+        // Assert - Verify that addLast was called (which means properties were generated)
+        // The remove is only called if properties are actually generated
+        verify(propertySources, atLeast(1)).addLast(Mockito.any(MapPropertySource.class));
     }
 
     @Test

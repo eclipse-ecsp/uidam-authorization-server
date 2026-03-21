@@ -20,6 +20,7 @@ package org.eclipse.ecsp.oauth2.server.core.config;
 
 import jakarta.servlet.http.HttpSession;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetailsSource;
 import org.eclipse.ecsp.oauth2.server.core.authentication.filters.CustomUserPwdAuthenticationFilter;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.CustomAccessTokenFailureHandler;
 import org.eclipse.ecsp.oauth2.server.core.authentication.handlers.CustomAuthCodeFailureHandler;
@@ -106,6 +107,9 @@ public class IgniteSecurityConfig {
     private static final String OAUTH2_AUTHORIZATION_PATTERN = "/*/oauth2/authorization/**";
     private static final String OAUTH2_LOGOUT_ENDPOINT = "/oauth2/logout";
     private static final String POST_METHOD = "POST";
+    
+    // CORS configuration constants
+    private static final long CORS_MAX_AGE_SECONDS = 3600L; // 1 hour preflight cache
 
     @Value("${server.servlet.session.timeout}")
     private String sessionTimeout;
@@ -120,29 +124,36 @@ public class IgniteSecurityConfig {
     private String corsAllowedMethods;
 
     @Value("${session.recreation.policy}")
-    private String sessionRecreationPolicy;   
+    private String sessionRecreationPolicy;
+    
+    @Value("${api.security.patterns:/*/self/**,/self/**,/*/admin/**,/admin/**}")
+    private String apiSecurityPatterns;
     
     private static final int INT_TWO = 2;
 
     private final TenantConfigurationService tenantConfigurationService;
     private final AuthorizationMetricsService authorizationMetricsService;
     private final AuditLogger auditLogger;
+    private final CustomWebAuthenticationDetailsSource customWebAuthenticationDetailsSource;
 
     /**
      * Constructor for the IgniteSecurityConfig class. It stores the TenantConfigurationService,
-     * AuthorizationMetricsService, and AuditLogger for dynamic tenant property resolution,
-     * metrics collection, and audit logging.
+     * AuthorizationMetricsService, AuditLogger, and CustomWebAuthenticationDetailsSource for dynamic tenant 
+     * property resolution, metrics collection, audit logging, and capturing browser details.
      *
      * @param tenantConfigurationService Service for managing tenant configurations.
      * @param authorizationMetricsService Service for collecting authorization metrics.
      * @param auditLogger Service for logging audit events.
+     * @param customWebAuthenticationDetailsSource Source for creating custom authentication details.
      */
     public IgniteSecurityConfig(TenantConfigurationService tenantConfigurationService,
                                AuthorizationMetricsService authorizationMetricsService,
-                               AuditLogger auditLogger) {
+                               AuditLogger auditLogger,
+                               CustomWebAuthenticationDetailsSource customWebAuthenticationDetailsSource) {
         this.tenantConfigurationService = tenantConfigurationService;
         this.authorizationMetricsService = authorizationMetricsService;
         this.auditLogger = auditLogger;
+        this.customWebAuthenticationDetailsSource = customWebAuthenticationDetailsSource;
     }
 
     /**
@@ -224,7 +235,7 @@ public class IgniteSecurityConfig {
                         .errorResponseHandler(customAccessTokenFailureHandler))
                 .tokenRevocationEndpoint(tokenRevocationEndpointConfigurer -> tokenRevocationEndpointConfigurer
                         .revocationResponseHandler(new CustomRevocationSuccessHandler(oauth2AuthorizationService,
-                                databaseSecurityContextRepository))));
+                                databaseSecurityContextRepository, auditLogger))));
 
         http.exceptionHandling(c -> c.defaultAuthenticationEntryPointFor(
                 customLoginAuthenticationEntryPoint(), new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
@@ -237,6 +248,8 @@ public class IgniteSecurityConfig {
                 .setAuthenticationSuccessHandler(savedRequestAwareAuthenticationSuccessHandler);
         customUserPwdAuthenticationFilter
                 .setAuthenticationFailureHandler(customSimpleUrlAuthenticationFailureHandler());
+        // Set custom authentication details source to capture browser metadata
+        customUserPwdAuthenticationFilter.setAuthenticationDetailsSource(customWebAuthenticationDetailsSource);
         http.addFilterBefore(customUserPwdAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         
         // This filter ensures only tenant-allowed authentication methods are executed
@@ -244,6 +257,56 @@ public class IgniteSecurityConfig {
                 this.tenantConfigurationService);
         http.addFilterAfter(tenantAwareAuthenticationFilter,
                 org.springframework.security.web.authentication.www.BasicAuthenticationFilter.class);
+        
+        return http.build();
+    }
+
+    /**
+     * Security filter chain for REST API endpoints (session management, etc.).
+     * This handles CORS for non-OAuth2 REST endpoints that perform custom JWT validation.
+     * 
+     * <p>These endpoints are publicly accessible at the Spring Security level (permitAll),
+     * but authentication is enforced through manual JWT token validation within the controller methods
+     * using {@link org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator}.
+     * 
+     * <p>CSRF protection is disabled as these are stateless REST APIs using Bearer token authentication.
+     * 
+     * <p>Order(2) ensures this runs after the OAuth2 security filter chain (Order 1).
+     *
+     * @param http HttpSecurity object for configuring web security
+     * @return Configured SecurityFilterChain for API endpoints
+     * @throws Exception If an error occurs during configuration
+     */
+    @Bean
+    @Order(2)
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
+        // Configure security matchers for REST API endpoints using configurable patterns
+        String[] patterns = Stream.of(apiSecurityPatterns.split(COMMA_DELIMITER))
+                .map(String::trim)
+                .toArray(String[]::new);
+        
+        http.securityMatchers(matchers -> matchers.requestMatchers(patterns));
+        
+        // Configure CORS using the same configuration as OAuth2 endpoints
+        http.cors(corsCustomizer -> corsCustomizer.configurationSource(request -> {
+            CorsConfiguration corsConfiguration = new CorsConfiguration();
+            corsConfiguration
+                    .setAllowedOriginPatterns(Stream.of(corsAllowedOriginPatterns.split(COMMA_DELIMITER)).toList());
+            corsConfiguration.setAllowedMethods(Stream.of(corsAllowedMethods.split(COMMA_DELIMITER)).toList());
+            corsConfiguration.setAllowedHeaders(List.of("*")); // Allow all headers for API endpoints
+            corsConfiguration.setAllowCredentials(true); // Allow credentials (cookies, authorization headers)
+            corsConfiguration.setMaxAge(CORS_MAX_AGE_SECONDS); // Cache preflight response for 1 hour
+            return corsConfiguration;
+        }));
+        
+        // Disable CSRF for REST API endpoints (stateless, token-based authentication)
+        http.csrf(csrf -> csrf.disable());
+        
+        // Allow all requests to these API endpoints without Spring Security authentication
+        // Authentication is handled manually via JWT token validation in the controller methods
+        http.authorizeHttpRequests(authorize -> authorize
+                .anyRequest().permitAll()
+        );
         
         return http.build();
     }
@@ -332,18 +395,20 @@ public class IgniteSecurityConfig {
 
     /**
      * This method enables form-based login within the application. It configures the HttpSecurity object to allow form
-     * login.
+     * login and sets up custom authentication details source to capture browser user-agent information.
      *
      * @param http HttpSecurity object used for configuring web based security for specific http requests.
      * @throws Exception May throw an exception if there's an error during the configuration.
      */
     private void enableFormLogin(HttpSecurity http) throws Exception {
-        http.formLogin(form -> form.loginPage(LOGIN_HANDLER));
+        http.formLogin(form -> form
+                .loginPage(LOGIN_HANDLER)
+                .authenticationDetailsSource(customWebAuthenticationDetailsSource));
     }
 
     /**
      * This method enables OAuth-based login within the application. It configures the HttpSecurity object for OAuth
-     * login.
+     * login and sets up custom authentication details source to capture browser user-agent information.
      *
      * @param http HttpSecurity object used for configuring web based security for specific http requests.
      * @param authorizationRequestRepository Repository for OAuth2 authorization requests.
@@ -364,7 +429,10 @@ public class IgniteSecurityConfig {
                                             authorizationRequestRepository, clientRegistrationRepository.get())))
                             .redirectionEndpoint(redirectionEndpoint -> redirectionEndpoint
                                     .baseUri("/{tenantId}/login/oauth2/code/*")) // Support tenant-prefixed callback
-                            .authorizedClientService(new DatabaseAuthorizedClientService()).loginPage(LOGIN_HANDLER)
+                            .authorizedClientService(new DatabaseAuthorizedClientService())
+                            .loginPage(LOGIN_HANDLER)
+                            // Capture browser details for token metadata
+                            .authenticationDetailsSource(customWebAuthenticationDetailsSource)
                             .successHandler(federatedIdentityAuthenticationSuccessHandler) // Use injected tenant-aware
                             .failureHandler((request, response, exception) -> {
                                 String tenantId = SessionTenantResolver.getCurrentTenant();

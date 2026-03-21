@@ -171,7 +171,7 @@ class AuthorizationControllerTest {
 
         List<Authorization> list = new ArrayList<>();
         list.add(auth);
-        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testClient"), any()))
+        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testclient"), any()))
                 .thenReturn(list);
 
         RegisteredClient registeredClient = RegisteredClient.withId("testClient").clientId("testClient")
@@ -250,7 +250,7 @@ class AuthorizationControllerTest {
         when(authorizationRepository.findByAccessTokenValue("abcd")).thenReturn(Optional.of(auth));
         List<Authorization> list = new ArrayList<>();
         list.add(auth);
-        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testClient"), any()))
+        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testclient"), any()))
                 .thenThrow(new RuntimeException());
 
         RegisteredClient registeredClient = RegisteredClient.withId("testClient").clientId("testClient")
@@ -291,7 +291,7 @@ class AuthorizationControllerTest {
         when(authorizationRepository.findByAccessTokenValue("abcd")).thenReturn(Optional.of(auth));
         List<Authorization> list = new ArrayList<>();
         list.add(auth);
-        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testClient"), any()))
+        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testclient"), any()))
                 .thenReturn(list);
 
         RegisteredClient registeredClient = RegisteredClient.withId("testClient").clientId("testClient")
@@ -332,7 +332,7 @@ class AuthorizationControllerTest {
         when(authorizationRepository.findByAccessTokenValue("abcd")).thenReturn(Optional.of(auth));
         List<Authorization> list = new ArrayList<>();
         list.add(auth);
-        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testClient"), any()))
+        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testclient"), any()))
                 .thenReturn(list);
 
         RegisteredClient registeredClient = RegisteredClient.withId("testClient").clientId("testClient")
@@ -390,7 +390,7 @@ class AuthorizationControllerTest {
         when(authorizationRepository.findByAccessTokenValue("abcd")).thenReturn(Optional.of(auth));
         List<Authorization> list = new ArrayList<>();
         list.add(auth);
-        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testClient"), any()))
+        when(authorizationRepository.findByPrincipalNameAndAccessTokenExpiresAt(eq("testclient"), any()))
                 .thenReturn(list);
 
         RegisteredClient registeredClient = RegisteredClient.withId("testClient").clientId("testClient")

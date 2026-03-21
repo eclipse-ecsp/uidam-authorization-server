@@ -34,6 +34,7 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.UserErrorResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
 import org.eclipse.ecsp.sql.multitenancy.TenantContext;
@@ -278,14 +279,22 @@ class UserManagementClientTest {
         when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
 
         when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
-        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.just(new String("")));
+        UserEventResponse mockResponse = UserEventResponse.builder()
+            .userStatus("ACTIVE")
+            .lockDurationMinutes(0)
+            .message("Event recorded successfully")
+            .build();
+        when(responseSpecMock.bodyToMono(UserEventResponse.class)).thenReturn(Mono.just(mockResponse));
 
         UserEvent userEvent = new UserEvent();
         userEvent.setType("Login_Attempt");
         userEvent.setResult("Success");
         userEvent.setMessage("login sucessfully!");
-        String response = userManagementClient.addUserEvent(userEvent, "6f452624-c4e3-40ff-ba29-fe9082705f50");
+        String userId = "6f452624-c4e3-40ff-ba29-fe9082705f50";
+        UserEventResponse response = userManagementClient.addUserEvent(userEvent, userId);
         assertNotNull(response);
+        assertEquals("ACTIVE", response.getUserStatus());
+        assertEquals(0, response.getLockDurationMinutes());
     }
 
     /**
@@ -306,7 +315,7 @@ class UserManagementClientTest {
         when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
 
         when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
-        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.error(new RuntimeException()));
+        when(responseSpecMock.bodyToMono(UserEventResponse.class)).thenReturn(Mono.error(new RuntimeException()));
 
         UserEvent userEvent = new UserEvent();
         userEvent.setType("Login_Attempt");
@@ -681,6 +690,283 @@ class UserManagementClientTest {
         OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.createFedratedUser(userRequest));
         assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+    }
+
+    @Test
+    void getUserDetailsByUsername_WebClientResponseExceptionWithIllegalStateOnErrorParsing() {
+        // Test lines 215-229: WebClientResponseException with IllegalStateException when parsing error response
+        String username = "testUser";
+        String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        // Create a WebClientResponseException that will throw IllegalStateException when parsing response body
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class))
+                .thenThrow(new IllegalStateException("Could not decode response body"));
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        assertNotNull(thrown.getError());
+    }
+
+    @Test
+    void getUserDetailsByUsername_GenericException() {
+        // Test lines 229+: Generic Exception handling
+        String username = "testUser";
+        String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(new IllegalArgumentException("Unexpected error")));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        assertEquals("server_error", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void sendUserResetPasswordNotification_WebClientResponseException() {
+        // Test lines 304-309: Password recovery notification exception handling
+        String username = "testUser";
+        String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        String responseBody = "Error processing password recovery";
+        WebClientResponseException wcException = WebClientResponseException.create(
+                HttpStatus.SC_INTERNAL_SERVER_ERROR, "Internal Server Error",
+                null, responseBody.getBytes(), null);
+        
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.toBodilessEntity())
+                .thenReturn(Mono.error(wcException));
+        
+        Exception thrown = assertThrows(Exception.class,
+                () -> userManagementClient.sendUserResetPasswordNotification(username, accountName));
+        
+        assertNotNull(thrown);
+    }
+
+    @Test
+    void extractMessage_WithValidInput() {
+        // Test lines 396-406: extractMessage method with valid input
+        final String username = "testUser";
+        final String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage(" Error ='{ Error ='password validation failed', parameters=test}");
+        
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        // handleUserFetchError returns server_error for BAD_REQUEST, not BAD_REQUEST itself
+        // extractMessage is only used in handleWebClientResponseException (for user creation), 
+        // not in handleUserFetchError (for user fetch)
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals(" Error ='{ Error ='password validation failed', parameters=test}", 
+                thrown.getError().getDescription());
+    }
+
+    @Test
+    void handleUserFetchError_NotFoundStatus() {
+        // Test lines 435-453: NOT_FOUND status handling
+        final String username = "nonExistentUser";
+        final String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setCode("RESOURCE_NOT_FOUND");
+        
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.NOT_FOUND);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        // handleUserFetchError returns server_error for NOT_FOUND if errorResponse has no message
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals("Unable to validate username", thrown.getError().getDescription());
+    }
+
+    @Test
+    void handleUserFetchError_MethodNotAllowedStatus() {
+        // Test lines 435-453: METHOD_NOT_ALLOWED status handling
+        String username = "testUser";
+        String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        // handleUserFetchError returns server_error for METHOD_NOT_ALLOWED with no message
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals("Unable to validate username", thrown.getError().getDescription());
+    }
+
+    @Test
+    void handleUserFetchError_ConflictStatus() {
+        // Test lines 435-453: CONFLICT status handling
+        String username = "testUser";
+        String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.CONFLICT);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        // handleUserFetchError returns server_error for CONFLICT with no message
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals("Unable to validate username", thrown.getError().getDescription());
+    }
+
+    @Test
+    void handleUserFetchError_BadRequestWithPasswordError() {
+        // Test lines 435-453: BAD_REQUEST with password error in message
+        final String username = "testUser";
+        final String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage(" Error ='{ Error ='password validation failed', parameters=test}");
+        
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        // handleUserFetchError returns server_error for BAD_REQUEST (this method doesn't parse password errors)
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals(" Error ='{ Error ='password validation failed', parameters=test}", 
+                thrown.getError().getDescription());
+    }
+
+    @Test
+    void handleUserFetchError_ServerError() {
+        // Test lines 435-453: Default server error handling
+        String username = "testUser";
+        String accountName = "testAccount";
+        
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+        
+        WebClientResponseException wcException = WebClientResponseException.create(
+                HttpStatus.SC_SERVICE_UNAVAILABLE, "Service Unavailable",
+                null, new byte[0], null);
+        
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+        
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername(username, accountName));
+        
+        assertNotNull(thrown);
+        assertEquals("server_error", thrown.getError().getErrorCode());
     }
 
 }

@@ -140,7 +140,7 @@ public class TenantConfigurationService {
      * @return the default tenant ID
      */
     public String getDefaultTenantId() {
-        return multiTenantProperties.getDefaultTenantId();
+        return defaultTenantId;
     }
     
 
