@@ -107,6 +107,9 @@ public class IgniteSecurityConfig {
     private static final String OAUTH2_AUTHORIZATION_PATTERN = "/*/oauth2/authorization/**";
     private static final String OAUTH2_LOGOUT_ENDPOINT = "/oauth2/logout";
     private static final String POST_METHOD = "POST";
+    
+    // CORS configuration constants
+    private static final long CORS_MAX_AGE_SECONDS = 3600L; // 1 hour preflight cache
 
     @Value("${server.servlet.session.timeout}")
     private String sessionTimeout;
@@ -121,7 +124,10 @@ public class IgniteSecurityConfig {
     private String corsAllowedMethods;
 
     @Value("${session.recreation.policy}")
-    private String sessionRecreationPolicy;   
+    private String sessionRecreationPolicy;
+    
+    @Value("${api.security.patterns:/*/self/**,/self/**,/*/admin/**,/admin/**}")
+    private String apiSecurityPatterns;
     
     private static final int INT_TWO = 2;
 
@@ -251,6 +257,56 @@ public class IgniteSecurityConfig {
                 this.tenantConfigurationService);
         http.addFilterAfter(tenantAwareAuthenticationFilter,
                 org.springframework.security.web.authentication.www.BasicAuthenticationFilter.class);
+        
+        return http.build();
+    }
+
+    /**
+     * Security filter chain for REST API endpoints (session management, etc.).
+     * This handles CORS for non-OAuth2 REST endpoints that perform custom JWT validation.
+     * 
+     * <p>These endpoints are publicly accessible at the Spring Security level (permitAll),
+     * but authentication is enforced through manual JWT token validation within the controller methods
+     * using {@link org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator}.
+     * 
+     * <p>CSRF protection is disabled as these are stateless REST APIs using Bearer token authentication.
+     * 
+     * <p>Order(2) ensures this runs after the OAuth2 security filter chain (Order 1).
+     *
+     * @param http HttpSecurity object for configuring web security
+     * @return Configured SecurityFilterChain for API endpoints
+     * @throws Exception If an error occurs during configuration
+     */
+    @Bean
+    @Order(2)
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
+        // Configure security matchers for REST API endpoints using configurable patterns
+        String[] patterns = Stream.of(apiSecurityPatterns.split(COMMA_DELIMITER))
+                .map(String::trim)
+                .toArray(String[]::new);
+        
+        http.securityMatchers(matchers -> matchers.requestMatchers(patterns));
+        
+        // Configure CORS using the same configuration as OAuth2 endpoints
+        http.cors(corsCustomizer -> corsCustomizer.configurationSource(request -> {
+            CorsConfiguration corsConfiguration = new CorsConfiguration();
+            corsConfiguration
+                    .setAllowedOriginPatterns(Stream.of(corsAllowedOriginPatterns.split(COMMA_DELIMITER)).toList());
+            corsConfiguration.setAllowedMethods(Stream.of(corsAllowedMethods.split(COMMA_DELIMITER)).toList());
+            corsConfiguration.setAllowedHeaders(List.of("*")); // Allow all headers for API endpoints
+            corsConfiguration.setAllowCredentials(true); // Allow credentials (cookies, authorization headers)
+            corsConfiguration.setMaxAge(CORS_MAX_AGE_SECONDS); // Cache preflight response for 1 hour
+            return corsConfiguration;
+        }));
+        
+        // Disable CSRF for REST API endpoints (stateless, token-based authentication)
+        http.csrf(csrf -> csrf.disable());
+        
+        // Allow all requests to these API endpoints without Spring Security authentication
+        // Authentication is handled manually via JWT token validation in the controller methods
+        http.authorizeHttpRequests(authorize -> authorize
+                .anyRequest().permitAll()
+        );
         
         return http.build();
     }
