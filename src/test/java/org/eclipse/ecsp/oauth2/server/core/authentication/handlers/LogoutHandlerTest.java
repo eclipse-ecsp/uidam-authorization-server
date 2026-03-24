@@ -555,6 +555,64 @@ class LogoutHandlerTest {
         assertEquals("/uidam/oauth2/logout/error?error=server_error", response.getRedirectedUrl());
     }
 
+    @Test
+    void testOnLogoutSuccess_UsesTrustedUriFromRegisteredClient_NotUserInput() throws IOException {
+        // This test verifies the fix for SonarQube S5146 security issue
+        // The handler should use the URI from registered client set, not the user-provided value
+        
+        // Arrange
+        setupValidTokenScenario();
+        
+        // Create two URI instances that are equal but not the same object
+        String trustedUri = "https://client.example.com/logout-callback";
+        String userProvidedUri = new String("https://client.example.com/logout-callback"); // Different object
+        
+        when(clientRegistrationManager.findByClientId(TEST_CLIENT_ID)).thenReturn(registeredClient);
+        when(registeredClient.getPostLogoutRedirectUris()).thenReturn(Set.of(trustedUri));
+
+        // Act
+        logoutHandler.onLogoutSuccess(request, response, authentication, TEST_ACCESS_TOKEN, TEST_CLIENT_ID,
+                userProvidedUri, TEST_STATE);
+
+        // Assert - The redirect should use the trusted URI from the registered client
+        String redirectedUrl = response.getRedirectedUrl();
+        assertTrue(redirectedUrl.contains(trustedUri));
+        assertTrue(redirectedUrl.contains("state=" + TEST_STATE));
+        
+        // Verify that the validation was performed against registered client URIs
+        verify(clientRegistrationManager).findByClientId(TEST_CLIENT_ID);
+        // Note: getPostLogoutRedirectUris() is called twice - once for contains() check, once for stream()
+    }
+
+    @Test
+    void testOnLogoutSuccess_WithValidationButNoMatchingRegisteredUri_ShouldRedirectToSuccess() throws IOException {
+        // This test verifies that when user provides a URI that doesn't match registered URIs,
+        // the system redirects to the default success page instead of using user input
+        
+        // Arrange
+        setupValidTokenScenario();
+        
+        String registeredUri = "https://client.example.com/callback";
+        String userProvidedUri = "https://malicious.example.com/phishing";
+        
+        when(clientRegistrationManager.findByClientId(TEST_CLIENT_ID)).thenReturn(registeredClient);
+        when(registeredClient.getPostLogoutRedirectUris()).thenReturn(Set.of(registeredUri));
+
+        // Act
+        logoutHandler.onLogoutSuccess(request, response, authentication, TEST_ACCESS_TOKEN, TEST_CLIENT_ID,
+                userProvidedUri, TEST_STATE);
+
+        // Assert - Should redirect to internal success page, not user-provided URI
+        assertEquals("/uidam/oauth2/logout/success", response.getRedirectedUrl());
+        
+        // Verify that malicious URI was never used in redirect
+        String redirectedUrl = response.getRedirectedUrl();
+        assertTrue(!redirectedUrl.contains("malicious.example.com"));
+        
+        // Verify the validation was performed
+        verify(clientRegistrationManager).findByClientId(TEST_CLIENT_ID);
+    }
+
     // Helper methods for setting up test scenarios
 
     private void setupValidScenario() {

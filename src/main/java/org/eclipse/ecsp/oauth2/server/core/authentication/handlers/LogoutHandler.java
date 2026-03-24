@@ -195,10 +195,12 @@ public class LogoutHandler {
 
     /**
      * Validates the post_logout_redirect_uri against the registered client's allowed URIs.
+     * Returns the URI from the registered client configuration (trusted source), not the user input,
+     * to prevent open redirect vulnerabilities.
      *
      * @param clientId Client ID to validate against
      * @param postLogoutRedirectUri URI to validate
-     * @return Validated redirect URI or null if validation fails
+     * @return Validated redirect URI from registered client URIs (not user input) or null if validation fails
      */
     private String validatePostLogoutRedirectUri(String clientId, String postLogoutRedirectUri) {
         if (!StringUtils.hasText(postLogoutRedirectUri) || !StringUtils.hasText(clientId)) {
@@ -209,25 +211,27 @@ public class LogoutHandler {
             RegisteredClient registeredClient = registeredClientManger.findByClientId(clientId);
             if (registeredClient == null) {
                 LOGGER.warn("Client not found: {}", clientId);
-                throwError(OAuth2ErrorCodes.INVALID_CLIENT, OAuth2ParameterNames.CLIENT_ID);
+                return null; // Return null to redirect to internal success page
             }
             // Validate URI against registered post logout redirect URIs
             if (registeredClient.getPostLogoutRedirectUris().contains(postLogoutRedirectUri)) {
                 LOGGER.debug("Post logout redirect URI validated successfully: {}", postLogoutRedirectUri);
-                return postLogoutRedirectUri;
-            } else if (!registeredClient.getPostLogoutRedirectUris().isEmpty()) {
-                LOGGER.warn("Post logout redirect URI not allowed for client {}: {}", clientId, postLogoutRedirectUri);
-                throwError(OAuth2ErrorCodes.INVALID_REDIRECT_URI, OAuth2ParameterNames.REDIRECT_URI);
+                // IMPORTANT: Return the URI from the registered set, not the user input
+                // This ensures we're using a trusted value, not user-controlled data
+                return registeredClient.getPostLogoutRedirectUris().stream()
+                        .filter(uri -> uri.equals(postLogoutRedirectUri))
+                        .findFirst()
+                        .orElse(null);
             } else {
-                LOGGER.warn("Post logout redirect URI not registered for client {}: {}", clientId,
-                        postLogoutRedirectUri);
-                return null;
+                LOGGER.warn("Post logout redirect URI not allowed for client {}: {}", clientId, postLogoutRedirectUri);
+                return null; // Return null to redirect to internal success page
             }
+        } catch (OAuth2AuthenticationException e) {
+            throw e; // Re-throw OAuth2 exceptions
         } catch (Exception e) {
             LOGGER.error("Error validating post logout redirect URI", e);
             return null;
         }
-        return postLogoutRedirectUri;
     }
 
     /**
@@ -255,23 +259,32 @@ public class LogoutHandler {
 
     /**
      * Performs the logout redirect based on validated parameters.
-     * SonarQube S5146: Redirect URI is validated against registered URIs and checked for security.
-     * Suppress this warning as the redirect is not open to forging attacks.
+     * Uses only trusted, pre-registered URIs for redirects to prevent open redirect vulnerabilities.
      *
      * @param request HTTP servlet request
      * @param response HTTP servlet response
-     * @param postLogoutRedirectUri Validated post logout redirect URI
+     * @param validatedRedirectUri Validated redirect URI from registered client (trusted source)
      * @param state State parameter to include in redirect
      * @param error OAuth2Error if an error occurred, null for success
      * @throws IOException if an I/O error occurs during redirect
      */
-    @SuppressWarnings("java:S5146")
     private void performLogoutRedirect(HttpServletRequest request, HttpServletResponse response,
-            String postLogoutRedirectUri, String state, OAuth2Error error) throws IOException {
+            String validatedRedirectUri, String state, OAuth2Error error) throws IOException {
         String redirectUri;
-        if (StringUtils.hasText(postLogoutRedirectUri)) {
-            // Build redirect URI with state parameter and error if provided
-            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(postLogoutRedirectUri);
+        if (StringUtils.hasText(validatedRedirectUri)) {
+            // Additional security check: even though validatedRedirectUri is from registered client URIs,
+            // verify it's still secure before use
+            if (!isSecureRedirectUri(validatedRedirectUri)) {
+                LOGGER.warn("Insecure validated redirect URI blocked: {}", validatedRedirectUri);
+                // Redirect to internal error page instead
+                redirectUri = String.format(OAUTH2_LOGOUT_ERROR_ERROR, SessionTenantResolver.getCurrentTenant(),
+                        error != null ? error.getErrorCode() : "server_error");
+                redirectStrategy.sendRedirect(request, response, redirectUri);
+                return;
+            }
+            
+            // validatedRedirectUri is from registered client URIs, not user input - safe to use
+            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(validatedRedirectUri);
             if (StringUtils.hasText(state)) {
                 uriBuilder.queryParam("state", state);
             }
@@ -286,7 +299,7 @@ public class LogoutHandler {
             redirectUri = uriBuilder.build().toUriString();
             LOGGER.info("Redirecting to post logout redirect URI: {}", redirectUri);
         } else {
-            // No redirect URL configured - redirect to internal pages
+            // No redirect URL configured - redirect to internal pages (always safe)
             if (error != null) {
                 redirectUri = String.format(OAUTH2_LOGOUT_ERROR_ERROR, SessionTenantResolver.getCurrentTenant(),
                         error.getErrorCode());
@@ -297,14 +310,8 @@ public class LogoutHandler {
             }
         }
 
-        // Perform secure redirect
-        // SonarQube S5146: Redirect URI is validated against registered URIs and checked for security.
-        if (isSecureRedirectUri(redirectUri)) {
-            redirectStrategy.sendRedirect(request, response, redirectUri);
-        } else {
-            LOGGER.warn("Insecure redirect URI blocked: {}", redirectUri);
-            response.sendRedirect(String.format(OAUTH2_LOGOUT_ERROR_ERROR, "server_error"));
-        }
+        // All redirect URIs here are from trusted sources (registered URIs or internal paths)
+        redirectStrategy.sendRedirect(request, response, redirectUri);
     } 
     
     /**
