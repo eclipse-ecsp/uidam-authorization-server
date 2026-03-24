@@ -199,8 +199,8 @@ public class LogoutHandler {
      * to prevent open redirect vulnerabilities.
      *
      * @param clientId Client ID to validate against
-     * @param postLogoutRedirectUri URI to validate
-     * @return Validated redirect URI from registered client URIs (not user input) or null if validation fails
+     * @param postLogoutRedirectUri URI to validate (user-provided, untrusted)
+     * @return Validated redirect URI from registered client URIs (trusted source) or null if validation fails
      */
     private String validatePostLogoutRedirectUri(String clientId, String postLogoutRedirectUri) {
         if (!StringUtils.hasText(postLogoutRedirectUri) || !StringUtils.hasText(clientId)) {
@@ -213,19 +213,21 @@ public class LogoutHandler {
                 LOGGER.warn("Client not found: {}", clientId);
                 return null; // Return null to redirect to internal success page
             }
-            // Validate URI against registered post logout redirect URIs
-            if (registeredClient.getPostLogoutRedirectUris().contains(postLogoutRedirectUri)) {
-                LOGGER.debug("Post logout redirect URI validated successfully: {}", postLogoutRedirectUri);
-                // IMPORTANT: Return the URI from the registered set, not the user input
-                // This ensures we're using a trusted value, not user-controlled data
-                return registeredClient.getPostLogoutRedirectUris().stream()
-                        .filter(uri -> uri.equals(postLogoutRedirectUri))
-                        .findFirst()
-                        .orElse(null);
-            } else {
-                LOGGER.warn("Post logout redirect URI not allowed for client {}: {}", clientId, postLogoutRedirectUri);
-                return null; // Return null to redirect to internal success page
+            
+            // IMPORTANT: Search through registered URIs (trusted source) to find a match
+            // Never use user input directly - only return values from the registered set
+            Set<String> registeredUris = registeredClient.getPostLogoutRedirectUris();
+            for (String trustedUri : registeredUris) {
+                if (trustedUri.equals(postLogoutRedirectUri)) {
+                    LOGGER.debug("Post logout redirect URI validated successfully: {}", trustedUri);
+                    // Return the trusted URI from the registered set, NOT the user input
+                    return trustedUri;
+                }
             }
+            
+            // No match found - user provided URI is not in the registered set
+            LOGGER.warn("Post logout redirect URI not allowed for client {}: {}", clientId, postLogoutRedirectUri);
+            return null; // Return null to redirect to internal success page
         } catch (OAuth2AuthenticationException e) {
             throw e; // Re-throw OAuth2 exceptions
         } catch (Exception e) {
