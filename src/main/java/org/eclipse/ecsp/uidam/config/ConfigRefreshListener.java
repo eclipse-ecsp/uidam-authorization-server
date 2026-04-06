@@ -142,37 +142,56 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         if (changedKeys == null || changedKeys.isEmpty()) {
             LOGGER.info("No configuration properties were changed.");
         } else {
-            LOGGER.info("Total properties changed: {}", changedKeys.size());
-            LOGGER.info("-----------------------------------------------------------------");
-            
-            // Check for tenant-specific changes first
-            checkTenantChanges(changedKeys);
-            
-            int index = 1;
-            for (String key : changedKeys) {
-                String oldValue = getPreviousValue(key);
-                String newValue = getCurrentValue(key);
-                
-                // Log the change with masking for sensitive properties
-                if (isSensitiveProperty(key)) {
-                    LOGGER.info("{}. Property: {} | Old Value: **** | New Value: ****", index++, key);
-                } else {
-                    LOGGER.info("{}. Property: {} | Old Value: {} | New Value: {}", 
-                               index++, key, 
-                               oldValue != null ? oldValue : TENANT_NOT_SET, 
-                               newValue != null ? newValue : TENANT_NOT_SET);
-                }
-                
-                // Update the cache only for tracked tenant properties
-                if (isTrackedProperty(key) && newValue != null) {
-                    previousPropertyValues.put(key, newValue);
-                }
-            }
-            
-            LOGGER.info("-----------------------------------------------------------------");
+            processChangedProperties(changedKeys);
         }
         
         LOGGER.info("==================================================================");
+    }
+    
+    /**
+     * Processes all changed properties and logs them.
+     *
+     * @param changedKeys the set of changed property keys
+     */
+    private void processChangedProperties(Set<String> changedKeys) {
+        LOGGER.info("Total properties changed: {}", changedKeys.size());
+        LOGGER.info("-----------------------------------------------------------------");
+        
+        // Check for tenant-specific changes first
+        checkTenantChanges(changedKeys);
+        
+        // Log individual property changes
+        logPropertyChanges(changedKeys);
+        
+        LOGGER.info("-----------------------------------------------------------------");
+    }
+    
+    /**
+     * Logs individual property changes with masking for sensitive properties.
+     *
+     * @param changedKeys the set of changed property keys
+     */
+    private void logPropertyChanges(Set<String> changedKeys) {
+        int index = 1;
+        for (String key : changedKeys) {
+            String oldValue = getPreviousValue(key);
+            String newValue = getCurrentValue(key);
+            
+            // Log the change with masking for sensitive properties
+            if (isSensitiveProperty(key)) {
+                LOGGER.info("{}. Property: {} | Old Value: **** | New Value: ****", index++, key);
+            } else {
+                LOGGER.info("{}. Property: {} | Old Value: {} | New Value: {}", 
+                           index++, key, 
+                           oldValue != null ? oldValue : TENANT_NOT_SET, 
+                           newValue != null ? newValue : TENANT_NOT_SET);
+            }
+            
+            // Update the cache only for tracked tenant properties
+            if (isTrackedProperty(key) && newValue != null) {
+                previousPropertyValues.put(key, newValue);
+            }
+        }
     }
     
     /**

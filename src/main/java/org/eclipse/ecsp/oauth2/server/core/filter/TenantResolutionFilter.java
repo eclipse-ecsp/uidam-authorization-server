@@ -695,33 +695,77 @@ public class TenantResolutionFilter implements Filter {
         };
 
         for (String wellKnownPath : wellKnownPaths) {
-            int wellKnownIndex = requestUri.indexOf(wellKnownPath);
-            if (wellKnownIndex != NOT_FOUND_INDEX) {
-                // Extract everything after the well-known path
-                String afterWellKnown = requestUri.substring(wellKnownIndex + wellKnownPath.length());
-                
-                // Remove trailing slashes and extract tenant ID (using safe string manipulation)
-                while (afterWellKnown.startsWith("/")) {
-                    afterWellKnown = afterWellKnown.substring(1);
-                }
-                while (afterWellKnown.endsWith("/")) {
-                    afterWellKnown = afterWellKnown.substring(0, afterWellKnown.length() - 1);
-                }
-                afterWellKnown = afterWellKnown.trim();
-                
-                if (StringUtils.hasText(afterWellKnown)) {
-                    // Take only the first segment as tenant ID (in case there are more path segments)
-                    String[] segments = afterWellKnown.split("/");
-                    String tenantId = segments[0];
-                    
-                    if (StringUtils.hasText(tenantId)) {
-                        LOGGER.debug("Extracted tenant '{}' from well-known postfix: {}", tenantId, requestUri);
-                        return tenantId;
-                    }
-                }
+            String tenantId = extractTenantFromPath(requestUri, wellKnownPath);
+            if (tenantId != null) {
+                return tenantId;
             }
         }
 
         return null;
+    }
+    
+    /**
+     * Extracts tenant ID from a specific well-known path.
+     *
+     * @param requestUri the request URI
+     * @param wellKnownPath the well-known path to search for
+     * @return the tenant ID if found, null otherwise
+     */
+    private String extractTenantFromPath(String requestUri, String wellKnownPath) {
+        int wellKnownIndex = requestUri.indexOf(wellKnownPath);
+        if (wellKnownIndex == NOT_FOUND_INDEX) {
+            return null;
+        }
+        
+        // Extract everything after the well-known path
+        String afterWellKnown = requestUri.substring(wellKnownIndex + wellKnownPath.length());
+        String normalizedPath = normalizePathSegment(afterWellKnown);
+        
+        if (!StringUtils.hasText(normalizedPath)) {
+            return null;
+        }
+        
+        // Take only the first segment as tenant ID (in case there are more path segments)
+        String tenantId = extractFirstSegment(normalizedPath);
+        
+        if (StringUtils.hasText(tenantId)) {
+            LOGGER.debug("Extracted tenant '{}' from well-known postfix: {}", tenantId, requestUri);
+            return tenantId;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Normalizes a path segment by removing leading/trailing slashes and trimming.
+     *
+     * @param path the path segment to normalize
+     * @return the normalized path segment
+     */
+    private String normalizePathSegment(String path) {
+        String normalized = path;
+        
+        // Remove leading slashes
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        
+        // Remove trailing slashes
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        
+        return normalized.trim();
+    }
+    
+    /**
+     * Extracts the first segment from a path string.
+     *
+     * @param path the path string
+     * @return the first segment
+     */
+    private String extractFirstSegment(String path) {
+        String[] segments = path.split("/");
+        return segments[0];
     }
 }
