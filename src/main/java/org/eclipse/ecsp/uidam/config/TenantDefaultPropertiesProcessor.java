@@ -401,6 +401,20 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
         }
         
         // Add generated properties to environment if any were created
+        updateRefreshedPropertySource(configurableEnvironment, generatedProperties);
+        
+        return failedTenants;
+    }
+    
+    /**
+     * Updates the property source with refreshed tenant properties.
+     * Removes old generated property source if it exists before adding new one.
+     *
+     * @param configurableEnvironment the Spring environment
+     * @param generatedProperties map of generated properties
+     */
+    private void updateRefreshedPropertySource(ConfigurableEnvironment configurableEnvironment,
+                                                Map<String, String> generatedProperties) {
         if (!generatedProperties.isEmpty()) {
             // Remove old generated property source if it exists
             if (configurableEnvironment.getPropertySources().contains(GENERATED_TENANT_PROPERTIES)) {
@@ -415,8 +429,6 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
         } else {
             LOGGER.info("No new properties needed for tenant refresh");
         }
-        
-        return failedTenants;
     }
     
     /**

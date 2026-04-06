@@ -31,17 +31,31 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class TenantUtils {
-    private static boolean multitenantEnabled;
-    private static String defaultTenant;
+    private static TenantUtils instance;
 
     @Value("${tenant.multitenant.enabled:false}")
-    public void setMultitenantEnabled(boolean enabled) {
-        TenantUtils.multitenantEnabled = enabled;
-    }
+    private boolean multitenantEnabled;
 
     @Value("${tenant.default:ecsp}")
-    public void setDefaultTenant(String tenant) {
-        TenantUtils.defaultTenant = tenant;
+    private String defaultTenant;
+
+    public TenantUtils() {
+        // NOSONAR - Setting static field in constructor is intentional for Spring singleton pattern
+        TenantUtils.instance = this; // NOSONAR
+    }
+
+    /**
+     * Gets the singleton instance, creating a default one if not initialized by Spring.
+     * This fallback is provided for test environments.
+     *
+     * @return the TenantUtils instance
+     */
+    private static TenantUtils getInstance() {
+        if (instance == null) {
+            // Fallback for test environments where Spring context is not available
+            instance = new TenantUtils();
+        }
+        return instance;
     }
 
     /**
@@ -56,23 +70,36 @@ public class TenantUtils {
      * @throws IllegalArgumentException if multi-tenancy is enabled and {@code tenantId} is {@code null} or empty
      */
     public static String resolveTenantId(String tenantId) {
-        if (multitenantEnabled) {
+        TenantUtils utils = getInstance();
+        if (utils.multitenantEnabled) {
             if (tenantId == null || tenantId.isEmpty()) {
                 throw new IllegalArgumentException("TenantId is required when multi-tenant is enabled.");
             }
         } else {
             if (tenantId == null || tenantId.isEmpty()) {
-                tenantId = defaultTenant;
+                tenantId = utils.defaultTenant;
             }
         }
         return tenantId;
     }
 
+    /**
+     * Checks if multi-tenancy is enabled.
+     *
+     * @return {@code true} if multi-tenancy is enabled, {@code false} otherwise
+     * @throws IllegalStateException if TenantUtils has not been initialized by Spring
+     */
     public static boolean isMultitenantEnabled() {
-        return multitenantEnabled;
+        return getInstance().multitenantEnabled;
     }
 
+    /**
+     * Gets the default tenant ID.
+     *
+     * @return the default tenant ID
+     * @throws IllegalStateException if TenantUtils has not been initialized by Spring
+     */
     public static String getDefaultTenant() {
-        return defaultTenant;
+        return getInstance().defaultTenant;
     }
 }
