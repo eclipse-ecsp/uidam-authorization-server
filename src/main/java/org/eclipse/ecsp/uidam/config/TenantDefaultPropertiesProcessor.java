@@ -70,9 +70,24 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
     private static final String TENANT_DEFAULT_PROPERTY = "tenant.default";
     private static final String TENANT_CONFIG_VALIDATION_ENABLED = "tenant.config.validation.enabled";
     private static final String TENANT_DBNAME_VALIDATION_PROPERTY = "uidam.tenant.config.dbname.validation";
+    private static final String GENERATED_TENANT_PROPERTIES = "generatedTenantProperties";
     private static final int MIN_LENGTH_FOR_MASKING = 8;
     private static final int MASK_PREFIX_LENGTH = 4;
     private static final int MASK_SUFFIX_LENGTH = 4;
+    
+    // Property suffix constants
+    private static final String JDBC_URL_PROPERTY = "jdbc-url";
+    private static final String USER_NAME_PROPERTY = "user-name";
+    private static final String PASSWORD_PROPERTY = "password";
+    private static final String KEY_STORE_JKS_ENCODED_CONTENT_PROPERTY = "key-store.key-store-jks-encoded-content";
+    private static final String KEY_STORE_PASSWORD_PROPERTY = "key-store.key-store-password";
+    private static final String KEY_ALIAS_PROPERTY = "key-store.key-alias";
+    private static final String KEY_TYPE_PROPERTY = "key-store.key-type";
+    private static final String CAPTCHA_SITE_KEY_PROPERTY = "captcha.recaptcha-key-site";
+    private static final String CAPTCHA_SECRET_KEY_PROPERTY = "captcha.recaptcha-key-secret";
+    
+    // Logging constants
+    private static final String NOT_SET = "NOT_SET";
     
     private Environment environment;
     private Map<String, String> defaultProperties;
@@ -198,7 +213,7 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
                                                       Map<String, String> generatedProperties) {
         Map<String, Object> propertyMap = new HashMap<>(generatedProperties);
         MapPropertySource generatedPropertySource = new MapPropertySource(
-            "generatedTenantProperties", propertyMap);
+            GENERATED_TENANT_PROPERTIES, propertyMap);
         configurableEnvironment.getPropertySources().addLast(generatedPropertySource);
         LOGGER.info("Added {} generated tenant properties to environment", generatedProperties.size());
     }
@@ -272,7 +287,7 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
     private String generateTenantValue(String tenantId, String propertySuffix, 
                                        String defaultValue, ConfigurableEnvironment environment) {
         // Special handling for JDBC URL - update database name with tenant ID
-        if (propertySuffix.equals("jdbc-url")) {
+        if (propertySuffix.equals(JDBC_URL_PROPERTY)) {
             return generateTenantJdbcUrl(tenantId, defaultValue, environment);
         }
         
@@ -320,7 +335,7 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
      * Checks if a property contains sensitive information that should not be logged.
      */
     private boolean isSensitiveProperty(String propertySuffix) {
-        return propertySuffix.contains("password") 
+        return propertySuffix.contains(PASSWORD_PROPERTY) 
                || propertySuffix.contains("secret") 
                || propertySuffix.contains("key")
                || propertySuffix.contains("salt");
@@ -388,13 +403,13 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
         // Add generated properties to environment if any were created
         if (!generatedProperties.isEmpty()) {
             // Remove old generated property source if it exists
-            if (configurableEnvironment.getPropertySources().contains("generatedTenantProperties")) {
-                configurableEnvironment.getPropertySources().remove("generatedTenantProperties");
+            if (configurableEnvironment.getPropertySources().contains(GENERATED_TENANT_PROPERTIES)) {
+                configurableEnvironment.getPropertySources().remove(GENERATED_TENANT_PROPERTIES);
             }
             
             Map<String, Object> propertyMap = new HashMap<>(generatedProperties);
             MapPropertySource generatedPropertySource = new MapPropertySource(
-                "generatedTenantProperties", propertyMap);
+                GENERATED_TENANT_PROPERTIES, propertyMap);
             configurableEnvironment.getPropertySources().addLast(generatedPropertySource);
             LOGGER.info("Refreshed {} tenant properties in environment", generatedProperties.size());
         } else {
@@ -433,25 +448,25 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
                 : (TENANT_PREFIX + tenantId + ".");
             
             // Validate database properties
-            validateProperty(environment, tenantPrefix + "jdbc-url", "jdbc-url", missingProperties);
-            validateProperty(environment, tenantPrefix + "user-name", "user-name", missingProperties);
-            validateProperty(environment, tenantPrefix + "password", "password", missingProperties);
+            validateProperty(environment, tenantPrefix + JDBC_URL_PROPERTY, JDBC_URL_PROPERTY, missingProperties);
+            validateProperty(environment, tenantPrefix + USER_NAME_PROPERTY, USER_NAME_PROPERTY, missingProperties);
+            validateProperty(environment, tenantPrefix + PASSWORD_PROPERTY, PASSWORD_PROPERTY, missingProperties);
             
             // Validate keystore properties
-            validateProperty(environment, tenantPrefix + "key-store.key-store-jks-encoded-content", 
-                            "key-store.key-store-jks-encoded-content", missingProperties);
-            validateProperty(environment, tenantPrefix + "key-store.key-store-password", 
-                            "key-store.key-store-password", missingProperties);
-            validateProperty(environment, tenantPrefix + "key-store.key-alias", 
-                            "key-store.key-alias", missingProperties);
-            validateProperty(environment, tenantPrefix + "key-store.key-type", 
-                            "key-store.key-type", missingProperties);
+            validateProperty(environment, tenantPrefix + KEY_STORE_JKS_ENCODED_CONTENT_PROPERTY, 
+                            KEY_STORE_JKS_ENCODED_CONTENT_PROPERTY, missingProperties);
+            validateProperty(environment, tenantPrefix + KEY_STORE_PASSWORD_PROPERTY, 
+                            KEY_STORE_PASSWORD_PROPERTY, missingProperties);
+            validateProperty(environment, tenantPrefix + KEY_ALIAS_PROPERTY, 
+                            KEY_ALIAS_PROPERTY, missingProperties);
+            validateProperty(environment, tenantPrefix + KEY_TYPE_PROPERTY, 
+                            KEY_TYPE_PROPERTY, missingProperties);
             
             // Validate captcha properties
-            validateProperty(environment, tenantPrefix + "captcha.recaptcha-key-site", 
-                            "captcha.recaptcha-key-site", missingProperties);
-            validateProperty(environment, tenantPrefix + "captcha.recaptcha-key-secret", 
-                            "captcha.recaptcha-key-secret", missingProperties);
+            validateProperty(environment, tenantPrefix + CAPTCHA_SITE_KEY_PROPERTY, 
+                            CAPTCHA_SITE_KEY_PROPERTY, missingProperties);
+            validateProperty(environment, tenantPrefix + CAPTCHA_SECRET_KEY_PROPERTY, 
+                            CAPTCHA_SECRET_KEY_PROPERTY, missingProperties);
             
             // Log validation results
             if (!missingProperties.isEmpty()) {
@@ -510,7 +525,7 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
         String tenantPrefix = isDefaultTenant 
             ? (DEFAULT_TENANT_PREFIX + tenantId + ".") 
             : (TENANT_PREFIX + tenantId + ".");
-        String jdbcUrl = environment.getProperty(tenantPrefix + "jdbc-url");
+        String jdbcUrl = environment.getProperty(tenantPrefix + JDBC_URL_PROPERTY);
         
         if (jdbcUrl == null || jdbcUrl.trim().isEmpty()) {
             LOGGER.info("JDBC URL not found for tenant [{}]. skipping database name validation.", tenantId);
@@ -559,37 +574,37 @@ public class TenantDefaultPropertiesProcessor implements BeanFactoryPostProcesso
             : (TENANT_PREFIX + tenantId + ".");
         
         // Log database properties
-        String jdbcUrl = environment.getProperty(tenantPrefix + "jdbc-url");
-        String username = environment.getProperty(tenantPrefix + "user-name");
-        String password = environment.getProperty(tenantPrefix + "password");
+        String jdbcUrl = environment.getProperty(tenantPrefix + JDBC_URL_PROPERTY);
+        String username = environment.getProperty(tenantPrefix + USER_NAME_PROPERTY);
+        String password = environment.getProperty(tenantPrefix + PASSWORD_PROPERTY);
         
         LOGGER.info("Tenant [{}] - Database properties - JDBC URL: {}, Username: {}, Password: {}", 
                     tenantId, 
-                    jdbcUrl != null ? jdbcUrl : "NOT_SET", 
-                    username != null ? username : "NOT_SET", 
-                    password != null && !password.isEmpty() ? "****" : "NOT_SET");
+                    jdbcUrl != null ? jdbcUrl : NOT_SET, 
+                    username != null ? username : NOT_SET, 
+                    password != null && !password.isEmpty() ? "****" : NOT_SET);
         
         // Log keystore properties
-        String keyAlias = environment.getProperty(tenantPrefix + "key-store.key-alias");
-        String keyType = environment.getProperty(tenantPrefix + "key-store.key-type");
-        String keyStorePassword = environment.getProperty(tenantPrefix + "key-store.key-store-password");
-        String keyStoreContent = environment.getProperty(tenantPrefix + "key-store.key-store-jks-encoded-content");
+        String keyAlias = environment.getProperty(tenantPrefix + KEY_ALIAS_PROPERTY);
+        String keyType = environment.getProperty(tenantPrefix + KEY_TYPE_PROPERTY);
+        String keyStorePassword = environment.getProperty(tenantPrefix + KEY_STORE_PASSWORD_PROPERTY);
+        String keyStoreContent = environment.getProperty(tenantPrefix + KEY_STORE_JKS_ENCODED_CONTENT_PROPERTY);
         
         LOGGER.info("Tenant [{}] - KeyStore properties - Alias: {}, Type: {}, Password: {}, Content: {}", 
                     tenantId,
-                    keyAlias != null ? keyAlias : "NOT_SET",
-                    keyType != null ? keyType : "NOT_SET",
-                    keyStorePassword != null && !keyStorePassword.isEmpty() ? "****" : "NOT_SET",
-                    !isNullOrEmpty(keyStoreContent) ? "SET" : "NOT_SET");
+                    keyAlias != null ? keyAlias : NOT_SET,
+                    keyType != null ? keyType : NOT_SET,
+                    keyStorePassword != null && !keyStorePassword.isEmpty() ? "****" : NOT_SET,
+                    !isNullOrEmpty(keyStoreContent) ? "SET" : NOT_SET);
         
         // Log captcha properties
-        String siteKey = environment.getProperty(tenantPrefix + "captcha.recaptcha-key-site");
-        String secretKey = environment.getProperty(tenantPrefix + "captcha.recaptcha-key-secret");
+        String siteKey = environment.getProperty(tenantPrefix + CAPTCHA_SITE_KEY_PROPERTY);
+        String secretKey = environment.getProperty(tenantPrefix + CAPTCHA_SECRET_KEY_PROPERTY);
         
         LOGGER.info("Tenant [{}] - Captcha properties - Site Key: {}, Secret Key: {}", 
                     tenantId,
-                    siteKey != null ? maskSensitiveValue(siteKey) : "NOT_SET",
-                    secretKey != null && !secretKey.isEmpty() ? "****" : "NOT_SET");
+                    siteKey != null ? maskSensitiveValue(siteKey) : NOT_SET,
+                    secretKey != null && !secretKey.isEmpty() ? "****" : NOT_SET);
     }
     
     /**

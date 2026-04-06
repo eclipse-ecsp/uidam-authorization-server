@@ -80,6 +80,7 @@ public class PasswordRecoveryController {
     private static final Logger LOGGER = LoggerFactory.getLogger(PasswordRecoveryController.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int ERROR_MESSAGE_KEY_LENGTH = 10;
+    private static final String ISSUER_PARAM = "issuer";
 
     private final TenantConfigurationService tenantConfigurationService;
     private final UserManagementClient userManagementClient;
@@ -199,7 +200,7 @@ public class PasswordRecoveryController {
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
         // expose tenantId for URL construction in form action
-        model.addAttribute("issuer", tenantId);
+        model.addAttribute(ISSUER_PARAM, tenantId);
         
         // Add UI configuration attributes
         uiAttributeUtils.addUiAttributes(model, tenantId);
@@ -244,7 +245,7 @@ public class PasswordRecoveryController {
         if (!password.equals(confirmPassword)) {
             errorResult.addObject(CAPTCHA_FIELD_ENABLED, true);
             errorResult.addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
-            errorResult.addObject("issuer", tenantId);
+            errorResult.addObject(ISSUER_PARAM, tenantId);
             // Add UI configuration attributes for password mismatch error
             uiAttributeUtils.addUiAttributes(model, tenantId);
             passwordPolicyService.setupPasswordPolicy(model, true);
@@ -260,7 +261,7 @@ public class PasswordRecoveryController {
                         .addObject(ERROR_LITERAL, getErrorMessage(ex))
                         .addObject(CAPTCHA_FIELD_ENABLED, true)
                         .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite())
-                        .addObject("issuer", tenantId);
+                        .addObject(ISSUER_PARAM, tenantId);
                 // Add UI configuration attributes for password change error
                 uiAttributeUtils.addUiAttributes(model, tenantId);
                 passwordPolicyService.setupPasswordPolicy(model, true);
@@ -271,7 +272,7 @@ public class PasswordRecoveryController {
                     .addObject(ERROR_LITERAL, getErrorMessage(ex))
                     .addObject(CAPTCHA_FIELD_ENABLED, true)
                     .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite())
-                    .addObject("issuer", tenantId);
+                    .addObject(ISSUER_PARAM, tenantId);
             // Add UI configuration attributes for forgot password error
             uiAttributeUtils.addUiAttributes(model, tenantId);
             forgotPasswordError.addAllObjects(model.asMap());
@@ -279,7 +280,7 @@ public class PasswordRecoveryController {
         }
         ModelAndView successResult = new ModelAndView(RECOVERY_PASSWORD_CHANGED)
                 .addObject(MESSAGE_LITERAL, IgniteOauth2CoreConstants.PASSWORD_UPDATED_SUCCESSFULLY)
-                .addObject("issuer", tenantId);
+                .addObject(ISSUER_PARAM, tenantId);
         // Add UI configuration attributes for password success page
         uiAttributeUtils.addUiAttributes(model, tenantId);
         successResult.addAllObjects(model.asMap());
@@ -330,7 +331,7 @@ public class PasswordRecoveryController {
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
         model.addAttribute(ERROR_LITERAL, IgniteOauth2CoreConstants.USER_DETAILS_NOT_FOUND);
-        model.addAttribute("issuer", tenantId);
+        model.addAttribute(ISSUER_PARAM, tenantId);
         // Add UI configuration attributes
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return new ModelAndView(RECOVERY_FORGOT_PASSWORD);
@@ -350,7 +351,7 @@ public class PasswordRecoveryController {
         String tenantId = TenantContext.getCurrentTenant();
         
         model.addAttribute(ERROR_LITERAL, IgniteOauth2CoreConstants.INVALID_SECRET_PROVIDED);
-        model.addAttribute("issuer", tenantId);
+        model.addAttribute(ISSUER_PARAM, tenantId);
         // Add UI configuration attributes
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return new ModelAndView(RECOVERY_INV_SECRET);
@@ -373,7 +374,7 @@ public class PasswordRecoveryController {
                 .addObject(ERROR_LITERAL, IgniteOauth2CoreConstants.PASSWORD_RECOVERY_EMAIL_SENT_FAILURE)
                 .addObject(CAPTCHA_FIELD_ENABLED, true)
                 .addObject(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite())
-                .addObject("issuer", tenantId);
+                .addObject(ISSUER_PARAM, tenantId);
         // Add UI configuration attributes
         uiAttributeUtils.addUiAttributes(model, tenantId);
         errorResult.addAllObjects(model.asMap());
