@@ -107,6 +107,7 @@ public class IgniteSecurityConfig {
     private static final String OAUTH2_AUTHORIZATION_PATTERN = "/*/oauth2/authorization/**";
     private static final String OAUTH2_LOGOUT_ENDPOINT = "/oauth2/logout";
     private static final String POST_METHOD = "POST";
+    private static final String ISSUER_PARAM = "issuer";
     
     // CORS configuration constants
     private static final long CORS_MAX_AGE_SECONDS = 3600L; // 1 hour preflight cache
@@ -519,7 +520,7 @@ public class IgniteSecurityConfig {
             params.forEach(builder::queryParam);
             // Optionally, add issuerPrefix as a parameter
             if (!issuerPrefix.isEmpty()) {
-                builder.queryParam("issuer", issuerPrefix.substring(1));
+                builder.queryParam(ISSUER_PARAM, issuerPrefix.substring(1));
             }
             String redirectUrl = builder.build().toUriString();
             response.sendRedirect(redirectUrl);
@@ -540,13 +541,12 @@ public class IgniteSecurityConfig {
             if (session != null) {
                 request.getSession().setAttribute(WebAttributes.AUTHENTICATION_EXCEPTION, exception);
             }
-            
-            String errorUrl = "/" + request.getParameter("issuer") + LOGIN_FAILURE_HANDLER
+            String errorUrl = "/" + request.getParameter(ISSUER_PARAM) + LOGIN_FAILURE_HANDLER
                     + "&response_type=" + request.getParameter("response_type")
                     + "&client_id=" + request.getParameter("client_id")
                     + "&scope=" + request.getParameter("scope")
                     + "&redirect_uri=" + request.getParameter("redirect_uri")
-                    + "&issuer=" + request.getParameter("issuer");
+                    + "&issuer=" + request.getParameter(ISSUER_PARAM);
             response.sendRedirect(errorUrl);
         };
         

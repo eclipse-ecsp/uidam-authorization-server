@@ -69,7 +69,10 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
     private static final String TENANT_IDS_KEY = "tenant.ids";
     private static final String DEFAULT_TENANT_KEY = "tenant.default-tenant-id";
     private static final String MULTITENANCY_ENABLED_KEY = "tenant.multitenant.enabled";
-    
+    private static final String TENANT_PROFILE_PREFIX = "tenants.profile.";
+    private static final String TENANT_PASSWORD_KEY = "password";
+    private static final String TENANT_NOT_SET = "NOT_SET";
+
     // Constants for tenant property parsing
     private static final int TENANT_PROPERTY_MIN_PARTS = 3;
     private static final int TENANT_ID_PART_INDEX = 2;
@@ -105,13 +108,13 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         String currentTenantIds = getCurrentValue(TENANT_IDS_KEY);
         if (currentTenantIds != null) {
             previousPropertyValues.put(TENANT_IDS_KEY, currentTenantIds);
-            LOGGER.info("Initialized property cache: {} = {}", TENANT_IDS_KEY, currentTenantIds);
+            LOGGER.info("Initialized property cache startup: {} = {}", TENANT_IDS_KEY, currentTenantIds);
         }
         
         String currentDefaultTenant = getCurrentValue(DEFAULT_TENANT_KEY);
         if (currentDefaultTenant != null) {
             previousPropertyValues.put(DEFAULT_TENANT_KEY, currentDefaultTenant);
-            LOGGER.info("Initialized property cache: {} = {}", DEFAULT_TENANT_KEY, currentDefaultTenant);
+            LOGGER.info("Initialized property cache startup : {} = {}", DEFAULT_TENANT_KEY, currentDefaultTenant);
         }
         
         String currentMultitenancyEnabled = getCurrentValue(MULTITENANCY_ENABLED_KEY);
@@ -132,44 +135,63 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         final Set<String> changedKeys = event.getKeys();
         String timestamp = LocalDateTime.now().format(DATE_FORMATTER);
         
-        LOGGER.info("=================================================================");
+        LOGGER.info("================================================================");
         LOGGER.info("Configuration Refresh Event Detected at {}", timestamp);
         LOGGER.info("=================================================================");
         
         if (changedKeys == null || changedKeys.isEmpty()) {
             LOGGER.info("No configuration properties were changed.");
         } else {
-            LOGGER.info("Total properties changed: {}", changedKeys.size());
-            LOGGER.info("-----------------------------------------------------------------");
-            
-            // Check for tenant-specific changes first
-            checkTenantChanges(changedKeys);
-            
-            int index = 1;
-            for (String key : changedKeys) {
-                String oldValue = getPreviousValue(key);
-                String newValue = getCurrentValue(key);
-                
-                // Log the change with masking for sensitive properties
-                if (isSensitiveProperty(key)) {
-                    LOGGER.info("{}. Property: {} | Old Value: **** | New Value: ****", index++, key);
-                } else {
-                    LOGGER.info("{}. Property: {} | Old Value: {} | New Value: {}", 
-                               index++, key, 
-                               oldValue != null ? oldValue : "NOT_SET", 
-                               newValue != null ? newValue : "NOT_SET");
-                }
-                
-                // Update the cache only for tracked tenant properties
-                if (isTrackedProperty(key) && newValue != null) {
-                    previousPropertyValues.put(key, newValue);
-                }
-            }
-            
-            LOGGER.info("-----------------------------------------------------------------");
+            processChangedProperties(changedKeys);
         }
         
-        LOGGER.info("=================================================================");
+        LOGGER.info("==================================================================");
+    }
+    
+    /**
+     * Processes all changed properties and logs them.
+     *
+     * @param changedKeys the set of changed property keys
+     */
+    private void processChangedProperties(Set<String> changedKeys) {
+        LOGGER.info("Total properties changed: {}", changedKeys.size());
+        LOGGER.info("-----------------------------------------------------------------");
+        
+        // Check for tenant-specific changes first
+        checkTenantChanges(changedKeys);
+        
+        // Log individual property changes
+        logPropertyChanges(changedKeys);
+        
+        LOGGER.info("-----------------------------------------------------------------");
+    }
+    
+    /**
+     * Logs individual property changes with masking for sensitive properties.
+     *
+     * @param changedKeys the set of changed property keys
+     */
+    private void logPropertyChanges(Set<String> changedKeys) {
+        int index = 1;
+        for (String key : changedKeys) {
+            String oldValue = getPreviousValue(key);
+            String newValue = getCurrentValue(key);
+            
+            // Log the change with masking for sensitive properties
+            if (isSensitiveProperty(key)) {
+                LOGGER.info("{}. Property: {} | Old Value: **** | New Value: ****", index++, key);
+            } else {
+                LOGGER.info("{}. Property: {} | Old Value: {} | New Value: {}", 
+                           index++, key, 
+                           oldValue != null ? oldValue : TENANT_NOT_SET, 
+                           newValue != null ? newValue : TENANT_NOT_SET);
+            }
+            
+            // Update the cache only for tracked tenant properties
+            if (isTrackedProperty(key) && newValue != null) {
+                previousPropertyValues.put(key, newValue);
+            }
+        }
     }
     
     /**
@@ -283,7 +305,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         
         // Check if any tenant-specific properties have changed
         for (String key : changedKeys) {
-            if (key.startsWith("tenants.profile.")) {
+            if (key.startsWith(TENANT_PROFILE_PREFIX)) {
                 // Extract tenant ID from property key
                 // Format: tenants.profile.{tenantId}.{property}
                 String[] parts = key.split("\\.");
@@ -340,7 +362,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
      * @return TenantDatabaseProperties with values from environment, or null if required properties are missing
      */
     private TenantDatabaseProperties buildTenantDatabaseProperties(String tenantId) {
-        String prefix = "tenants.profile." + tenantId + ".";
+        String prefix = TENANT_PROFILE_PREFIX + tenantId + ".";
         
         // Read JDBC URL (required)
         String jdbcUrl = environment.getProperty(prefix + "jdbc-url");
@@ -357,7 +379,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         }
         
         // Read password (required)
-        String password = environment.getProperty(prefix + "password");
+        String password = environment.getProperty(prefix + TENANT_PASSWORD_KEY);
         if (password == null || password.trim().isEmpty()) {
             LOGGER.error("Missing required property: {}password for tenant: {}", prefix, tenantId);
             return null;
@@ -555,7 +577,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         }
         
         String lowerKey = key.toLowerCase();
-        return lowerKey.contains("password") 
+        return lowerKey.contains(TENANT_PASSWORD_KEY) 
             || lowerKey.contains("secret") 
             || lowerKey.contains("key") 
             || lowerKey.contains("token")
@@ -582,7 +604,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         
         // Check if any tenant-specific properties have changed
         for (String key : changedKeys) {
-            if (key.startsWith("tenants.profile.")) {
+            if (key.startsWith(TENANT_PROFILE_PREFIX)) {
                 // Extract tenant ID from property key
                 // Format: tenants.profile.{tenantId}.{property}
                 String[] parts = key.split("\\.");
@@ -652,7 +674,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         final Set<String> databaseProperties = Set.of(
             "jdbc-url",
             "user-name", 
-            "password",
+            TENANT_PASSWORD_KEY,
             "driver-class-name",
             // Connection pool properties
             "min-pool-size",
@@ -682,7 +704,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         LOGGER.info("Processing tenant property update for: {}", tenantId);
         
         // Identify which specific properties changed for this tenant
-        String propertyPrefix = "tenants.profile." + tenantId + ".";
+        String propertyPrefix = TENANT_PROFILE_PREFIX + tenantId + ".";
         Set<String> changedTenantProperties = changedKeys.stream()
             .filter(key -> key.startsWith(propertyPrefix))
             .map(key -> key.substring(propertyPrefix.length()))
