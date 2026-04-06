@@ -114,7 +114,7 @@ public class ConfigRefreshListener implements ApplicationListener<EnvironmentCha
         String currentDefaultTenant = getCurrentValue(DEFAULT_TENANT_KEY);
         if (currentDefaultTenant != null) {
             previousPropertyValues.put(DEFAULT_TENANT_KEY, currentDefaultTenant);
-            LOGGER.info("Initialized property cache startup default: {} = {}", DEFAULT_TENANT_KEY, currentDefaultTenant);
+            LOGGER.info("Initialized property cache startup : {} = {}", DEFAULT_TENANT_KEY, currentDefaultTenant);
         }
         
         String currentMultitenancyEnabled = getCurrentValue(MULTITENANCY_ENABLED_KEY);
