@@ -128,7 +128,7 @@ public class PasswordRecoveryController {
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
         model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
-        model.addAttribute("issuer", tenantId);
+        model.addAttribute(ISSUER_PARAM, tenantId);
         uiAttributeUtils.addUiAttributes(model, tenantId);
         return RECOVERY_FORGOT_PASSWORD;
     }
