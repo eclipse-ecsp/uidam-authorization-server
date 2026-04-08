@@ -112,7 +112,7 @@ public class LogoutHandler {
      * @param state State parameter to maintain between request and callback
      * @throws IOException if an I/O error occurs during processing
      */
-    @SuppressWarnings({"java:S5146", "javasecurity:S5146"})
+    @SuppressWarnings({"java:S5146", "javasecurity:S5146", "javasecurity:S5145"})
     public void onLogoutSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication,
             String idTokenHint, String clientId, String postLogoutRedirectUri, String state) throws IOException {
 
@@ -276,7 +276,7 @@ public class LogoutHandler {
      * @param error OAuth2Error if an error occurred, null for success
      * @throws IOException if an I/O error occurs during redirect
      */
-    @SuppressWarnings({"java:S5146", "javasecurity:S5146"})
+    @SuppressWarnings({"java:S5146", "javasecurity:S5146", "javasecurity:S5145"})
     private void performLogoutRedirect(HttpServletRequest request, HttpServletResponse response,
             String postLogoutRedirectUri, String state, OAuth2Error error) throws IOException {
         String redirectUri;

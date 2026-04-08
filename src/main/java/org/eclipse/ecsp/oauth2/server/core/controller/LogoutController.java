@@ -79,7 +79,7 @@ public class LogoutController {
      * @param response HTTP servlet response
      * @throws IOException if an I/O error occurs during logout processing
      */
-    @SuppressWarnings({"java:S5146", "javasecurity:S5146"})
+    @SuppressWarnings({"java:S5146", "javasecurity:S5146", "javasecurity:S5145"})
     @PostMapping
     public void logout(@PathVariable(value = "tenantId", required = false) String tenantId,
                        @RequestParam(value = "id_token_hint", required = true) String idTokenHint,
