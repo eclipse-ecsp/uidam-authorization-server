@@ -278,7 +278,9 @@ public class IgniteSecurityConfig {
      * @return Configured SecurityFilterChain for API endpoints
      * @throws Exception If an error occurs during configuration
      */
-    @SuppressWarnings("java:S4502") // CSRF protection intentionally disabled - stateless REST APIs using Bearer token authentication are not vulnerable to CSRF
+    // S4502: CSRF protection intentionally disabled - stateless REST APIs
+    // using Bearer token authentication are not vulnerable to CSRF
+    @SuppressWarnings("java:S4502")
     @Bean
     @Order(2)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
