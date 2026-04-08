@@ -43,6 +43,7 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -484,7 +485,7 @@ class SessionManagementControllerTest {
                 .build();
         
         when(sessionManagementService.getActiveSessionsForUser(
-                eq(USERNAME), eq("valid-jwt-token"), anyString()))
+                eq(USERNAME), eq("valid-jwt-token"), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
@@ -508,7 +509,7 @@ class SessionManagementControllerTest {
                 .message("Sessions invalidated successfully")
                 .build();
         
-        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), anyString()))
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
@@ -540,7 +541,7 @@ class SessionManagementControllerTest {
                 .username(USERNAME)
                 .build();
         
-        when(sessionManagementService.getActiveSessionsForUser(eq(USERNAME), isNull(), anyString()))
+        when(sessionManagementService.getActiveSessionsForUser(eq(USERNAME), isNull(), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
@@ -565,7 +566,7 @@ class SessionManagementControllerTest {
                 .message("Sessions invalidated successfully")
                 .build();
         
-        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), anyString()))
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
