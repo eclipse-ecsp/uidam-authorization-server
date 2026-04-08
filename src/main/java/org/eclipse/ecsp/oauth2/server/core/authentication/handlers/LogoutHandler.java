@@ -116,8 +116,8 @@ public class LogoutHandler {
     public void onLogoutSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication,
             String idTokenHint, String clientId, String postLogoutRedirectUri, String state) throws IOException {
 
-        LOGGER.info("Processing OIDC logout - clientId: {}, postLogoutRedirectUri: {}", clientId,
-                postLogoutRedirectUri);
+        LOGGER.info("Processing OIDC logout - clientId present: {}, postLogoutRedirectUri present: {}",
+                StringUtils.hasText(clientId), StringUtils.hasText(postLogoutRedirectUri));
 
         String sessionId = request.getSession(false) != null ? request.getSession().getId() : null;
 
@@ -190,7 +190,7 @@ public class LogoutHandler {
         // Revoke access token
         if (authorization.getAccessToken() != null) {
             authorizationService.revokenTokenByPrincipalAndClientId(authorization.getPrincipalName(), clientId);
-            LOGGER.debug("Access token revoked for client: {}", clientId);
+            LOGGER.debug("Access token revoked for the associated client");
         }
         
         return authorization;
@@ -212,7 +212,7 @@ public class LogoutHandler {
         try {
             RegisteredClient registeredClient = registeredClientManger.findByClientId(clientId);
             if (registeredClient == null) {
-                LOGGER.warn("Client not found: {}", clientId);
+                LOGGER.warn("Client not found for the provided clientId");
                 throwError(OAuth2ErrorCodes.INVALID_CLIENT, OAuth2ParameterNames.CLIENT_ID);
             }
             // Validate URI against registered post logout redirect URIs
@@ -228,11 +228,10 @@ public class LogoutHandler {
                 LOGGER.debug("Post logout redirect URI validated successfully: {}", trustedUri);
                 return trustedUri;
             } else if (!registeredUris.isEmpty()) {
-                LOGGER.warn("Post logout redirect URI not allowed for client {}: {}", clientId, postLogoutRedirectUri);
+                LOGGER.warn("Post logout redirect URI not allowed for the provided client");
                 throwError(OAuth2ErrorCodes.INVALID_REDIRECT_URI, OAuth2ParameterNames.REDIRECT_URI);
             } else {
-                LOGGER.warn("Post logout redirect URI not registered for client {}: {}", clientId,
-                        postLogoutRedirectUri);
+                LOGGER.warn("Post logout redirect URI not registered for the provided client");
                 return null;
             }
         } catch (Exception e) {
@@ -298,7 +297,7 @@ public class LogoutHandler {
                 }
             }
             redirectUri = uriBuilder.build().toUriString();
-            LOGGER.info("Redirecting to post logout redirect URI: {}", redirectUri);
+            LOGGER.info("Redirecting to validated post logout redirect URI");
         } else {
             // No redirect URL configured - redirect to internal pages
             String safeTenant = sanitizeTenantId(SessionTenantResolver.getCurrentTenant());
@@ -317,7 +316,7 @@ public class LogoutHandler {
         if (isSecureRedirectUri(redirectUri)) {
             redirectStrategy.sendRedirect(request, response, redirectUri);
         } else {
-            LOGGER.warn("Insecure redirect URI blocked: {}", redirectUri);
+            LOGGER.warn("Insecure redirect URI blocked during logout");
             String safeTenantFallback = sanitizeTenantId(SessionTenantResolver.getCurrentTenant());
             String safeErrorUri = String.format(OAUTH2_LOGOUT_ERROR_ERROR,
                     safeTenantFallback, OAuth2ErrorCodes.SERVER_ERROR);
@@ -358,7 +357,7 @@ public class LogoutHandler {
                     || (redirectUri.startsWith("http://") && uri.getHost() != null
                             && whitelistedCustomHosts.contains(uri.getHost()));
         } catch (Exception e) {
-            LOGGER.warn("Invalid redirect URI format: {}", redirectUri);
+            LOGGER.warn("Invalid redirect URI format detected");
             return false;
         }
     }
