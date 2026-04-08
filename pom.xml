@@ -140,7 +140,7 @@
 	<dependency>
 	    <groupId>org.springframework.cloud</groupId>
 	    <artifactId>spring-cloud-starter-config</artifactId>
-	    <version>4.3.2</version>
+	    <version>5.0.2</version>
 	</dependency>
         <!--required for idp integration-->
         <dependency>
