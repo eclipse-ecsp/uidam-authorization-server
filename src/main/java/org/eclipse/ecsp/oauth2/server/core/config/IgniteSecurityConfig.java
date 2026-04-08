@@ -322,7 +322,10 @@ public class IgniteSecurityConfig {
      * @param http HttpSecurity object used for configuring web based security for specific http requests.
      * @throws Exception May throw an exception if there's an error during the configuration.
      */
-    @SuppressWarnings("java:S4502") // CSRF protection intentionally disabled for OAuth2 logout endpoints
+    // S4502: CSRF selectively disabled for OAuth2 logout endpoints
+    // S3330: HttpOnly=false is required for CookieCsrfTokenRepository so
+    // JavaScript can read the CSRF token and include it in AJAX requests
+    @SuppressWarnings({"java:S4502", "java:S3330"})
     private void setSecurityMachers(HttpSecurity http) throws Exception {
         // Configure security matchers for ALL OAuth2 patterns (authorization server + external IDP)
         http.securityMatchers(matchers -> matchers.requestMatchers(
