@@ -74,6 +74,33 @@ from the command line interface.
    2. Create schema - CREATE SCHEMA IF NOT EXISTS uidam;
 5. When the application is run, Liquibase will take care of creating tables in the schema and populating with default data.
 
+### JKS Generation Steps
+* Make sure you have Java installed in your system
+* Open CMD
+* Go to java JAVA_INSTALLATION_FOLDER\bin
+* Use the following command:
+   `keytool -genkey -alias <alias_name> -keyalg RSA -keypass <key-password> -storepass <store-password> -keystore <full path where jks to be stored along with jks file name>.jks -validity <validity period in days> -keysize  4096`
+* Add required details
+* Jks file would be created
+* Encoded jks has to be used in uidam chart, so use the following command to generate the same
+   To encode jks -> `cat <jks-file-name>.jks | base64 -w 0`
+* Update encrypted value in values.yaml (`jks_file`) of uidam-authorization-server charts.
+  ex: Source of values.yaml - jks_file
+* Along with jks, update the chart with jks alias (`values.yaml -> keyAlias`) and jks password (`values.yaml -> keystorePassword`).
+
+### Generate Public Key
+* Create the public.cert using
+     `keytool -export -alias <alias_name> -keystore <jks file name>.jks -rfc -file <public-key-cert-file-name>.cert`
+* Use this command to get certificate details:
+     `keytool -list -rfc -keystore <jks file name>.jks -alias <alias_name> -storepass <store-password>`
+* Create pem file from cert using the following command
+     `openssl x509 -in< public-key-cert-file-name>.cert -out <public-key-pem-file-name>.pem`
+* To get public key from pem, use below:
+     `openssl x509 -pubkey -noout -in public-key-pem-file-name>.pem`
+* This public key needs to be updated in UIDAM Authorization server charts values.yaml (`uidam_pub`)
+* This pem file would need to be updated in api gateway charts and hivemq charts for token validation.
+
+
 #### Build
 
 Run mvn clean install
@@ -170,33 +197,6 @@ https://localhost:9443/oauth2/authorize?response_type=code&client_id=<CLIENT_ID>
 ```curl -k --silent --location --request POST 'https://localhost:9443/oauth2/token' --header 'Content-Type: application/x-www-form-urlencoded' --header 'Authorization: Basic <BASE64_ENCODED_CLIENT_ID_CLIENT_SECRET>' --data-urlencode 'grant_type=refresh_token' --data-urlencode 'scopes=<CLIENT_SCOPES>' --data-urlencode 'refresh_token=<REFRESH_TOKEN>'```
 
 Note: Replace the placeholders with actual values. The above shared curls are for localhost, please replace "localhost" with the actual server URL.
-
-### JKS Generation Steps
-* Make sure you have Java installed in your system
-* Open CMD
-* Go to java JAVA_INSTALLATION_FOLDER\bin
-* Use the following command:
-   `keytool -genkey -alias <alias_name> -keyalg RSA -keypass <key-password> -storepass <store-password> -keystore <full path where jks to be stored along with jks file name>.jks -validity <validity period in days> -keysize  4096`
-* Add required details
-* Jks file would be created
-* Encoded jks has to be used in uidam chart, so use the following command to generate the same
-   To encode jks -> `cat <jks-file-name>.jks | base64 -w 0`
-* Update encrypted value in values.yaml (`jks_file`) of uidam-authorization-server charts.
-  ex: Source of values.yaml - jks_file
-* Along with jks, update the chart with jks alias (`values.yaml -> keyAlias`) and jks password (`values.yaml -> keystorePassword`).
-
-#### Generate Public Key
-* Create the public.cert using
-     `keytool -export -alias <alias_name> -keystore <jks file name>.jks -rfc -file <public-key-cert-file-name>.cert`
-* Use this command to get certificate details:
-     `keytool -list -rfc -keystore <jks file name>.jks -alias <alias_name> -storepass <store-password>`
-* Create pem file from cert using the following command
-     `openssl x509 -in< public-key-cert-file-name>.cert -out <public-key-pem-file-name>.pem`
-* To get public key from pem, use below:
-     `openssl x509 -pubkey -noout -in public-key-pem-file-name>.pem`
-* This public key needs to be updated in UIDAM Authorization server charts values.yaml (`uidam_pub`)
-* This pem file would need to be updated in api gateway charts and hivemq charts for token validation.
-
   
 #### Glossary
 * CLIENT_SCOPES - Space separated scopes for the registered client like openid SelfManage
