@@ -1,9 +1,5 @@
 # UIDAM Authorization Server – Properties Reference
 
-> **Generated:** 2026-04-12  
-> **Component:** `uidam-authorization-server`  
-> **Source files:** `src/main/resources/application.properties`, `tenant-default.properties`, `tenant-<TENANT_ID>.properties`
-
 ---
 
 ## Table of Contents
