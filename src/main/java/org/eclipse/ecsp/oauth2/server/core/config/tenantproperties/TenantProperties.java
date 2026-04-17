@@ -18,10 +18,10 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
-import javax.annotation.PostConstruct;
 
 import java.util.Arrays;
 import java.util.HashMap;

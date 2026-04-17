@@ -49,7 +49,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.util.Assert;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -259,7 +258,7 @@ class UserManagementClientTest {
         when(responseSpecMock.bodyToMono(UserDetailsResponse.class)).thenReturn(Mono.error(new RuntimeException()));
         Exception thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.getUserDetailsByUsername("testUser", "testAccount"));
-        assertEquals("Unable to validate " + OAuth2ParameterNames.USERNAME, thrown.getMessage());
+        assertEquals("Unable to validate username", thrown.getMessage());
     }
 
     /**

@@ -119,11 +119,9 @@ class ExceptionControllerAdviceTest {
 
     @Test
     void testHttpMessageNotReadableExceptionHandler() {
-        // Create a simpler exception to avoid deprecated constructor
         RuntimeException cause = new RuntimeException("test IO exception");
-        @SuppressWarnings("deprecation")
         HttpMessageNotReadableException exception = new HttpMessageNotReadableException(
-                "test message", cause);
+                "test message", cause, null);
 
         ResponseEntity<BaseRepresentation> response = exceptionControllerAdvice.exceptionHandler(exception);
 

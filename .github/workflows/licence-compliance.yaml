@@ -19,6 +19,8 @@ jobs:
     uses: eclipse-ecsp/.github/.github/workflows/workflow-licences-analysis.yml@main
     name: Analyse Licences
     with:
+      java_version: '25'
+      java_distribution: 'temurin'
       create-review: true
     secrets:
       token: ${{ secrets.GITLAB_API_TOKEN }}

@@ -21,7 +21,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.eclipse.ecsp</groupId>
     <artifactId>uidam-authorization-server</artifactId>
-    <version>1.4.1</version>
+    <version>1.4.1.SPRINGUPGRADE</version>
     <packaging>jar</packaging>
     <name>uidam-authorization-server</name>
     <description>Project for Authorization Server</description>
@@ -65,19 +65,20 @@
     </organization>
 
     <properties>
-        <java.version>17</java.version>
+        <java.version>25</java.version>
         <maven.compiler.parameters>true</maven.compiler.parameters>
-        <spring.version>3.5.13</spring.version>
+        <spring.version>4.0.5</spring.version>
         <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
-        <jacoco.plugin.version>0.8.10</jacoco.plugin.version>
-        <spring-security-oauth2-version>1.5.6</spring-security-oauth2-version>
+        <jacoco.plugin.version>0.8.14</jacoco.plugin.version>
+        <spring-security-oauth2-version>7.0.4</spring-security-oauth2-version>
         <spring-security-oauth2-client-version>6.4.2</spring-security-oauth2-client-version>
         <spring-jdbc-version>6.0.11</spring-jdbc-version>
-        <sql.dao.version>1.2.2</sql.dao.version>
-        <ecsp-utils.version>1.1.1</ecsp-utils.version>
-        <org.mapstruct.version>1.5.5.Final</org.mapstruct.version>
-        <org.projectlombok.version>1.18.20</org.projectlombok.version>
+        <sql.dao.version>1.2.3</sql.dao.version>
+        <ecsp-utils.version>1.2.0</ecsp-utils.version>
+        <org.mapstruct.version>1.6.3</org.mapstruct.version>
+        <org.projectlombok.version>1.18.42</org.projectlombok.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <hypersistence-utils-hibernate-71.version>3.15.2</hypersistence-utils-hibernate-71.version>
         <sonar.coverage.exclusions>
             **/AuthorizationServerApplication.java,
             **/response/**,
@@ -98,8 +99,10 @@
         <sonar.language>java</sonar.language>
         <sonar.java.checkstyle.reportPaths>${project.build.directory}/checkstyle-result.xml
         </sonar.java.checkstyle.reportPaths>
-        <checkstyle.version>10.13.0</checkstyle.version>
-        <maven.checkstyle.version>3.3.1</maven.checkstyle.version>
+        <checkstyle.version>11.0.0</checkstyle.version>
+        <maven.checkstyle.version>3.6.0</maven.checkstyle.version>
+        <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
         <maven-javadoc-plugin.version>3.11.2</maven-javadoc-plugin.version>
         <license-tool-plugin.version>1.1.0</license-tool-plugin.version>
@@ -140,7 +143,7 @@
 	<dependency>
 	    <groupId>org.springframework.cloud</groupId>
 	    <artifactId>spring-cloud-starter-config</artifactId>
-	    <version>4.3.2</version>
+	    <version>5.0.2</version>
 	</dependency>
         <!--required for idp integration-->
         <dependency>
@@ -156,7 +159,7 @@
         <dependency>
         	<groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
-            <version>2.18.2</version>
+            <version>2.21.2</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -222,12 +225,7 @@
             	</exclusion>
             </exclusions>
         </dependency>
-
-        <dependency>
-        	<groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-crypto</artifactId>
-            <version>6.5.9</version>
-        </dependency>        
+        
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
@@ -281,12 +279,7 @@
                     <artifactId>jetty-util</artifactId>
                 </exclusion>
             </exclusions>
-        </dependency>
-        <dependency>
-          	<groupId>javax.annotation</groupId>
-            <artifactId>javax.annotation-api</artifactId>
-            <version>1.2</version>
-        </dependency>        
+        </dependency>       
         <!--<dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
@@ -309,8 +302,8 @@
         </dependency>
         <dependency>
             <groupId>io.hypersistence</groupId>
-            <artifactId>hypersistence-utils-hibernate-62</artifactId>
-            <version>3.5.2</version>
+            <artifactId>hypersistence-utils-hibernate-71</artifactId>
+            <version>${hypersistence-utils-hibernate-71.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -329,17 +322,6 @@
             <version>8.0.1.Final</version>
         </dependency>
         -->
-        <!-- https://mvnrepository.com/artifact/org.springframework.security/spring-security-cas -->
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-cas</artifactId>
-            <exclusions>
-                <exclusion>
-                    <artifactId>bcpkix-jdk15on</artifactId>
-                    <groupId>org.bouncycastle</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
 
         <dependency>
             <groupId>org.owasp</groupId>
@@ -363,7 +345,7 @@
         <dependency>
             <groupId>de.siegmar</groupId>
             <artifactId>logback-gelf</artifactId>
-            <version>4.0.2</version>
+            <version>5.0.1</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -372,6 +354,7 @@
         <dependency>
             <groupId>org.springframework.retry</groupId>
             <artifactId>spring-retry</artifactId>
+            <version>2.0.12</version>
         </dependency>
         <dependency>
             <groupId>org.codehaus.janino</groupId>
@@ -415,6 +398,24 @@
             <artifactId>caffeine</artifactId>
             <version>3.2.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-liquibase</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webtestclient</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-jackson2</artifactId>
+        </dependency>
     </dependencies>
     <repositories>
         <repository>
@@ -438,39 +439,25 @@
                     org.apache.maven.plugins
                 </groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>${maven-compiler-plugin.version}</version>
                 <configuration>
-                    <source>17</source> <!-- depending on your project -->
-                    <target>17</target> <!-- depending on your project -->
+                    <source>${java.version}</source> <!-- depending on your project -->
+                    <target>${java.version}</target> <!-- depending on your project -->
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.mapstruct</groupId>
-                            <artifactId>
-                                mapstruct-processor
-                            </artifactId>
-                            <version>
-                                ${org.mapstruct.version}
-                            </version>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${org.mapstruct.version}</version>
                         </path>
                         <path>
-                            <groupId>
-                                org.projectlombok
-                            </groupId>
+                            <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>
-                                ${org.projectlombok.version}
-                            </version>
+                            <version>${org.projectlombok.version}</version>
                         </path>
                         <path>
-                            <groupId>
-                                org.projectlombok
-                            </groupId>
-                            <artifactId>
-                                lombok-mapstruct-binding
-                            </artifactId>
-                            <version>
-                                ${lombok-mapstruct-binding.version}
-                            </version>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>${lombok-mapstruct-binding.version}</version>
                         </path>
                         <path>
                             <groupId>org.springframework.boot</groupId>
@@ -508,13 +495,9 @@
                 </executions>
             </plugin>
             <plugin>
-                <groupId>
-                    org.springframework.boot
-                </groupId>
+                <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>
-                    ${spring.version}
-                </version>
+                <version>${spring.version}</version>
                 <configuration>
                     <excludes>
                         <exclude>
@@ -522,12 +505,8 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
-                    <mainClass>
-                        org.eclipse.ecsp.oauth2.server.core.AuthorizationServerApplication
-                    </mainClass>
-                    <layout>
-                        JAR
-                    </layout>
+                    <mainClass>org.eclipse.ecsp.oauth2.server.core.AuthorizationServerApplication</mainClass>
+                    <layout>JAR</layout>
                 </configuration>
                 <executions>
                     <execution>
@@ -578,7 +557,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.1.2</version>
+                <version>${maven-surefire-plugin.version}</version>
                 <configuration>
                     <includes>
                         <include>**/*Test*.java</include>

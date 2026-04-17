@@ -77,8 +77,7 @@ public class PasswordUtils {
             generatedPassword = Base64.getEncoder().encodeToString(bytes);
         } catch (NoSuchAlgorithmException e) {
             LOGGER.error("getSecurePassword - {}", e.getMessage());
-            OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR, "Unable to validate "
-                + OAuth2ParameterNames.PASSWORD, null);
+            OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR, "Unable to validate password", null);
             throw new OAuth2AuthenticationException(error);
         }
         return generatedPassword;

@@ -28,6 +28,7 @@ import org.eclipse.ecsp.oauth2.server.core.response.dto.FailedSessionDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.InvalidateSessionsResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.service.SessionManagementService;
 import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -79,6 +80,8 @@ class SessionManagementControllerTest {
     
     @BeforeEach
     void setUp() {
+        // Ensure TenantUtils static state is not polluted by other Spring context tests
+
         // Mock token introspection (now using introspectToken instead of validateToken)
         lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(SELF_MANAGE_SCOPE))).thenReturn(true);
         lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(MANAGE_USERS_SCOPE))).thenReturn(true);
