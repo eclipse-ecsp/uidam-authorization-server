@@ -78,7 +78,8 @@
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
         <org.projectlombok.version>1.18.42</org.projectlombok.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
-        <hypersistence-utils-hibernate-71.version>3.15.2</hypersistence-utils-hibernate-71.version>
+        <hypersistence-utils-hibernate-73.version>3.15.2</hypersistence-utils-hibernate-73.version>
+        <hibernate.version>7.3.1.Final</hibernate.version>
         <sonar.coverage.exclusions>
             **/AuthorizationServerApplication.java,
             **/response/**,
@@ -126,6 +127,11 @@
                 <version>${spring.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.hibernate.orm</groupId>
+                <artifactId>hibernate-core</artifactId>
+                <version>${hibernate.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -302,8 +308,8 @@
         </dependency>
         <dependency>
             <groupId>io.hypersistence</groupId>
-            <artifactId>hypersistence-utils-hibernate-71</artifactId>
-            <version>${hypersistence-utils-hibernate-71.version}</version>
+            <artifactId>hypersistence-utils-hibernate-73</artifactId>
+            <version>${hypersistence-utils-hibernate-73.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
