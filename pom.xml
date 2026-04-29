@@ -100,7 +100,7 @@
         <sonar.language>java</sonar.language>
         <sonar.java.checkstyle.reportPaths>${project.build.directory}/checkstyle-result.xml
         </sonar.java.checkstyle.reportPaths>
-        <checkstyle.version>11.0.0</checkstyle.version>
+        <checkstyle.version>13.4.1</checkstyle.version>
         <maven.checkstyle.version>3.6.0</maven.checkstyle.version>
         <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
