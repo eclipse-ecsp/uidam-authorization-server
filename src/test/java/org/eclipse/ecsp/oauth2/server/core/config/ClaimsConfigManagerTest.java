@@ -814,6 +814,7 @@ class ClaimsConfigManagerTest {
        
         
         ExternalIdpRegisteredClient googleClient = new ExternalIdpRegisteredClient();
+        googleClient.setEnabled(true);
         googleClient.setClientName("Google");
         googleClient.setRegistrationId("google");  // Original provider ID, will be prefixed with tenant
         googleClient.setClientId("mock-google-client-id");

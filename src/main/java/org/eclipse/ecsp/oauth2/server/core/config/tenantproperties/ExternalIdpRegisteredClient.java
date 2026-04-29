@@ -32,6 +32,7 @@ import java.util.Set;
 @Setter
 public class ExternalIdpRegisteredClient {
 
+    private boolean enabled;
     private String clientName;
     private String registrationId;
     private String clientId;
