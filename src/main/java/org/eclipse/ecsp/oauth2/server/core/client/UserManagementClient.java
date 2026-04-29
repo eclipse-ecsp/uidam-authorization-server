@@ -54,7 +54,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
-import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -229,7 +228,7 @@ public class UserManagementClient {
         } catch (Exception ex) {
             LOGGER.error("error while fetching user details for username {} from user-mgmt, ex: {}", username, ex);
             OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
-                    "Unable to validate " + OAuth2ParameterNames.USERNAME, null);
+                    "Unable to validate username", null);
             TenantProperties tenantProperties = getCurrentTenantProperties();
             String tenantId = tenantProperties.getTenantId();
             metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_ATTEMPTS);
@@ -573,7 +572,7 @@ public class UserManagementClient {
             }
         } else {
             errorCode = OAuth2ErrorCodes.SERVER_ERROR;
-            errorDesc = "Unable to validate " + OAuth2ParameterNames.USERNAME;
+            errorDesc = "Unable to validate username";
         }
 
         return new OAuth2Error(errorCode, errorDesc, null);

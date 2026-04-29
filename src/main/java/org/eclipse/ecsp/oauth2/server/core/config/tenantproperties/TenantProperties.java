@@ -18,10 +18,10 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
-import javax.annotation.PostConstruct;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -55,6 +55,20 @@ public class TenantProperties {
     
     // Legacy External IDP List (for backward compatibility and direct property binding)
     private List<ExternalIdpRegisteredClient> externalIdpRegisteredClientList;
+
+    /**
+     * Returns only the enabled external IDP registered clients.
+     *
+     * @return a list of enabled {@link ExternalIdpRegisteredClient}, or an empty list if none are enabled
+     */
+    public List<ExternalIdpRegisteredClient> getExternalIdpRegisteredClientList() {
+        if (externalIdpRegisteredClientList == null) {
+            return List.of();
+        }
+        return externalIdpRegisteredClientList.stream()
+                .filter(ExternalIdpRegisteredClient::isEnabled)
+                .toList();
+    }
     
     // Direct External IDP configuration fields for property binding
     private boolean externalIdpEnabled;

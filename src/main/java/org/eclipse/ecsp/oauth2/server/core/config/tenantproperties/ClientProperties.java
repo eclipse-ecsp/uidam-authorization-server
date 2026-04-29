@@ -36,4 +36,9 @@ public class ClientProperties {
     private String secretEncryptionKey;
     private String secretEncryptionSalt;
     private Boolean reuseRefreshToken;
+    /**
+     * If true, for authorization_code grant type scopeless users (users with no explicitly assigned scopes),
+     * all user scopes from the user details will be included in the 'scope' and 'scopes' claims.
+     */
+    private Boolean authCodeScopelessUserScopes;
 }

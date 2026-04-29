@@ -152,14 +152,14 @@ public class LogoutController {
             case OAuth2ErrorCodes.INVALID_CLIENT -> "The client is not recognized or not authorized.";
             case OAuth2ErrorCodes.INVALID_REQUEST -> "The logout request is malformed or invalid.";
             case OAuth2ErrorCodes.INVALID_GRANT -> "The provided grant type not supported.";
-            case OAuth2ErrorCodes.UNAUTHORIZED_CLIENT -> 
-            "The client is not authorized to perform the logout operation.";
-            case OAuth2ErrorCodes.INVALID_REDIRECT_URI -> 
-            "The provided redirect URI is invalid or does not match the registered URI.";
+            case OAuth2ErrorCodes.UNAUTHORIZED_CLIENT ->
+                "The client is not authorized to perform the logout operation.";
+            case OAuth2ErrorCodes.INVALID_REDIRECT_URI ->
+                "The provided redirect URI is invalid or does not match the registered URI.";
             case OAuth2ErrorCodes.ACCESS_DENIED -> "Access to the logout operation was denied.";
             case OAuth2ErrorCodes.SERVER_ERROR -> "An internal server error occurred during logout.";
-            case OAuth2ErrorCodes.TEMPORARILY_UNAVAILABLE -> 
-            "The logout service is temporarily unavailable. Please try again later.";
+            case OAuth2ErrorCodes.TEMPORARILY_UNAVAILABLE ->
+                "The logout service is temporarily unavailable. Please try again later.";
             default -> "An unexpected error occurred during logout.";
         };
     }
