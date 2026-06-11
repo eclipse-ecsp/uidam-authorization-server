@@ -113,14 +113,16 @@ public class TenantResolutionFilter implements Filter {
         "userinfo",         // /{tenant}/userinfo
         "authorize",        // /{tenant}/authorize (direct)
         "token",            // /{tenant}/token (direct)
-        "introspect"        // /{tenant}/introspect (direct)
+        "introspect",       // /{tenant}/introspect (direct)
+        "mfa"               // /{tenant}/mfa/** (MFA enrollment and challenge)
     );
     
     // Blacklist of path segments that should NOT be considered as tenant IDs
     private static final Set<String> INVALID_TENANT_IDS = Set.of(
         "api", "v1", "v2", "public", "health", "actuator", "admin", "management",
-        "oauth2", "login", "authorize", "token", "introspect", "revoke", 
-        "userinfo", "jwks", ".well-known", TENANT_PARAM
+        "oauth2", "login", "authorize", "token", "introspect", "revoke",
+        "userinfo", "jwks", ".well-known", "mfa", "enroll", "challenge", "setup", "verify",
+        TENANT_PARAM
     );
 
     /**

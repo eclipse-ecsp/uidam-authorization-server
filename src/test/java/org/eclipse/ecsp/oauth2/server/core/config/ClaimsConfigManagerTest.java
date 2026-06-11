@@ -780,6 +780,119 @@ class ClaimsConfigManagerTest {
                 .authorizationGrant(authorizationGrant).build();
     }
 
+    @Test
+    void throwInvalidTenantAccessException_whenTenantPrefixMismatch_shouldThrow() {
+        // Arrange - registration ID with wrong tenant prefix "other-google" while current tenant is "demo"
+        doReturn(createMockTenantProperties()).when(tenantConfigurationService).getTenantProperties();
+
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put(ATTRIBUTE_SUB, TEST_USER_NAME);
+        OAuth2User oauth2User = new DefaultOAuth2User(null, attributes, ATTRIBUTE_SUB);
+        // "other-google" -> tenant prefix "other" != current tenant "demo"
+        OAuth2AuthenticationToken token = new OAuth2AuthenticationToken(oauth2User, null, "other-google");
+
+        // Execute & Verify - should throw invalid_tenant_access
+        OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                () -> customizeToken(token));
+
+        assertEquals("invalid_tenant_access", exception.getError().getErrorCode());
+    }
+
+    @Test
+    void logTokenRefreshed_withOauth2AuthenticationToken_shouldNotThrow() {
+        // Arrange - Refresh token with OAuth2 principal (external IdP user)
+        doReturn(createMockTenantProperties()).when(tenantConfigurationService).getTenantProperties();
+
+        ClientCacheDetails clientCacheDetails = new ClientCacheDetails();
+        clientCacheDetails.setRegisteredClient(registeredClient().build());
+        doReturn(clientCacheDetails).when(cacheClientUtils).getClientDetails(anyString());
+        doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), any());
+
+        RegisteredClient registeredClient = registeredClient().build();
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put(ATTRIBUTE_SUB, TEST_USER_NAME);
+        OAuth2User oauth2User = new DefaultOAuth2User(null, attributes, ATTRIBUTE_SUB);
+        OAuth2AuthenticationToken principal = new OAuth2AuthenticationToken(oauth2User, null, REGISTRATION_ID_GOOGLE);
+        OAuth2Authorization authorization = TestOauth2Authorizations.authorization(registeredClient).build();
+        OAuth2ClientAuthenticationToken clientPrincipal = new OAuth2ClientAuthenticationToken(registeredClient,
+                ClientAuthenticationMethod.CLIENT_SECRET_BASIC, registeredClient.getClientSecret());
+        OAuth2AuthorizationRequest authorizationRequest = authorization
+                .getAttribute(OAuth2AuthorizationRequest.class.getName());
+        OAuth2AuthorizationCodeAuthenticationToken authorizationGrant = new OAuth2AuthorizationCodeAuthenticationToken(
+                "code", clientPrincipal, authorizationRequest.getRedirectUri(), null);
+
+        // Use REFRESH_TOKEN grant type with OAuth2AuthenticationToken principal
+        JwtEncodingContext context = JwtEncodingContext.with(jwsHeader(), jwtClaimsSet())
+                .registeredClient(registeredClient).principal(principal).authorization(authorization)
+                .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                .authorizationGrant(authorizationGrant).build();
+
+        // Act & Assert
+        assertDoesNotThrow(() -> jwtCustomizer.customize(context));
+    }
+
+    @Test
+    void getCurrentTenantProperties_whenTenantPropertiesIsNull_shouldThrowIllegalState() {
+        // Arrange - tenantConfigurationService returns null
+        doReturn(null).when(tenantConfigurationService).getTenantProperties();
+
+        RegisteredClient registeredClient = registeredClient().build();
+        CustomUserPwdAuthenticationToken principal = new CustomUserPwdAuthenticationToken(TEST_USER_NAME, TEST_PASSWORD,
+                TEST_ACCOUNT_NAME, null);
+        OAuth2Authorization authorization = TestOauth2Authorizations.authorization(registeredClient).build();
+        OAuth2ClientAuthenticationToken clientPrincipal = new OAuth2ClientAuthenticationToken(registeredClient,
+                ClientAuthenticationMethod.CLIENT_SECRET_BASIC, registeredClient.getClientSecret());
+        OAuth2AuthorizationRequest authorizationRequest = authorization
+                .getAttribute(OAuth2AuthorizationRequest.class.getName());
+        OAuth2AuthorizationCodeAuthenticationToken authorizationGrant = new OAuth2AuthorizationCodeAuthenticationToken(
+                "code", clientPrincipal, authorizationRequest.getRedirectUri(), null);
+
+        JwtEncodingContext context = JwtEncodingContext.with(jwsHeader(), jwtClaimsSet())
+                .registeredClient(registeredClient).principal(principal).authorization(authorization)
+                .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrant(authorizationGrant).build();
+
+        // Assert - IllegalStateException when tenant properties are null
+        assertThrows(IllegalStateException.class, () -> jwtCustomizer.customize(context));
+    }
+
+    @Test
+    void populateUserScopes_whenScopelessAndUserHasScopes_shouldMergeScopes() {
+        // Arrange - authCodeScopelessUserScopes = true, empty scope request, user has scopes
+        TenantProperties tenantProperties = createMockTenantProperties();
+        tenantProperties.getClient().setAuthCodeScopelessUserScopes(true);
+        doReturn(tenantProperties).when(tenantConfigurationService).getTenantProperties();
+
+        ClientCacheDetails clientCacheDetails = new ClientCacheDetails();
+        clientCacheDetails.setRegisteredClient(registeredClient().build());
+        doReturn(clientCacheDetails).when(cacheClientUtils).getClientDetails(anyString());
+        // Return user with scopes
+        doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+
+        RegisteredClient registeredClient = registeredClient().build();
+        CustomUserPwdAuthenticationToken principal = new CustomUserPwdAuthenticationToken(TEST_USER_NAME, TEST_PASSWORD,
+                TEST_ACCOUNT_NAME, null);
+        OAuth2Authorization authorization = TestOauth2Authorizations.authorization(registeredClient).build();
+        OAuth2ClientAuthenticationToken clientPrincipal = new OAuth2ClientAuthenticationToken(registeredClient,
+                ClientAuthenticationMethod.CLIENT_SECRET_BASIC, registeredClient.getClientSecret());
+        OAuth2AuthorizationRequest authorizationRequest = authorization
+                .getAttribute(OAuth2AuthorizationRequest.class.getName());
+        OAuth2AuthorizationCodeAuthenticationToken authorizationGrant = new OAuth2AuthorizationCodeAuthenticationToken(
+                "code", clientPrincipal, authorizationRequest.getRedirectUri(), null);
+
+        // Use jwtClaimsSet() which has empty scope
+        JwtEncodingContext context = JwtEncodingContext.with(jwsHeader(), jwtClaimsSet())
+                .registeredClient(registeredClient).principal(principal).authorization(authorization)
+                .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrant(authorizationGrant).build();
+
+        // Act & Assert - should not throw
+        assertDoesNotThrow(() -> jwtCustomizer.customize(context));
+    }
+
     @BeforeEach
     void setUp() {
         jwtCustomizer = claimsConfigManager.jwtTokenCustomizer(cacheClientUtils);

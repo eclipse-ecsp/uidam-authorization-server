@@ -31,6 +31,8 @@ import org.eclipse.ecsp.oauth2.server.core.authentication.providers.CustomUserPw
 import org.eclipse.ecsp.oauth2.server.core.authentication.validator.CustomScopeValidator;
 import org.eclipse.ecsp.oauth2.server.core.filter.TenantAwareAuthenticationFilter;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.mfa.MfaChallengeFilter;
+import org.eclipse.ecsp.oauth2.server.core.mfa.MfaSecretService;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRequestRepository;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationSecurityContextRepository;
 import org.eclipse.ecsp.oauth2.server.core.service.DatabaseAuthorizationRequestRepository;
@@ -192,8 +194,8 @@ public class IgniteSecurityConfig {
             Optional<ClientRegistrationRepository> clientRegistrationRepository,
             CustomScopeValidator customScopeValidator,
             DatabaseSecurityContextRepository databaseSecurityContextRepository,
-            FederatedIdentityAuthenticationSuccessHandler 
-            federatedIdentityAuthenticationSuccessHandler) throws Exception {
+            FederatedIdentityAuthenticationSuccessHandler federatedIdentityAuthenticationSuccessHandler,
+            MfaSecretService mfaSecretService) throws Exception {
 
         RequestCache requestCache = new CookieRequestCache();
         http.requestCache(requestCacheConfigurer -> requestCacheConfigurer.requestCache(requestCache));
@@ -252,6 +254,14 @@ public class IgniteSecurityConfig {
         // Set custom authentication details source to capture browser metadata
         customUserPwdAuthenticationFilter.setAuthenticationDetailsSource(customWebAuthenticationDetailsSource);
         http.addFilterBefore(customUserPwdAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // MFA Challenge Filter – must run BEFORE the OAuth2AuthorizationEndpointFilter so that
+        // GET /oauth2/authorize is intercepted and the MFA challenge is shown before the auth
+        // code is issued.  UsernamePasswordAuthenticationFilter is earlier in the chain, so
+        // placing the filter before it guarantees it runs before any OAuth2 endpoint filter.
+        MfaChallengeFilter mfaChallengeFilter = new MfaChallengeFilter(mfaSecretService,
+                this.tenantConfigurationService);
+        http.addFilterBefore(mfaChallengeFilter, UsernamePasswordAuthenticationFilter.class);
         
         // This filter ensures only tenant-allowed authentication methods are executed
         TenantAwareAuthenticationFilter tenantAwareAuthenticationFilter = new TenantAwareAuthenticationFilter(
@@ -331,18 +341,18 @@ public class IgniteSecurityConfig {
                 DEFAULT_LOGIN_MATCHER_PATTERN,
                 TENANT_OAUTH2_PATTERN, OAUTH2_PATTERN,
                 WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT,
-                OAUTH2_CALLBACK_PATTERN, // Tenant-prefixed OAuth2 callback URLs
-                LOGIN_MATCHER_PATTERN, 
-                LOGOUT_MATCHER_PATTERN))
+                OAUTH2_CALLBACK_PATTERN,
+                LOGIN_MATCHER_PATTERN,
+                LOGOUT_MATCHER_PATTERN,
+                "/mfa/**",
+                "/*/mfa/**"))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(DEFAULT_LOGIN_MATCHER_PATTERN, LOGIN_MATCHER_PATTERN).permitAll()
                         .requestMatchers(LOGOUT_MATCHER_PATTERN).permitAll()
-                        .requestMatchers(OAUTH2_AUTHORIZATION_PATTERN, OAUTH2_CALLBACK_PATTERN)
-                            .permitAll() // Tenant-prefixed
-                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT)
-                            .permitAll() // Well-known endpoints (both root and tenant-prefixed)
-                        .anyRequest()
-                        .authenticated())
+                        .requestMatchers("/mfa/**", "/*/mfa/**").permitAll()  // MFA pages (filter controls access)
+                        .requestMatchers(OAUTH2_AUTHORIZATION_PATTERN, OAUTH2_CALLBACK_PATTERN).permitAll()
+                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT).permitAll()
+                        .anyRequest().authenticated())
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         // SonarQube S4502: CSRF protection is intentionally disabled for OAuth2 logout endpoints
                         // to support OIDC RP-Initiated Logout specification compliance where external clients

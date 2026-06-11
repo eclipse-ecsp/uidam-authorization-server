@@ -401,4 +401,103 @@ class PasswordRecoveryControllerTest {
                         .param("accountName", ""))
                 .andExpect(status().isOk());
     }
+
+    /**
+     * Test password forgot with recaptcha response present.
+     */
+    @Test
+    void testPasswordForgotWithRecaptchaResponse() throws Exception {
+        this.mockMvc
+                .perform(post("/{tenantId}/recovery/forgotPassword", "ecsp")
+                        .param("username", "username")
+                        .param("accountName", "ignite")
+                        .param("g-recaptcha-response", "valid-captcha-token"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/email-sent"))
+                .andExpect(model().attributeExists("message"));
+    }
+
+    /**
+     * Test password reset with BAD_REQUEST exception (400 Bad Request).
+     */
+    @Test
+    void testPasswordResetBadRequestException() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        when(userManagementClient.updateUserPasswordUsingRecoverySecret(UpdatePasswordData.of("secret", "password")))
+                .thenThrow(new RuntimeException("BAD_REQUEST 0000000000password.policy.error"));
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/reset")
+                        .param("password", "password")
+                        .param("confirmPassword", "password")
+                        .param("secret", "secret"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/change-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
+     * Test password reset with invalid.input.password.cannot.contain.username error.
+     */
+    @Test
+    void testPasswordResetUsernameContainedInPasswordException() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        when(userManagementClient.updateUserPasswordUsingRecoverySecret(UpdatePasswordData.of("secret", "password")))
+                .thenThrow(new RuntimeException(
+                    "BAD_REQUESTinvalid.input.password.cannot.contain.username'"));
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/reset")
+                        .param("password", "password")
+                        .param("confirmPassword", "password")
+                        .param("secret", "secret"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/change-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
+     * Test handleUserNotFound exception handler.
+     */
+    @Test
+    void testHandleUserNotFound() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        doThrow(new org.eclipse.ecsp.oauth2.server.core.exception.UserNotFoundException("User not found"))
+                .when(userManagementClient).sendUserResetPasswordNotification("unknown", "ignite");
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/forgotPassword")
+                        .param("username", "unknown")
+                        .param("accountName", "ignite"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/forgot-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
+     * Test password reset with recaptcha response.
+     */
+    @Test
+    void testPasswordResetWithRecaptcha() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        when(userManagementClient.updateUserPasswordUsingRecoverySecret(UpdatePasswordData.of("secret", "password")))
+                .thenReturn("");
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/reset")
+                        .param("password", "password")
+                        .param("confirmPassword", "password")
+                        .param("secret", "secret")
+                        .param("g-recaptcha-response", "valid-captcha"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/password-changed"));
+    }
 }

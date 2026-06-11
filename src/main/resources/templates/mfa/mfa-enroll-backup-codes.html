@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <title>Save Your Backup Codes – UIDAM</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff; border-radius: 12px;
+            padding: 40px 44px; max-width: 480px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+        .warning-box {
+            background: #fff8e1; border: 1px solid #f9c74f;
+            border-radius: 8px; padding: 14px 16px;
+            font-size: 13px; color: #7a5900; margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        .codes-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 10px; margin-bottom: 24px;
+        }
+        .code-item {
+            background: #f4f4f8; border: 1px solid #ddd;
+            border-radius: 6px; padding: 10px 14px;
+            font-family: monospace; font-size: 16px;
+            letter-spacing: 3px; text-align: center;
+            color: #1a1a2e; font-weight: bold;
+        }
+        .confirm-wrap {
+            display: flex; align-items: flex-start; gap: 10px;
+            margin-bottom: 20px; font-size: 14px; color: #333;
+        }
+        .confirm-wrap input[type="checkbox"] { width: 16px; height: 16px; margin-top: 2px; cursor: pointer; flex-shrink: 0; }
+        .btn {
+            display: block; width: 100%;
+            background: #0f3460; color: #fff;
+            border: none; border-radius: 8px;
+            padding: 14px; font-size: 15px;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .btn:disabled { background: #aaa; cursor: not-allowed; }
+        .btn:not(:disabled):hover { background: #1a4a8a; }
+        .hint { font-size: 12px; color: #999; margin-top: 14px; text-align: center; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>✅ MFA Enrollment Complete</h1>
+    <p class="subtitle">
+        Your authenticator app has been successfully linked to your account.
+        You will now be prompted for a TOTP code on future logins.
+    </p>
+
+    <!-- Backup codes (shown once) -->
+    <div th:if="${backupCodes != null and !backupCodes.isEmpty()}">
+        <div class="warning-box">
+            ⚠️ <strong>Save these backup codes now.</strong> Each code can be used once to
+            recover your account if you lose access to your authenticator app. They will
+            <strong>not be shown again</strong>.
+        </div>
+
+        <div class="codes-grid">
+            <div class="code-item" th:each="code : ${backupCodes}" th:text="${code}"></div>
+        </div>
+    </div>
+
+    <!-- Fallback message when backup codes are disabled -->
+    <div th:if="${backupCodes == null or backupCodes.isEmpty()}" class="warning-box">
+        ⚠️ <strong>Important:</strong> If you lose access to your authenticator app,
+        you can recover your account by requesting a one-time security code
+        sent to your registered email address.
+    </div>
+
+    <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId))
+                       ? '/' + tenantId + '/mfa/enroll/backup-codes/confirm'
+                       : '/mfa/enroll/backup-codes/confirm'}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+
+        <div class="confirm-wrap">
+            <input type="checkbox" id="savedConfirm" required
+                   onchange="document.getElementById('continueBtn').disabled = !this.checked"/>
+            <label for="savedConfirm"
+                   th:text="${backupCodes != null and !backupCodes.isEmpty()}
+                            ? 'I have saved my backup codes in a secure place.'
+                            : 'I understand that I can use email-based recovery if I lose access to my authenticator app.'">
+                I have saved my backup codes in a secure place.
+            </label>
+        </div>
+
+        <button type="submit" id="continueBtn" class="btn" disabled>
+            ✅ Continue
+        </button>
+    </form>
+
+    <p class="hint" th:if="${backupCodes != null and !backupCodes.isEmpty()}">
+        You can regenerate backup codes any time from your account security settings
+        while logged in.
+    </p>
+</div>
+</body>
+</html>

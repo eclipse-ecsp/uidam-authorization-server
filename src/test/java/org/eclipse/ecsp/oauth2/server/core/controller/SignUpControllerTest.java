@@ -473,4 +473,213 @@ class SignUpControllerTest {
         // Set other necessary fields...
         return userDetailsResponse;
     }
+
+    // === Tests for addSelfUser paths that exercise the downstream code ===
+
+    @Test
+    void addSelfUser_WithAllParamsAndVerificationEmail_RedirectsToUserCreated() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        final RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        UserDetailsResponse response = getUserDetailsResponse();
+        response.setVerificationEmailSent(true);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParamsAndNoVerificationEmail_RedirectsToUserCreated() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        final RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        UserDetailsResponse response = getUserDetailsResponse();
+        response.setVerificationEmailSent(false);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParams_ClientReturnsNull_RedirectsToSignUp() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(null);
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParams_ClientThrowsException_RedirectsToSignUpWithError() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenThrow(new RuntimeException("User creation failed"));
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+        assertEquals("User creation failed", redirectAttributes.getFlashAttributes().get(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParams_SignUpDisabled_RedirectsToSignUpWithMessage() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(false);
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithTermsRequired_CheckboxOn_AllParamsPresent_Success() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-token");
+        request.setParameter("termsCheckbox", "on");
+
+        // Setup tenant with valid terms URL
+        org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties uiProperties =
+            new org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties();
+        uiProperties.setTermsPrivacyPolicy("https://example.com/terms");
+        when(tenantProperties.getUi()).thenReturn(uiProperties);
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        UserDetailsResponse response = getUserDetailsResponse();
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+    }
+
+    @Test
+    void addSelfUser_WithTermsRequired_CheckboxOff_RedirectsWithError() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-token");
+        request.setParameter("termsCheckbox", "off");
+
+        // Setup tenant with valid terms URL
+        org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties uiProperties =
+            new org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties();
+        uiProperties.setTermsPrivacyPolicy("https://example.com/terms");
+        when(tenantProperties.getUi()).thenReturn(uiProperties);
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithInvalidTermsUrl_TermsNotRequired_AllParamsPresent_Success() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-token");
+
+        // Terms URL is invalid, so terms not required
+        org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties uiProperties =
+            new org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties();
+        uiProperties.setTermsPrivacyPolicy("not-a-url");
+        when(tenantProperties.getUi()).thenReturn(uiProperties);
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        UserDetailsResponse response = getUserDetailsResponse();
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+    }
+
+    @Test
+    void selfSignUpInit_WithNullUiProperties_SetsEmptyTermsUrl() {
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(tenantProperties.getUi()).thenReturn(null);
+        when(tenantProperties.getCaptcha()).thenReturn(defaultCaptchaProperties());
+
+        Model model = new ExtendedModelMap();
+        String viewName = signUpController.selfSignUpInit("ecsp", model);
+
+        assertEquals(SELF_SIGN_UP, viewName);
+        assertTrue(model.containsAttribute("termsPrivacyPolicy"));
+        assertEquals("", model.getAttribute("termsPrivacyPolicy"));
+    }
 }

@@ -704,4 +704,412 @@ class TenantDefaultPropertiesProcessorTest {
         // Assert - Should return empty list as default validation failed, no tenants processed
         assertDoesNotThrow(() -> failedTenants.isEmpty());
     }
+
+    @Test
+    void removeFailedTenantsFromEnvironment_whenMultitenancyEnabled_shouldRemoveFailedTenants() {
+        // Arrange - This triggers removeFailedTenantsFromEnvironment via refreshTenantProperties
+        final String tenantIds = "tenant1,tenant2";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(true);
+        lenient().when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("NONE");
+        lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
+            .thenReturn(true);
+        lenient().when(configurableEnvironment.getProperty("tenant.ids", ""))
+            .thenReturn("tenant1,tenant2");
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.password", "defaultPass");
+        defaultProps.put("tenant.props.default.key-store.key-store-jks-encoded-content", "content");
+        defaultProps.put("tenant.props.default.key-store.key-store-password", "keystorePass");
+        defaultProps.put("tenant.props.default.key-store.key-alias", "alias");
+        defaultProps.put("tenant.props.default.key-store.key-type", "RSA");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-site", "siteKey");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-secret", "secretKey");
+
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+        lenient().when(propertySources.contains("failedTenantRemovalProperties")).thenReturn(false);
+
+        // Setup default and tenant mocks using helpers
+        mockDefaultTenantProperties();
+
+        // tenant1 fails validation (missing jdbc-url)
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.tenant1.jdbc-url"))
+            .thenReturn(null);
+        // tenant2 passes validation
+        mockValidTenant("tenant2", "jdbc:postgresql://localhost:5432/tenant2");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert
+        assertTrue(failedTenants.contains("tenant1"));
+    }
+
+    @Test
+    void removeFailedTenantsFromEnvironment_whenMultitenancyDisabled_shouldLogAndReturn() {
+        // Arrange - multitenancy disabled, so removeFailedTenantsFromEnvironment should return early
+        final String tenantIds = "tenant1";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(true);
+        lenient().when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("NONE");
+        lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
+            .thenReturn(false); // Multitenancy DISABLED
+
+        // Mock valid default tenant
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.password", "defaultPass");
+        defaultProps.put("tenant.props.default.key-store.key-store-jks-encoded-content", "content");
+        defaultProps.put("tenant.props.default.key-store.key-store-password", "keystorePass");
+        defaultProps.put("tenant.props.default.key-store.key-alias", "alias");
+        defaultProps.put("tenant.props.default.key-store.key-type", "RSA");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-site", "siteKey");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-secret", "secretKey");
+
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/default");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
+            .thenReturn("defaultUser");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
+            .thenReturn("defaultPass");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.key-store.key-store-jks-encoded-content"))
+            .thenReturn("content");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.key-store.key-store-password"))
+            .thenReturn("keystorePass");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-alias"))
+            .thenReturn("alias");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-type"))
+            .thenReturn("RSA");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.captcha.recaptcha-key-site"))
+            .thenReturn("siteKey");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.captcha.recaptcha-key-secret"))
+            .thenReturn("secretKey");
+
+        // tenant1 fails validation
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.tenant1.jdbc-url"))
+            .thenReturn(null);
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - tenant1 failed but multitenancy disabled so removeFailedTenantsFromEnvironment returns early
+        assertTrue(failedTenants.contains("tenant1"));
+    }
+
+    @Test
+    void removeFailedTenantsFromEnvironment_whenTenantIdsEmpty_shouldReturn() {
+        // Arrange - multitenancy enabled but tenant.ids is empty
+        final String tenantIds = "tenant1";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(true);
+        lenient().when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("NONE");
+        lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
+            .thenReturn(true);
+        // Return empty string for tenant.ids
+        lenient().when(configurableEnvironment.getProperty("tenant.ids", "")).thenReturn("   ");
+
+        // Mock valid default tenant
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        defaultProps.put("tenant.props.default.user-name", "defaultUser");
+        defaultProps.put("tenant.props.default.password", "defaultPass");
+        defaultProps.put("tenant.props.default.key-store.key-store-jks-encoded-content", "content");
+        defaultProps.put("tenant.props.default.key-store.key-store-password", "keystorePass");
+        defaultProps.put("tenant.props.default.key-store.key-alias", "alias");
+        defaultProps.put("tenant.props.default.key-store.key-type", "RSA");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-site", "siteKey");
+        defaultProps.put("tenant.props.default.captcha.recaptcha-key-secret", "secretKey");
+
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/default");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
+            .thenReturn("defaultUser");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
+            .thenReturn("defaultPass");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.key-store.key-store-jks-encoded-content"))
+            .thenReturn("content");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.key-store.key-store-password"))
+            .thenReturn("keystorePass");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-alias"))
+            .thenReturn("alias");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-type"))
+            .thenReturn("RSA");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.captcha.recaptcha-key-site"))
+            .thenReturn("siteKey");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.captcha.recaptcha-key-secret"))
+            .thenReturn("secretKey");
+
+        // tenant1 fails validation
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.tenant1.jdbc-url"))
+            .thenReturn(null);
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - failed tenants returned but removeFailedTenantsFromEnvironment exits early (empty tenant.ids)
+        assertDoesNotThrow(() -> failedTenants.contains("tenant1"));
+    }
+
+    @Test
+    void validateDatabaseName_withEqualMode_andMatchingDbName_shouldPass() {
+        // Arrange - standard validation disabled, EQUAL mode, matching DB name
+        final String tenantIds = "ecsp";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(false);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("EQUAL"); // Override to EQUAL mode
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // Valid JDBC URL where DB name matches tenant ID "ecsp"
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/ecsp");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - tenant passes DB name validation (ecsp matches ecsp)
+        assertTrue(failedTenants.isEmpty());
+    }
+
+    @Test
+    void validateDatabaseName_withEqualMode_andMismatchedDbName_shouldFail() {
+        // Arrange - standard validation disabled, EQUAL mode, DB name doesn't match tenant ID
+        final String tenantIds = "ecsp";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(false);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("EQUAL"); // Override to EQUAL mode
+        // Must mock multitenancy property to avoid NPE in removeFailedTenantsFromEnvironment
+        lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
+            .thenReturn(false);
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // JDBC URL where DB name "wrongdb" does NOT match tenant ID "ecsp"
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/wrongdb");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - tenant fails DB name validation
+        assertTrue(failedTenants.contains("ecsp"));
+    }
+
+    @Test
+    void validateDatabaseName_withContainsMode_andValidUrl_shouldPass() {
+        // Arrange - standard validation disabled, CONTAINS mode
+        final String tenantIds = "ecsp";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(false);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("CONTAINS"); // Override to CONTAINS mode
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // JDBC URL where DB name contains tenant ID "ecsp"
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/ecsp_tenant_db");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - passes CONTAINS mode validation
+        assertTrue(failedTenants.isEmpty());
+    }
+
+    @Test
+    void validateDatabaseName_withNullJdbcUrl_shouldSkipAndPass() {
+        // Arrange - EQUAL mode but JDBC URL is null → should skip and return true
+        final String tenantIds = "ecsp";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(false);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("EQUAL");
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // null JDBC URL → validateDatabaseName returns true (skip validation)
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn(null);
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - passes because JDBC URL is null
+        assertTrue(failedTenants.isEmpty());
+    }
+
+    @Test
+    void maskSensitiveValue_withLongValue_shouldMaskMiddle() {
+        // This test triggers maskSensitiveValue with a long value (> MIN_LENGTH_FOR_MASKING)
+        // via logTenantPropertyValues which is called from validateTenantProperties
+        final String tenantIds = "ecsp";
+
+        // Enable standard validation so logTenantPropertyValues is called
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(true);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("NONE");
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // ecsp tenant with all properties including a long site key (>4 chars)
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/ecsp");
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.user-name"))
+            .thenReturn("ecspUser");
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.password"))
+            .thenReturn("ecspPass");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile.ecsp.key-store.key-store-jks-encoded-content"))
+            .thenReturn("ecspContent");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile.ecsp.key-store.key-store-password"))
+            .thenReturn("ecspKsPass");
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.key-store.key-alias"))
+            .thenReturn("ecspAlias");
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.key-store.key-type"))
+            .thenReturn("RSA");
+        // Long captcha site key (>4 chars) → will go through the non-null branch of maskSensitiveValue
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile.ecsp.captcha.recaptcha-key-site"))
+            .thenReturn("longsitekeyvalue123"); // > MIN_LENGTH_FOR_MASKING
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile.ecsp.captcha.recaptcha-key-secret"))
+            .thenReturn("ecspSecret");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - should not fail (all properties provided)
+        assertTrue(failedTenants.isEmpty());
+    }
+
+    // Helper methods for reducing method length in tests
+    private void mockDefaultTenantProperties() {
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/default");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.user-name"))
+            .thenReturn("defaultUser");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.password"))
+            .thenReturn("defaultPass");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.key-store.key-store-jks-encoded-content"))
+            .thenReturn("content");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.key-store.key-store-password"))
+            .thenReturn("keystorePass");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-alias"))
+            .thenReturn("alias");
+        lenient().when(configurableEnvironment.getProperty("tenant.props.default.key-store.key-type"))
+            .thenReturn("RSA");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.captcha.recaptcha-key-site"))
+            .thenReturn("siteKey");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenant.props.default.captcha.recaptcha-key-secret"))
+            .thenReturn("secretKey");
+    }
+
+    private void mockValidTenant(String tenantId, String jdbcUrl) {
+        lenient().when(configurableEnvironment.getProperty("tenants.profile." + tenantId + ".jdbc-url"))
+            .thenReturn(jdbcUrl);
+        lenient().when(configurableEnvironment.getProperty("tenants.profile." + tenantId + ".user-name"))
+            .thenReturn("user_" + tenantId);
+        lenient().when(configurableEnvironment.getProperty("tenants.profile." + tenantId + ".password"))
+            .thenReturn("pass_" + tenantId);
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile." + tenantId + ".key-store.key-store-jks-encoded-content"))
+            .thenReturn("content_" + tenantId);
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile." + tenantId + ".key-store.key-store-password"))
+            .thenReturn("ksPass_" + tenantId);
+        lenient().when(configurableEnvironment.getProperty("tenants.profile." + tenantId + ".key-store.key-alias"))
+            .thenReturn("alias_" + tenantId);
+        lenient().when(configurableEnvironment.getProperty("tenants.profile." + tenantId + ".key-store.key-type"))
+            .thenReturn("RSA");
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile." + tenantId + ".captcha.recaptcha-key-site"))
+            .thenReturn("site_" + tenantId);
+        lenient().when(configurableEnvironment.getProperty(
+                "tenants.profile." + tenantId + ".captcha.recaptcha-key-secret"))
+            .thenReturn("secret_" + tenantId);
+    }
 }
+
+

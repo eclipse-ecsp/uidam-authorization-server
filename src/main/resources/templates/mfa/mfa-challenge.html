@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <title>MFA Challenge – UIDAM</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff; border-radius: 12px;
+            padding: 40px 44px; max-width: 420px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .shield { font-size: 56px; margin-bottom: 16px; }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+        .user-badge {
+            background: #e8f0fe; border-radius: 20px;
+            display: inline-block; padding: 4px 14px;
+            font-size: 13px; color: #0f3460; font-weight: 600;
+            margin-bottom: 24px;
+        }
+        label { display: block; font-weight: bold; font-size: 13px; color: #333;
+                text-align: left; margin-bottom: 8px; }
+        input[type="text"] {
+            width: 100%; padding: 14px;
+            font-size: 28px; letter-spacing: 10px;
+            text-align: center; border: 2px solid #ccc; border-radius: 10px;
+            outline: none; font-family: monospace;
+        }
+        input[type="text"]:focus { border-color: #0f3460; }
+        .btn {
+            display: block; width: 100%;
+            background: #0f3460; color: #fff;
+            border: none; border-radius: 8px;
+            padding: 14px; font-size: 15px;
+            cursor: pointer; margin-top: 16px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #1a4a8a; }
+        .hint { font-size: 12px; color: #999; margin-top: 16px; }
+        .re-enroll-wrap {
+            margin-top: 24px; border-top: 1px solid #eee; padding-top: 18px;
+        }
+        .re-enroll-wrap p {
+            font-size: 12px; color: #999; margin-bottom: 10px;
+        }
+        .btn-recover {
+            display: inline-block; width: 100%;
+            background: #fff; color: #c0392b;
+            border: 1px solid #f5a5a5; border-radius: 8px;
+            padding: 11px 14px; font-size: 13px;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .btn-recover:hover { background: #fff0f0; }
+        .error-msg {
+            background: #fff0f0; border: 1px solid #f5a5a5;
+            border-radius: 6px; padding: 10px 14px;
+            color: #c0392b; font-size: 13px; margin-bottom: 18px;
+            text-align: left;
+        }
+        /* countdown ring */
+        .timer-ring { margin: 20px auto 8px; position: relative; width: 50px; height: 50px; }
+        .timer-ring svg { transform: rotate(-90deg); }
+        .timer-ring circle { fill: none; stroke: #e0e0e0; stroke-width: 4; }
+        .timer-ring .progress { stroke: #0f3460; stroke-dasharray: 126; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+        .timer-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 13px; font-weight: bold; color: #0f3460; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="shield">🔐</div>
+    <h1>Two-Factor Authentication</h1>
+
+    <div class="user-badge" th:text="'👤 ' + ${username}"></div>
+
+    <p class="subtitle">
+        Open your authenticator app and enter the<br/>
+        <strong>6-digit code</strong> shown for <strong th:text="${appName != null ? appName : 'UIDAM'}">UIDAM</strong>
+    </p>
+
+    <!-- Error -->
+    <div class="error-msg" th:if="${error}" th:text="${error}"></div>
+
+    <!-- Countdown timer -->
+    <div class="timer-ring">
+        <svg width="50" height="50" viewBox="0 0 50 50">
+            <circle cx="25" cy="25" r="20"/>
+            <circle class="progress" id="ring" cx="25" cy="25" r="20" stroke-dashoffset="0"/>
+        </svg>
+        <span class="timer-label" id="countdown">30</span>
+    </div>
+    <p class="hint" style="margin-top:4px; margin-bottom:20px;">Code refreshes every 30 seconds</p>
+
+    <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId)) ? '/' + tenantId + '/mfa/challenge' : '/mfa/challenge'}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <input type="hidden" name="tenantId" th:value="${tenantId}"/>
+        <label for="totpCode">Authenticator Code</label>
+        <input type="text" id="totpCode" name="totpCode"
+               maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
+               placeholder="000000" autocomplete="one-time-code"
+               autofocus required/>
+        <button type="submit" class="btn">🔓 Verify Code</button>
+    </form>
+
+    <p class="hint">Codes are valid for ±30 seconds. If codes keep failing, ensure your device time is set automatically.</p>
+
+    <div class="re-enroll-wrap">
+        <p>📱 Lost access to your authenticator app?</p>
+        <a th:href="${(tenantId != null and !#strings.isEmpty(tenantId))
+                      ? '/' + tenantId + '/mfa/recovery'
+                      : '/mfa/recovery'}"
+           class="btn-recover">🆘 Account Recovery Options</a>
+    </div>
+</div>
+
+<script>
+    (function() {
+        var circumference = 2 * Math.PI * 20; // ~125.66
+        function tick() {
+            var now = Math.floor(Date.now() / 1000);
+            var remaining = 30 - (now % 30);
+            var offset = circumference * (1 - remaining / 30);
+            var ring = document.getElementById('ring');
+            var label = document.getElementById('countdown');
+            if (ring) { ring.style.strokeDashoffset = offset; }
+            if (label) { label.textContent = remaining; }
+        }
+        tick();
+        setInterval(tick, 1000);
+    })();
+</script>
+</body>
+</html>

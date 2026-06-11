@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <title>Enter Backup Code – UIDAM</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff; border-radius: 12px;
+            padding: 40px 44px; max-width: 440px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .icon { font-size: 52px; margin-bottom: 16px; }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+        .user-badge {
+            background: #e8f0fe; border-radius: 20px;
+            display: inline-block; padding: 4px 14px;
+            font-size: 13px; color: #0f3460; font-weight: 600;
+            margin-bottom: 24px;
+        }
+        .error-msg {
+            background: #fff0f0; border: 1px solid #f5a5a5;
+            border-radius: 6px; padding: 10px 14px;
+            color: #c0392b; font-size: 13px; margin-bottom: 18px;
+            text-align: left;
+        }
+        label { display: block; font-weight: bold; font-size: 13px; color: #333;
+                text-align: left; margin-bottom: 8px; }
+        input[type="text"] {
+            width: 100%; padding: 14px;
+            font-size: 22px; letter-spacing: 6px;
+            text-align: center; border: 2px solid #ccc; border-radius: 10px;
+            outline: none; font-family: monospace; text-transform: uppercase;
+        }
+        input[type="text"]:focus { border-color: #0f3460; }
+        .btn {
+            display: block; width: 100%;
+            background: #0f3460; color: #fff;
+            border: none; border-radius: 8px;
+            padding: 14px; font-size: 15px;
+            cursor: pointer; margin-top: 16px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #1a4a8a; }
+        .back-link {
+            display: block; text-align: center; margin-top: 20px;
+            font-size: 13px; color: #0f3460; text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .hint { font-size: 12px; color: #999; margin-top: 14px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="icon">🔑</div>
+    <h1>Enter Backup Code</h1>
+
+    <div class="user-badge" th:text="'👤 ' + ${username}"></div>
+
+    <p class="subtitle">
+        Enter one of the 8-character backup codes you saved when you set up MFA.
+        The code is case-insensitive.
+    </p>
+
+    <!-- Error -->
+    <div class="error-msg" th:if="${error}" th:text="${error}"></div>
+
+    <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId))
+                       ? '/' + tenantId + '/mfa/recovery/backup-code'
+                       : '/mfa/recovery/backup-code'}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <label for="backupCode">Backup Code</label>
+        <input type="text" id="backupCode" name="backupCode"
+               maxlength="8" pattern="[A-Za-z0-9]{8}" inputmode="text"
+               placeholder="XXXXXXXX" autocomplete="off"
+               autofocus required/>
+        <button type="submit" class="btn">🔓 Use This Code</button>
+    </form>
+
+    <p class="hint">
+        Each backup code can only be used once.<br/>
+        If all codes are exhausted, contact your administrator.
+    </p>
+
+    <a th:href="${(tenantId != null and !#strings.isEmpty(tenantId))
+                  ? '/' + tenantId + '/mfa/recovery'
+                  : '/mfa/recovery'}"
+       class="back-link">← Back to recovery options</a>
+</div>
+</body>
+</html>

@@ -207,4 +207,99 @@ class TenantAwareAuthenticationFilterTest {
             verify(filterChain).doFilter(request, response);
         }
     }
+
+    @Test
+    void doFilterInternal_shouldContinueFilterChain_whenLoginGetRequest() throws ServletException, IOException {
+        // GET to /login should pass-through (not a form login attempt since no username param needed)
+        // For GET, isFormLoginAttempt=false, isOauthLoginAttempt=false → returns true → continue
+        when(request.getRequestURI()).thenReturn("/login");
+        when(request.getMethod()).thenReturn("GET");
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            // Act
+            filter.doFilterInternal(request, response, filterChain);
+
+            // Assert - should continue since it's GET (not a form login attempt)
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void doFilterInternal_shouldContinueFilterChain_whenLoginPostWithoutUsername()
+            throws ServletException, IOException {
+        // POST to /login but without username param - not a form login attempt
+        when(request.getRequestURI()).thenReturn("/login");
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getParameter("username")).thenReturn(null);
+        when(tenantConfigurationService.getTenantProperties())
+                .thenReturn(tenantProperties);
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            // Act
+            filter.doFilterInternal(request, response, filterChain);
+
+            // Assert - should continue since there's no username (not a form login attempt)
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void doFilterInternal_shouldRedirect_whenNullTenantProperties() throws ServletException, IOException {
+        // When tenantProperties is null, isAuthenticationMethodAllowed returns false (fail-secure)
+        // getMethod/getParameter NOT called in this code path (null check is first)
+        when(request.getRequestURI()).thenReturn("/login");
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(null);
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            // Act
+            filter.doFilterInternal(request, response, filterChain);
+
+            // Assert - fail-secure: redirect to error
+            verify(response).sendRedirect(contains("error"));
+            verify(filterChain, never()).doFilter(request, response);
+        }
+    }
+
+    @Test
+    void doFilterInternal_shouldRethrowServletException() throws ServletException, IOException {
+        // Arrange
+        when(request.getRequestURI()).thenReturn("/api/data");
+        org.mockito.Mockito.doThrow(new ServletException("Test servlet error"))
+            .when(filterChain).doFilter(request, response);
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            // Act & Assert - ServletException should be re-thrown
+            org.junit.jupiter.api.Assertions.assertThrows(ServletException.class,
+                () -> filter.doFilterInternal(request, response, filterChain));
+        }
+    }
+
+    @Test
+    void doFilterInternal_shouldContinueFilterChain_whenLoginEndpointButOauthStyle()
+            throws ServletException, IOException {
+        // URI contains "oauth2/authorization/" - it's an oauth login endpoint check
+        when(request.getRequestURI()).thenReturn("/app/oauth2/authorization/google");
+        when(tenantConfigurationService.getTenantProperties())
+                .thenReturn(tenantProperties);
+        when(tenantProperties.isExternalIdpEnabled()).thenReturn(true);
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            // Act
+            filter.doFilterInternal(request, response, filterChain);
+
+            // Assert - OAuth is enabled, should continue
+            verify(filterChain).doFilter(request, response);
+        }
+    }
 }

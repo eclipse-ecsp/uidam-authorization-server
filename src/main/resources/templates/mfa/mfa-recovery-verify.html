@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <title>MFA Recovery – Enter Security Code</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff; border-radius: 12px;
+            padding: 40px 44px; max-width: 440px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .icon { font-size: 48px; margin-bottom: 12px; }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+        .user-badge {
+            background: #e8f0fe; border-radius: 20px;
+            display: inline-block; padding: 4px 14px;
+            font-size: 13px; color: #0f3460; font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .success-msg {
+            background: #e8f5e9; border: 1px solid #81c784;
+            border-radius: 6px; padding: 10px 14px;
+            color: #2e7d32; font-size: 13px; margin-bottom: 18px;
+            text-align: left;
+        }
+        .error-msg {
+            background: #fff0f0; border: 1px solid #f5a5a5;
+            border-radius: 6px; padding: 10px 14px;
+            color: #c0392b; font-size: 13px; margin-bottom: 18px;
+            text-align: left;
+        }
+        label { display: block; font-weight: bold; font-size: 13px; color: #333;
+                text-align: left; margin-bottom: 8px; }
+        input[type="text"] {
+            width: 100%; padding: 14px;
+            font-size: 24px; letter-spacing: 8px;
+            text-align: center; border: 2px solid #ccc; border-radius: 10px;
+            outline: none; font-family: monospace;
+            text-transform: uppercase;
+        }
+        input[type="text"]:focus { border-color: #0f3460; }
+        .btn {
+            display: block; width: 100%;
+            background: #0f3460; color: #fff;
+            border: none; border-radius: 8px;
+            padding: 14px; font-size: 15px;
+            cursor: pointer; margin-top: 16px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #1a4a8a; }
+        .btn:disabled { background: #aaa; cursor: not-allowed; }
+        .resend-wrap {
+            margin-top: 20px; padding-top: 16px;
+            border-top: 1px solid #eee;
+            font-size: 13px; color: #666;
+        }
+        .resend-link {
+            color: #0f3460; cursor: pointer; font-weight: 600;
+            text-decoration: none; border: none; background: none;
+            font-size: 13px;
+        }
+        .resend-link:disabled { color: #aaa; cursor: not-allowed; }
+        .hint { font-size: 12px; color: #999; margin-top: 14px; }
+        .back-link {
+            display: block; text-align: center; margin-top: 16px;
+            font-size: 13px; color: #0f3460; text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="icon">📧</div>
+    <h1>Check Your Email</h1>
+    <div class="user-badge" th:text="'👤 ' + ${username}"></div>
+
+    <p class="subtitle">
+        We've sent a <strong>6-character security code</strong> to your registered email address.
+        Enter it below to reset your MFA enrollment.
+    </p>
+
+    <!-- Success -->
+    <div class="success-msg" th:if="${emailSent}" th:text="${emailSent}"></div>
+
+    <!-- Error -->
+    <div class="error-msg" th:if="${error}" th:text="${error}"></div>
+
+    <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId))
+                      ? '/' + tenantId + '/mfa/recovery/verify-key'
+                      : '/mfa/recovery/verify-key'}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <label for="recoveryKey">Security Code</label>
+        <input type="text" id="recoveryKey" name="recoveryKey"
+               maxlength="6" pattern="[A-Za-z0-9]{6}" inputmode="text"
+               placeholder="ABC123" autocomplete="one-time-code"
+               autofocus required/>
+        <button type="submit" class="btn">🔓 Verify &amp; Reset MFA</button>
+    </form>
+
+    <div class="resend-wrap">
+        <p>Didn't receive the email?</p>
+        <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId))
+                          ? '/' + tenantId + '/mfa/recovery/send-email'
+                          : '/mfa/recovery/send-email'}" method="post" style="display:inline;">
+            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+            <button type="submit" class="resend-link" id="resendBtn">
+                📨 Resend security code
+            </button>
+        </form>
+        <p id="cooldownMsg" style="display:none; margin-top:6px; color:#999;"></p>
+    </div>
+
+    <p class="hint">The code is valid for 10 minutes. Check your spam folder if you don't see the email.</p>
+
+    <a th:href="${(tenantId != null and !#strings.isEmpty(tenantId))
+                  ? '/' + tenantId + '/mfa/challenge'
+                  : '/mfa/challenge'}"
+       class="back-link">← Back to authenticator code entry</a>
+</div>
+
+<script th:inline="javascript">
+    (function() {
+        var cooldown = /*[[${resendCooldownSeconds != null ? resendCooldownSeconds : 60}]]*/ 60;
+        var lastSentKey = 'mfa_recovery_last_sent';
+        var btn = document.getElementById('resendBtn');
+        var msg = document.getElementById('cooldownMsg');
+
+        function updateTimer() {
+            var lastSent = parseInt(sessionStorage.getItem(lastSentKey) || '0', 10);
+            var elapsed = Math.floor(Date.now() / 1000) - lastSent;
+            var remaining = cooldown - elapsed;
+            if (remaining > 0) {
+                btn.disabled = true;
+                msg.style.display = 'block';
+                msg.textContent = 'You can resend in ' + remaining + 's';
+                setTimeout(updateTimer, 1000);
+            } else {
+                btn.disabled = false;
+                msg.style.display = 'none';
+            }
+        }
+
+        // Mark send time when form submits
+        btn.closest('form').addEventListener('submit', function() {
+            sessionStorage.setItem(lastSentKey, Math.floor(Date.now() / 1000).toString());
+        });
+
+        updateTimer();
+    })();
+</script>
+</body>
+</html>

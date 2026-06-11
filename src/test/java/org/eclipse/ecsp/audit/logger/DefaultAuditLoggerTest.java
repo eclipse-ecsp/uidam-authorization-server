@@ -342,4 +342,157 @@ class DefaultAuditLoggerTest {
             }
         };
     }
+
+    @Test
+    void logWithNullToMapContextShouldHandleGracefully() {
+        // Given - actor context whose toMap() returns null
+        ActorContext nullMapContext = new ActorContext() {
+            @Override
+            public Map<String, Object> toMap() {
+                return null;
+            }
+        };
+        when(auditRepository.save(any(AuditEvent.class))).thenAnswer(i -> i.getArgument(0));
+        ArgumentCaptor<AuditEvent> eventCaptor = ArgumentCaptor.forClass(AuditEvent.class);
+
+        // When
+        auditLogger.log(
+            "TEST_EVENT",
+            "test-component",
+            AuditEventResult.SUCCESS,
+            nullMapContext,
+            requestContext
+        );
+
+        // Then - actorId and actorType should be null when toMap() returns null
+        verify(auditRepository).save(eventCaptor.capture());
+        AuditEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getActorId()).isNull();
+        assertThat(savedEvent.getActorType()).isNull();
+    }
+
+    @Test
+    void logWithNullMapTargetContextShouldHandleGracefully() {
+        // Given - target context whose toMap() returns null
+        TargetContext nullMapTargetContext = new TargetContext() {
+            @Override
+            public Map<String, Object> toMap() {
+                return null;
+            }
+        };
+        when(auditRepository.save(any(AuditEvent.class))).thenAnswer(i -> i.getArgument(0));
+        ArgumentCaptor<AuditEvent> eventCaptor = ArgumentCaptor.forClass(AuditEvent.class);
+
+        // When
+        auditLogger.log(
+            "TEST_EVENT",
+            "test-component",
+            AuditEventResult.SUCCESS,
+            "Test message",
+            actorContext,
+            nullMapTargetContext,
+            requestContext,
+            null
+        );
+
+        // Then - targetId and targetType should be null
+        verify(auditRepository).save(eventCaptor.capture());
+        AuditEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getTargetId()).isNull();
+        assertThat(savedEvent.getTargetType()).isNull();
+        assertThat(savedEvent.getTargetContext()).isNull();
+    }
+
+    @Test
+    void logWithNullMapRequestContextShouldHandleGracefully() {
+        // Given - request context whose toMap() returns null
+        RequestContext nullMapRequestContext = new RequestContext() {
+            @Override
+            public Map<String, Object> toMap() {
+                return null;
+            }
+        };
+        when(auditRepository.save(any(AuditEvent.class))).thenAnswer(i -> i.getArgument(0));
+        ArgumentCaptor<AuditEvent> eventCaptor = ArgumentCaptor.forClass(AuditEvent.class);
+
+        // When
+        auditLogger.log(
+            "TEST_EVENT",
+            "test-component",
+            AuditEventResult.SUCCESS,
+            actorContext,
+            nullMapRequestContext
+        );
+
+        // Then - sourceIpAddress and correlationId should be null
+        verify(auditRepository).save(eventCaptor.capture());
+        AuditEvent savedEvent = eventCaptor.getValue();
+        assertThat(savedEvent.getSourceIpAddress()).isNull();
+        assertThat(savedEvent.getCorrelationId()).isNull();
+        assertThat(savedEvent.getRequestContext()).isNull();
+    }
+
+    @Test
+    void logWithActorContextMissingIdKeysShouldReturnNullIds() {
+        // Given - actor context with empty map (no actorId, no actorType)
+        ActorContext emptyMapContext = new ActorContext() {
+            @Override
+            public Map<String, Object> toMap() {
+                return new HashMap<>(); // empty map - keys not present
+            }
+        };
+        when(auditRepository.save(any(AuditEvent.class))).thenAnswer(i -> i.getArgument(0));
+        ArgumentCaptor<AuditEvent> eventCaptor = ArgumentCaptor.forClass(AuditEvent.class);
+
+        // When
+        auditLogger.log(
+            "TEST_EVENT",
+            "test-component",
+            AuditEventResult.SUCCESS,
+            emptyMapContext,
+            requestContext
+        );
+
+        // Then
+        verify(auditRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getActorId()).isNull();
+        assertThat(eventCaptor.getValue().getActorType()).isNull();
+    }
+
+    @Test
+    void logFailureWithNullContextsShouldNotThrow() {
+        // When
+        when(auditRepository.save(any(AuditEvent.class))).thenAnswer(i -> i.getArgument(0));
+
+        // Should not throw
+        auditLogger.logFailure(
+            "TEST_FAILURE",
+            "test-component",
+            "ERR_001",
+            "Some failure reason",
+            null,
+            null
+        );
+
+        verify(auditRepository, times(1)).save(any(AuditEvent.class));
+    }
+
+    @Test
+    void logFailureShouldNotThrowWhenRepositoryFails() {
+        // Given
+        when(auditRepository.save(any(AuditEvent.class))).thenThrow(new RuntimeException("DB error"));
+
+        // When - should not propagate
+        auditLogger.logFailure(
+            "TEST_FAILURE",
+            "test-component",
+            "ERR_001",
+            "Some failure",
+            actorContext,
+            requestContext
+        );
+
+        // Then
+        verify(auditRepository, times(1)).save(any(AuditEvent.class));
+    }
 }

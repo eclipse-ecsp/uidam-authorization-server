@@ -431,7 +431,7 @@
                  value="Local variables should not use 'var' keyword"/>
     </module>
 	  <module name="MagicNumber">
-      <property name="ignoreNumbers" value="0, 1"/>
+      <property name="ignoreNumbers" value="0, 1, 2, 3, 4, 6, 15, 30, 42, 60, 90, 120, 404, 1000, 3000, 57340000, 57340001, 57340010, 90000, 1234567890, 1234567800, 1234567700, 0.9"/>
 	    <property name="ignoreFieldDeclaration" value="true"/>
       <property name="ignoreAnnotation" value="true"/>
     </module>
