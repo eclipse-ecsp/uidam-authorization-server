@@ -49,6 +49,7 @@ public final class ConfigurationPropertyUtils {
     private static final String TENANT_PREFIX = "tenants.profile.";
     private static final String JDBC_URL_SUFFIX = ".jdbc-url";
     private static final String POSTGRES_JDBC_URL_PROPERTY = "postgres.jdbc.url";
+    private static final String PLACEHOLDER_VALUE = "ChangeMe";
     private static final int JDBC_URL_GROUP_HOST_PORT = 1;
     private static final int JDBC_URL_GROUP_PARAMS = 3;
     private static final int NOT_FOUND = -1;
@@ -115,7 +116,7 @@ public final class ConfigurationPropertyUtils {
         String tenantJdbcEnvVar = tenantUpperCase + "_POSTGRES_DATASOURCE";
         String envValue = environment.getProperty(tenantJdbcEnvVar);
         
-        if (envValue != null && !envValue.isEmpty() && !envValue.equals("ChangeMe")) {
+        if (envValue != null && !envValue.isEmpty() && !envValue.equals(PLACEHOLDER_VALUE)) {
             LOGGER.info("Using tenant-specific JDBC URL from environment variable {} for tenant: {}", 
                 tenantJdbcEnvVar, tenantId);
             return envValue;
@@ -135,7 +136,7 @@ public final class ConfigurationPropertyUtils {
         String propertyName = TENANT_PREFIX + tenantId + JDBC_URL_SUFFIX;
         String propertyValue = environment.getProperty(propertyName);
         
-        if (propertyValue != null && !propertyValue.isEmpty() && !propertyValue.equals("ChangeMe")) {
+        if (propertyValue != null && !propertyValue.isEmpty() && !propertyValue.equals(PLACEHOLDER_VALUE)) {
             LOGGER.info("Using tenant-specific JDBC URL from property {} for tenant: {}", 
                 propertyName, tenantId);
             return propertyValue;
@@ -254,7 +255,7 @@ public final class ConfigurationPropertyUtils {
      * @return true if the value is defined and not a placeholder
      */
     public static boolean isPropertyDefined(String value) {
-        return value != null && !value.trim().isEmpty() && !value.equals("ChangeMe");
+        return value != null && !value.trim().isEmpty() && !value.equals(PLACEHOLDER_VALUE);
     }
     
     /**

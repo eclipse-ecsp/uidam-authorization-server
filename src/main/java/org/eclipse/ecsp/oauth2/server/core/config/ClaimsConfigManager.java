@@ -476,6 +476,7 @@ public class ClaimsConfigManager {
         setStandardClaims(claimsBuilder);
         if (AUTHORIZATION_CODE_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
             setUserCustomClaims(claimsBuilder, userDetailsResponse);
+            scopeSet = populateUserScopes(userDetailsResponse, scopeSet);
             addScopeAndScopes(clientDetails, userDetailsResponse, claimsBuilder, scopeSet, false);
             LOGGER.debug("Claims added to JWT Access token for grant type - authorization_code");
         } else if (CLIENT_CREDENTIALS_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
@@ -483,7 +484,13 @@ public class ClaimsConfigManager {
             addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, true);
             LOGGER.debug("Claims added to JWT Access token for grant type - client_credentials");
         } else if (REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
-            setUserCustomClaims(claimsBuilder, userDetailsResponse);
+            if (userDetailsResponse != null) {
+                setUserCustomClaims(claimsBuilder, userDetailsResponse);
+                scopeSet = populateUserScopes(userDetailsResponse, scopeSet);
+            } else {
+                LOGGER.warn("userDetailsResponse is null during refresh_token grant "
+                        + "(PKCE/public client flow) - skipping user claims, using existing scope");
+            }
             addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, false);
             LOGGER.debug("Claims added to JWT Access token for grant type - refresh_token");
         }
@@ -607,6 +614,37 @@ public class ClaimsConfigManager {
                 .claim(CLAIM_ACCOUNT_ID, tenantProperties.getAccount().getAccountId())
                 .claim(CLAIM_TENANT_ID, tenantProperties.getTenantId());
         LOGGER.debug("## setStandardClaims - END");
+    }
+
+    /**
+     * Populates the scopeSet with all user scopes when {@code tenant.client.portal-scopeless-user-scopes} is
+     * {@code true} and the requested scopeSet is empty (i.e., a scopeless / portal user flow).
+     * In that case, all scopes assigned to the user are merged into the scopeSet so that
+     * they are included in both the {@code scope} and {@code scopes} claims of the JWT.
+     *
+     * @param clientDetails       The registered client details (may be null).
+     * @param userDetailsResponse The user details containing the user's assigned scopes.
+     * @param scopeSet            The current scope set derived from the token request.
+     * @return The (possibly enriched) scope set to use for claim population.
+     */
+    private Set<String> populateUserScopes(UserDetailsResponse userDetailsResponse,
+                                           Set<String> scopeSet) {
+        LOGGER.debug("## populateUserScopes - START");
+        TenantProperties tenantProperties = getCurrentTenantProperties();
+        Boolean portalScopelessUserScopes = tenantProperties.getClient().getAuthCodeScopelessUserScopes();
+        if (Boolean.TRUE.equals(portalScopelessUserScopes)
+                && userDetailsResponse != null
+                && !CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            LOGGER.debug("portal-scopeless-user-scopes=true: merging user scopes into scopeSet");
+            if (CollectionUtils.isEmpty(scopeSet)) {
+                scopeSet = new java.util.HashSet<>(userDetailsResponse.getScopes());
+            }
+            LOGGER.debug("populateUserScopes: merged scopeSet={}", scopeSet);
+        } else {
+            LOGGER.debug("portal-scopeless-user-scopes=false or user scopes empty, no scope enrichment");
+        }
+        LOGGER.debug("## populateUserScopes - END");
+        return scopeSet;
     }
 
     /**
@@ -744,7 +782,7 @@ public class ClaimsConfigManager {
                 LOGGER.debug("Requested scopes are empty and Client Scopes are not empty");
                 scopeSet = clientDetails.getRegisteredClient().getScopes();
             }
-            if (CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            if (userDetailsResponse == null || CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
                 LOGGER.info("User Scopes are empty");
                 claimsBuilder
                         .claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet));

@@ -31,6 +31,8 @@ import org.eclipse.ecsp.oauth2.server.core.authentication.providers.CustomUserPw
 import org.eclipse.ecsp.oauth2.server.core.authentication.validator.CustomScopeValidator;
 import org.eclipse.ecsp.oauth2.server.core.filter.TenantAwareAuthenticationFilter;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.mfa.MfaChallengeFilter;
+import org.eclipse.ecsp.oauth2.server.core.mfa.MfaSecretService;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRequestRepository;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationSecurityContextRepository;
 import org.eclipse.ecsp.oauth2.server.core.service.DatabaseAuthorizationRequestRepository;
@@ -49,6 +51,7 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.core.session.SessionRegistryImpl;
@@ -58,7 +61,6 @@ import org.springframework.security.oauth2.server.authorization.authentication.O
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationValidator;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
-import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.WebAttributes;
@@ -107,6 +109,7 @@ public class IgniteSecurityConfig {
     private static final String OAUTH2_AUTHORIZATION_PATTERN = "/*/oauth2/authorization/**";
     private static final String OAUTH2_LOGOUT_ENDPOINT = "/oauth2/logout";
     private static final String POST_METHOD = "POST";
+    private static final String ISSUER_PARAM = "issuer";
     
     // CORS configuration constants
     private static final long CORS_MAX_AGE_SECONDS = 3600L; // 1 hour preflight cache
@@ -191,8 +194,8 @@ public class IgniteSecurityConfig {
             Optional<ClientRegistrationRepository> clientRegistrationRepository,
             CustomScopeValidator customScopeValidator,
             DatabaseSecurityContextRepository databaseSecurityContextRepository,
-            FederatedIdentityAuthenticationSuccessHandler 
-            federatedIdentityAuthenticationSuccessHandler) throws Exception {
+            FederatedIdentityAuthenticationSuccessHandler federatedIdentityAuthenticationSuccessHandler,
+            MfaSecretService mfaSecretService) throws Exception {
 
         RequestCache requestCache = new CookieRequestCache();
         http.requestCache(requestCacheConfigurer -> requestCacheConfigurer.requestCache(requestCache));
@@ -251,6 +254,14 @@ public class IgniteSecurityConfig {
         // Set custom authentication details source to capture browser metadata
         customUserPwdAuthenticationFilter.setAuthenticationDetailsSource(customWebAuthenticationDetailsSource);
         http.addFilterBefore(customUserPwdAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // MFA Challenge Filter – must run BEFORE the OAuth2AuthorizationEndpointFilter so that
+        // GET /oauth2/authorize is intercepted and the MFA challenge is shown before the auth
+        // code is issued.  UsernamePasswordAuthenticationFilter is earlier in the chain, so
+        // placing the filter before it guarantees it runs before any OAuth2 endpoint filter.
+        MfaChallengeFilter mfaChallengeFilter = new MfaChallengeFilter(mfaSecretService,
+                this.tenantConfigurationService);
+        http.addFilterBefore(mfaChallengeFilter, UsernamePasswordAuthenticationFilter.class);
         
         // This filter ensures only tenant-allowed authentication methods are executed
         TenantAwareAuthenticationFilter tenantAwareAuthenticationFilter = new TenantAwareAuthenticationFilter(
@@ -277,6 +288,9 @@ public class IgniteSecurityConfig {
      * @return Configured SecurityFilterChain for API endpoints
      * @throws Exception If an error occurs during configuration
      */
+    // S4502: CSRF protection intentionally disabled - stateless REST APIs
+    // using Bearer token authentication are not vulnerable to CSRF
+    @SuppressWarnings("java:S4502")
     @Bean
     @Order(2)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
@@ -318,25 +332,27 @@ public class IgniteSecurityConfig {
      * @param http HttpSecurity object used for configuring web based security for specific http requests.
      * @throws Exception May throw an exception if there's an error during the configuration.
      */
-    @SuppressWarnings("java:S4502") // CSRF protection intentionally disabled for OAuth2 logout endpoints
+    // S4502: CSRF selectively disabled for OAuth2 logout endpoints
+    // S3330: HttpOnly=false is required for CookieCsrfTokenRepository
+    @SuppressWarnings({"java:S4502", "java:S3330"})
     private void setSecurityMachers(HttpSecurity http) throws Exception {
         // Configure security matchers for ALL OAuth2 patterns (authorization server + external IDP)
         http.securityMatchers(matchers -> matchers.requestMatchers(
                 DEFAULT_LOGIN_MATCHER_PATTERN,
                 TENANT_OAUTH2_PATTERN, OAUTH2_PATTERN,
                 WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT,
-                OAUTH2_CALLBACK_PATTERN, // Tenant-prefixed OAuth2 callback URLs
-                LOGIN_MATCHER_PATTERN, 
-                LOGOUT_MATCHER_PATTERN))
+                OAUTH2_CALLBACK_PATTERN,
+                LOGIN_MATCHER_PATTERN,
+                LOGOUT_MATCHER_PATTERN,
+                "/mfa/**",
+                "/*/mfa/**"))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(DEFAULT_LOGIN_MATCHER_PATTERN, LOGIN_MATCHER_PATTERN).permitAll()
                         .requestMatchers(LOGOUT_MATCHER_PATTERN).permitAll()
-                        .requestMatchers(OAUTH2_AUTHORIZATION_PATTERN, OAUTH2_CALLBACK_PATTERN)
-                            .permitAll() // Tenant-prefixed
-                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT)
-                            .permitAll() // Well-known endpoints (both root and tenant-prefixed)
-                        .anyRequest()
-                        .authenticated())
+                        .requestMatchers("/mfa/**", "/*/mfa/**").permitAll()  // MFA pages (filter controls access)
+                        .requestMatchers(OAUTH2_AUTHORIZATION_PATTERN, OAUTH2_CALLBACK_PATTERN).permitAll()
+                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT).permitAll()
+                        .anyRequest().authenticated())
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         // SonarQube S4502: CSRF protection is intentionally disabled for OAuth2 logout endpoints
                         // to support OIDC RP-Initiated Logout specification compliance where external clients
@@ -519,7 +535,7 @@ public class IgniteSecurityConfig {
             params.forEach(builder::queryParam);
             // Optionally, add issuerPrefix as a parameter
             if (!issuerPrefix.isEmpty()) {
-                builder.queryParam("issuer", issuerPrefix.substring(1));
+                builder.queryParam(ISSUER_PARAM, issuerPrefix.substring(1));
             }
             String redirectUrl = builder.build().toUriString();
             response.sendRedirect(redirectUrl);
@@ -540,13 +556,12 @@ public class IgniteSecurityConfig {
             if (session != null) {
                 request.getSession().setAttribute(WebAttributes.AUTHENTICATION_EXCEPTION, exception);
             }
-            
-            String errorUrl = "/" + request.getParameter("issuer") + LOGIN_FAILURE_HANDLER
+            String errorUrl = "/" + request.getParameter(ISSUER_PARAM) + LOGIN_FAILURE_HANDLER
                     + "&response_type=" + request.getParameter("response_type")
                     + "&client_id=" + request.getParameter("client_id")
                     + "&scope=" + request.getParameter("scope")
                     + "&redirect_uri=" + request.getParameter("redirect_uri")
-                    + "&issuer=" + request.getParameter("issuer");
+                    + "&issuer=" + request.getParameter(ISSUER_PARAM);
             response.sendRedirect(errorUrl);
         };
         

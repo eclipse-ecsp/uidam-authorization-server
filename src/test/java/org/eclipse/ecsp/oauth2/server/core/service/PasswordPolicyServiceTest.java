@@ -125,4 +125,93 @@ class PasswordPolicyServiceTest {
         assertNotNull(model.getAttribute("pwdMax"));
         assertNotNull(model.getAttribute("pwdNote"));
     }
+
+    @Test
+    void testSetupPasswordPolicyWithDefaultsAndNoIgnoreConsecutive() {
+        UserManagementClient mockClient = Mockito.mock(UserManagementClient.class);
+        Mockito.when(mockClient.getPasswordPolicy()).thenReturn(null);
+        PasswordPolicyService service = new PasswordPolicyService(mockClient);
+        Model model = new ConcurrentModel();
+        service.setupPasswordPolicy(model, false);
+        assertNotNull(model.getAttribute("pwdMin"));
+        assertNotNull(model.getAttribute("pwdMax"));
+        assertNotNull(model.getAttribute("pwdNote"));
+        // MIN_CON_LETTERS should be set when ignoreConsecutiveLetters=false
+        assertNotNull(model.getAttribute("minConsecutiveLettersLength"));
+    }
+
+    @Test
+    void testSetupPasswordPolicyWithNonNullPolicyIgnoreConsecutive() {
+        final UserManagementClient mockClient = Mockito.mock(UserManagementClient.class);
+        PasswordPolicyResponseDto dto = new PasswordPolicyResponseDto();
+        dto.setMinLength(INTEGER_EIGHT);
+        dto.setMaxLength(INTEGER_TWENTY);
+        dto.setMinUppercase(1);
+        dto.setMinLowercase(1);
+        dto.setMinDigits(1);
+        dto.setMinSpecialChars(1);
+        dto.setAllowedSpecialChars("!@#");
+        dto.setExcludedSpecialChars("[]{}");
+        dto.setMinConsecutiveLettersLength(INTEGER_THREE);
+        Mockito.when(mockClient.getPasswordPolicy()).thenReturn(dto);
+        PasswordPolicyService service = new PasswordPolicyService(mockClient);
+        Model model = new ConcurrentModel();
+        service.setupPasswordPolicy(model, true);
+        assertEquals(INTEGER_EIGHT, model.getAttribute("pwdMin"));
+        assertEquals(INTEGER_TWENTY, model.getAttribute("pwdMax"));
+        assertNotNull(model.getAttribute("pwdNote"));
+    }
+
+    @Test
+    void testSetupPasswordPolicyWithNonNullPolicyNoIgnoreConsecutive() {
+        final UserManagementClient mockClient = Mockito.mock(UserManagementClient.class);
+        PasswordPolicyResponseDto dto = new PasswordPolicyResponseDto();
+        dto.setMinLength(INTEGER_EIGHT);
+        dto.setMaxLength(INTEGER_TWENTY);
+        dto.setMinConsecutiveLettersLength(INTEGER_THREE);
+        Mockito.when(mockClient.getPasswordPolicy()).thenReturn(dto);
+        PasswordPolicyService service = new PasswordPolicyService(mockClient);
+        Model model = new ConcurrentModel();
+        service.setupPasswordPolicy(model, false);
+        assertEquals(INTEGER_EIGHT, model.getAttribute("pwdMin"));
+        // MIN_CON_LETTERS should be set
+        assertEquals(INTEGER_THREE, model.getAttribute("minConsecutiveLettersLength"));
+    }
+
+    @Test
+    void testSetupPasswordPolicyWithZeroMinLength() {
+        UserManagementClient mockClient = Mockito.mock(UserManagementClient.class);
+        PasswordPolicyResponseDto dto = new PasswordPolicyResponseDto();
+        dto.setMinLength(0); // zero → should use DEFAULT_MIN_LENGTH
+        dto.setMaxLength(0); // zero → should use DEFAULT_MAX_LENGTH
+        Mockito.when(mockClient.getPasswordPolicy()).thenReturn(dto);
+        PasswordPolicyService service = new PasswordPolicyService(mockClient);
+        Model model = new ConcurrentModel();
+        service.setupPasswordPolicy(model, true);
+        assertNotNull(model.getAttribute("pwdMin"));
+        assertNotNull(model.getAttribute("pwdMax"));
+    }
+
+    @Test
+    void testGetPasswordPolicyMessages_WithIgnoreConsecutiveLetters() {
+        policy.setMinLength(INTEGER_EIGHT);
+        policy.setMinConsecutiveLettersLength(INTEGER_THREE);
+        policy.setAllowedSpecialChars("!@#");
+        policy.setMinSpecialChars(1);
+        List<String> messages = passwordPolicyService.getPasswordPolicyMessages(policy, true);
+        assertTrue(messages.stream().anyMatch(m -> m.contains("8 characters minimum")));
+        // Should NOT have consecutive letters message when ignoreConsecutiveLetters=true
+        assertTrue(messages.stream().noneMatch(m -> m.contains("sequence of")));
+        // Should NOT have "Password must not contain email/username" when ignoreConsecutiveLetters=true
+        assertTrue(messages.stream().noneMatch(m -> m.contains("email/username")));
+    }
+
+    @Test
+    void testGetPasswordPolicyMessages_MinSpecialCharsWithNoAllowedChars() {
+        policy.setMinSpecialChars(INTEGER_TWO);
+        // No allowed special chars set
+        List<String> messages = passwordPolicyService.getPasswordPolicyMessages(policy, true);
+        // Should NOT add special chars message when allowedSpecialChars is not set
+        assertTrue(messages.stream().noneMatch(m -> m.contains("special character")));
+    }
 }

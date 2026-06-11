@@ -24,7 +24,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
-import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -77,8 +76,7 @@ public class PasswordUtils {
             generatedPassword = Base64.getEncoder().encodeToString(bytes);
         } catch (NoSuchAlgorithmException e) {
             LOGGER.error("getSecurePassword - {}", e.getMessage());
-            OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR, "Unable to validate "
-                + OAuth2ParameterNames.PASSWORD, null);
+            OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR, "Unable to validate password", null);
             throw new OAuth2AuthenticationException(error);
         }
         return generatedPassword;

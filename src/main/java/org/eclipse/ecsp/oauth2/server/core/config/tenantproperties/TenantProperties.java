@@ -18,10 +18,9 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
-import jakarta.validation.constraints.Pattern;
+import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
-import javax.annotation.PostConstruct;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -55,6 +54,20 @@ public class TenantProperties {
     
     // Legacy External IDP List (for backward compatibility and direct property binding)
     private List<ExternalIdpRegisteredClient> externalIdpRegisteredClientList;
+
+    /**
+     * Returns only the enabled external IDP registered clients.
+     *
+     * @return a list of enabled {@link ExternalIdpRegisteredClient}, or an empty list if none are enabled
+     */
+    public List<ExternalIdpRegisteredClient> getExternalIdpRegisteredClientList() {
+        if (externalIdpRegisteredClientList == null) {
+            return List.of();
+        }
+        return externalIdpRegisteredClientList.stream()
+                .filter(ExternalIdpRegisteredClient::isEnabled)
+                .toList();
+    }
     
     // Direct External IDP configuration fields for property binding
     private boolean externalIdpEnabled;
@@ -62,6 +75,12 @@ public class TenantProperties {
     
     private boolean internalLoginEnabled = true;
     private boolean signUpEnabled;
+
+    /** MFA issuer/app name displayed in authenticator apps. Default: UIDAM. Overridable per tenant. */
+    private String mfaAppName = "UIDAM";
+
+    /** Per-tenant MFA enforcement policy (mode, step-up scopes, skip-users). */
+    private MfaPolicyProperties mfa = new MfaPolicyProperties();
 
     private static final String MAPPINGS_DELIMITER = ",";
     private static final String PAIR_DELIMITER = "#";

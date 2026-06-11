@@ -30,6 +30,7 @@
 
 package org.eclipse.ecsp.uidam.config;
 
+import jakarta.annotation.PostConstruct;
 import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +39,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
-import javax.annotation.PostConstruct;
 import java.util.Map;
 /**
  * Configuration class to bridge Spring application properties to System properties
@@ -59,6 +59,7 @@ import java.util.Map;
 public class MultitenancySystemPropertyConfig {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MultitenancySystemPropertyConfig.class);
+    private static final String NOT_SET = "NOT_SET";
 
     @Autowired(required = false)
     private Map<String, TenantDatabaseProperties> multiTenantDbProperties;
@@ -171,12 +172,12 @@ public class MultitenancySystemPropertyConfig {
         String password = tenantDbProps.getPassword();
         
         // Mask password for security
-        String maskedPassword = (password != null && !password.isEmpty()) ? "****" : "NOT_SET";
+        String maskedPassword = (password != null && !password.isEmpty()) ? "****" : NOT_SET;
         
         LOGGER.info("Tenant [{}] database properties - JDBC URL: {}, Username: {}, Password: {}", 
                     tenantId, 
-                    jdbcUrl != null ? jdbcUrl : "NOT_SET", 
-                    username != null ? username : "NOT_SET", 
+                    jdbcUrl != null ? jdbcUrl : NOT_SET, 
+                    username != null ? username : NOT_SET, 
                     maskedPassword);
     }
 }

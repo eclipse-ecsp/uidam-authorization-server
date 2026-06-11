@@ -28,6 +28,7 @@ import org.eclipse.ecsp.oauth2.server.core.response.dto.FailedSessionDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.InvalidateSessionsResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.service.SessionManagementService;
 import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +44,7 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -78,6 +80,8 @@ class SessionManagementControllerTest {
     
     @BeforeEach
     void setUp() {
+        // Ensure TenantUtils static state is not polluted by other Spring context tests
+
         // Mock token introspection (now using introspectToken instead of validateToken)
         lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(SELF_MANAGE_SCOPE))).thenReturn(true);
         lenient().when(jwtTokenValidator.introspectToken(anyString(), eq(MANAGE_USERS_SCOPE))).thenReturn(true);
@@ -484,7 +488,7 @@ class SessionManagementControllerTest {
                 .build();
         
         when(sessionManagementService.getActiveSessionsForUser(
-                eq(USERNAME), eq("valid-jwt-token"), anyString()))
+                eq(USERNAME), eq("valid-jwt-token"), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
@@ -508,7 +512,7 @@ class SessionManagementControllerTest {
                 .message("Sessions invalidated successfully")
                 .build();
         
-        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), anyString()))
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
@@ -540,7 +544,7 @@ class SessionManagementControllerTest {
                 .username(USERNAME)
                 .build();
         
-        when(sessionManagementService.getActiveSessionsForUser(eq(USERNAME), isNull(), anyString()))
+        when(sessionManagementService.getActiveSessionsForUser(eq(USERNAME), isNull(), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId
@@ -565,7 +569,7 @@ class SessionManagementControllerTest {
                 .message("Sessions invalidated successfully")
                 .build();
         
-        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), anyString()))
+        when(sessionManagementService.invalidateSessionsForUser(eq(USERNAME), anyList(), any()))
                 .thenReturn(expectedResponse);
         
         // Act - pass null as tenantId

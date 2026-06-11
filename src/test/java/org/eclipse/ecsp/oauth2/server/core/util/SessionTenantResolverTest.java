@@ -334,4 +334,102 @@ class SessionTenantResolverTest {
             mockStatic.verify(() -> TenantContext.setCurrentTenant("invalid-tenant"));
         }
     }
+
+    @Test
+    void getCurrentTenant_shouldReturnTenantFromSession_whenThreadLocalIsEmpty() {
+        // Given - ThreadLocal is empty, session has tenant
+        // TenantContext is cleared, session has a tenant value
+        requestContextHolderMock.when(RequestContextHolder::currentRequestAttributes)
+            .thenReturn(mockRequestAttributes);
+        when(mockRequest.getSession(false)).thenReturn(mockSession);
+        when(mockSession.getAttribute("RESOLVED_TENANT_ID")).thenReturn("session-tenant");
+        
+        try (var mockStatic = Mockito.mockStatic(TenantContext.class)) {
+            // ThreadLocal returns null (empty)
+            mockStatic.when(TenantContext::getCurrentTenant).thenReturn(null);
+            // setCurrentTenant should succeed
+            mockStatic.when(() -> TenantContext.setCurrentTenant("session-tenant")).thenAnswer(inv -> null);
+            
+            // When
+            String result = SessionTenantResolver.getCurrentTenant();
+            
+            // Then - should return tenant from session
+            assertEquals("session-tenant", result);
+        }
+    }
+
+    @Test
+    void getCurrentTenant_shouldReturnNull_whenThreadLocalEmptyAndNoSession() {
+        // Given - ThreadLocal is empty, no request context
+        requestContextHolderMock.when(RequestContextHolder::currentRequestAttributes)
+            .thenThrow(new IllegalStateException("No request context"));
+        
+        try (var mockStatic = Mockito.mockStatic(TenantContext.class)) {
+            // ThreadLocal returns null (empty)
+            mockStatic.when(TenantContext::getCurrentTenant).thenReturn(null);
+            
+            // When
+            String result = SessionTenantResolver.getCurrentTenant();
+            
+            // Then
+            assertNull(result);
+        }
+    }
+
+    @Test
+    void getCurrentTenant_shouldReturnNull_whenThreadLocalEmptyAndSessionHasNullTenant() {
+        // Given - ThreadLocal is empty, session has no tenant attribute
+        requestContextHolderMock.when(RequestContextHolder::currentRequestAttributes)
+            .thenReturn(mockRequestAttributes);
+        when(mockRequest.getSession(false)).thenReturn(mockSession);
+        when(mockSession.getAttribute("RESOLVED_TENANT_ID")).thenReturn(null);
+        
+        try (var mockStatic = Mockito.mockStatic(TenantContext.class)) {
+            mockStatic.when(TenantContext::getCurrentTenant).thenReturn(null);
+            
+            // When
+            String result = SessionTenantResolver.getCurrentTenant();
+            
+            // Then
+            assertNull(result);
+        }
+    }
+
+    @Test
+    void getCurrentTenant_shouldHandleClassCastException_whenSessionHasNonStringTenant() {
+        // Given - ThreadLocal is empty, session has wrong type
+        requestContextHolderMock.when(RequestContextHolder::currentRequestAttributes)
+            .thenReturn(mockRequestAttributes);
+        when(mockRequest.getSession(false)).thenReturn(mockSession);
+        // ClassCastException when trying to cast Integer to String
+        when(mockSession.getAttribute("RESOLVED_TENANT_ID"))
+            .thenThrow(new ClassCastException("Cannot cast Integer to String"));
+        
+        try (var mockStatic = Mockito.mockStatic(TenantContext.class)) {
+            mockStatic.when(TenantContext::getCurrentTenant).thenReturn(null);
+            
+            // When - should handle ClassCastException gracefully
+            String result = SessionTenantResolver.getCurrentTenant();
+            
+            // Then - should return null (ClassCastException caught, returns null)
+            assertNull(result);
+        }
+    }
+
+    @Test
+    void clearTenant_shouldHandleIllegalArgumentException() {
+        // Given
+        TenantContext.setCurrentTenant("tenant-to-clear");
+        requestContextHolderMock.when(RequestContextHolder::currentRequestAttributes)
+            .thenReturn(mockRequestAttributes);
+        when(mockRequest.getSession(false)).thenReturn(mockSession);
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("Bad session"))
+            .when(mockSession).removeAttribute("RESOLVED_TENANT_ID");
+
+        // When
+        SessionTenantResolver.clearTenant();
+
+        // Then
+        assertFalse(TenantContext.hasTenant());
+    }
 }

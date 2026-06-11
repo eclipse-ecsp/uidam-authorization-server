@@ -17,7 +17,6 @@
 
 package org.eclipse.ecsp.audit.entity;
 
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -32,7 +31,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.eclipse.ecsp.audit.enums.AuditEventResult;
-import org.hibernate.annotations.Type;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigInteger;
 import java.time.Instant;
@@ -96,19 +96,19 @@ public class AuditEvent {
     @Column(name = "CORRELATION_ID", length = 256)
     private String correlationId;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "ACTOR_CONTEXT", columnDefinition = "JSONB")
     private String actorContext;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "TARGET_CONTEXT", columnDefinition = "JSONB")
     private String targetContext;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "REQUEST_CONTEXT", columnDefinition = "JSONB")
     private String requestContext;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "AUTHENTICATION_CONTEXT", columnDefinition = "JSONB")
     private String authenticationContext;
     
@@ -118,15 +118,15 @@ public class AuditEvent {
     @Column(name = "FAILURE_REASON", length = 256)
     private String failureReason;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "BEFORE_VALUE", columnDefinition = "JSONB")
     private String beforeValue;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "AFTER_VALUE", columnDefinition = "JSONB")
     private String afterValue;
     
-    @Type(JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "ADDITIONAL_DATA", columnDefinition = "JSONB")
     private String additionalData;
     

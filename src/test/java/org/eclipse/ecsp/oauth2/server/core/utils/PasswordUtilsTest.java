@@ -19,7 +19,12 @@
 package org.eclipse.ecsp.oauth2.server.core.utils;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_ENCODER;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_PASSWORD;
@@ -27,6 +32,8 @@ import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_SALT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * This class tests the functionality of the PasswordUtils class.
@@ -88,6 +95,24 @@ class PasswordUtilsTest {
 
         assertThrows(OAuth2AuthenticationException.class, () ->
                 PasswordUtils.getSecurePassword(password, encoder, salt));
+    }
+
+    /**
+     * This test method covers the catch block for NoSuchAlgorithmException in getSecurePassword.
+     * It mocks MessageDigest.getInstance() to throw NoSuchAlgorithmException even for a valid
+     * supported algorithm, verifying that an OAuth2AuthenticationException with SERVER_ERROR is thrown.
+     */
+    @Test
+    void testGetSecurePasswordCatchNoSuchAlgorithmException() {
+        try (MockedStatic<MessageDigest> mockedMessageDigest = mockStatic(MessageDigest.class)) {
+            mockedMessageDigest.when(() -> MessageDigest.getInstance(anyString()))
+                    .thenThrow(new NoSuchAlgorithmException("Algorithm not found"));
+
+            OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
+                    () -> PasswordUtils.getSecurePassword(TEST_PASSWORD, TEST_ENCODER, TEST_SALT));
+
+            assertEquals(OAuth2ErrorCodes.SERVER_ERROR, exception.getError().getErrorCode());
+        }
     }
 
 }
