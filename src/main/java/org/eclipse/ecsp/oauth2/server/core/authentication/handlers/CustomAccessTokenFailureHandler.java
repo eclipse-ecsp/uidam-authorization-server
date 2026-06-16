@@ -63,6 +63,7 @@ public class CustomAccessTokenFailureHandler implements AuthenticationFailureHan
                                         AuthenticationException exception) throws IOException {
         LOGGER.debug("## onAuthenticationFailure - START");
         objectMapper.registerModule(new JavaTimeModule());
+        LOGGER.error("Authentication failure occurred with", exception);
         OAuth2AuthenticationException oauth2AuthenticationException = (OAuth2AuthenticationException) exception;
         CustomOauth2ErrorResponse customOauth2ErrorResponse;
         if (null != oauth2AuthenticationException) {

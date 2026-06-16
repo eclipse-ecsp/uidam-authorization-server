@@ -160,4 +160,69 @@ class CaptchaServiceImplTest {
         assertEquals("xforwardedfor", response);
     }
 
+    /**
+     * Test getClientIp when X-Forwarded-For is null returns remoteAddr.
+     */
+    @Test
+    void testGetClientIpWhenXforwardedForIsNull() {
+        when(httpServletRequest.getHeader(anyString())).thenReturn(null);
+        when(httpServletRequest.getRemoteAddr()).thenReturn("192.168.1.1");
+        String response = captchaService.getClientIp(httpServletRequest);
+        assertEquals("192.168.1.1", response);
+    }
+
+    /**
+     * Test getClientIp when X-Forwarded-For is empty returns remoteAddr.
+     */
+    @Test
+    void testGetClientIpWhenXforwardedForIsEmpty() {
+        when(httpServletRequest.getHeader(anyString())).thenReturn("");
+        when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.1");
+        String response = captchaService.getClientIp(httpServletRequest);
+        assertEquals("10.0.0.1", response);
+    }
+
+    /**
+     * Test getClientIp when X-Forwarded-For contains the remoteAddr returns first element.
+     */
+    @Test
+    void testGetClientIpWhenXforwardedForContainsRemoteAddr() {
+        // Header contains remoteAddr, so split and take first
+        when(httpServletRequest.getHeader(anyString())).thenReturn("10.0.0.1,10.0.0.2,10.0.0.3");
+        when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.1");
+        String response = captchaService.getClientIp(httpServletRequest);
+        assertEquals("10.0.0.1", response);
+    }
+
+    /**
+     * Test getReCaptchaSecret returns the configured secret key.
+     */
+    @Test
+    void testGetReCaptchaSecret() {
+        CaptchaProperties captchaProps = org.mockito.Mockito.mock(CaptchaProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getCaptcha()).thenReturn(captchaProps);
+        when(captchaProps.getRecaptchaKeySecret()).thenReturn("secretKey123");
+        String secret = captchaService.getReCaptchaSecret();
+        assertEquals("secretKey123", secret);
+    }
+
+    /**
+     * Test responseSanityCheck returns false for invalid characters.
+     */
+    @Test
+    void testResponseSanityCheckWithInvalidChars() {
+        boolean response = captchaService.responseSanityCheck("$$invalid$$");
+        org.junit.jupiter.api.Assertions.assertFalse(response);
+    }
+
+    /**
+     * Test responseSanityCheck returns false for empty string.
+     */
+    @Test
+    void testResponseSanityCheckWithEmpty() {
+        boolean response = captchaService.responseSanityCheck("");
+        org.junit.jupiter.api.Assertions.assertFalse(response);
+    }
+
 }

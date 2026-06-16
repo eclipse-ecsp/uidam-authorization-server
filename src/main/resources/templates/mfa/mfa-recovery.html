@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <title>Account Recovery – UIDAM</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff; border-radius: 12px;
+            padding: 40px 44px; max-width: 440px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 28px; line-height: 1.5; }
+        .option-btn {
+            display: block; width: 100%;
+            border-radius: 8px; padding: 16px;
+            font-size: 15px; cursor: pointer;
+            margin-bottom: 14px; text-align: left;
+            text-decoration: none; border: none;
+        }
+        .option-primary {
+            background: #0f3460; color: #fff;
+            transition: background 0.2s;
+        }
+        .option-primary:hover { background: #1a4a8a; }
+        .option-secondary {
+            background: #fff; color: #555;
+            border: 1px solid #ddd;
+            transition: background 0.2s;
+        }
+        .option-secondary:hover { background: #f5f5f5; }
+        .option-title { font-weight: 600; display: block; margin-bottom: 4px; }
+        .option-desc  { font-size: 12px; opacity: 0.8; }
+        .back-link {
+            display: block; text-align: center; margin-top: 20px;
+            font-size: 13px; color: #0f3460; text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .error-box {
+            background: #fff3f3; border: 1px solid #f5c6c6;
+            color: #c0392b; border-radius: 8px;
+            padding: 12px 16px; font-size: 13px;
+            margin-bottom: 20px; line-height: 1.5;
+        }
+        .error-box::before { content: "⚠ "; font-weight: 700; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>🆘 Account Recovery</h1>
+    <p class="subtitle">
+        Can't access your authenticator app? Choose a recovery option below.
+    </p>
+
+    <!-- Error banner -->
+    <div class="error-box" th:if="${error}" th:text="${error}"></div>
+
+    <!-- Option 1: Email recovery (primary) -->
+    <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId))
+                      ? '/' + tenantId + '/mfa/recovery/send-email'
+                      : '/mfa/recovery/send-email'}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+<button type="submit" class="option-btn option-primary">
+            <span class="option-title">📧 Email me a security code</span>
+            <span class="option-desc">
+                We'll send a one-time 6-character code to your registered email address.
+                Use it to reset your authenticator and enroll a new device.
+            </span>
+        </button>
+    </form>
+
+    <!-- Option 2: Contact admin -->
+    <div class="option-btn option-secondary" style="cursor:default;">
+        <span class="option-title">👤 Contact your administrator</span>
+        <span class="option-desc">
+            Ask your IT helpdesk or tenant admin to reset your MFA enrollment.
+            Provide your username and explain that you lost access to your authenticator app.
+        </span>
+    </div>
+
+    <a th:href="${(tenantId != null and !#strings.isEmpty(tenantId))
+                  ? '/' + tenantId + '/mfa/challenge'
+                  : '/mfa/challenge'}"
+       class="back-link">← Back to authenticator code entry</a>
+</div>
+</body>
+</html>

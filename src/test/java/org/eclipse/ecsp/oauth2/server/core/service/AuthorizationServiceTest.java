@@ -20,6 +20,7 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 
 import org.eclipse.ecsp.audit.enums.AuditEventResult;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetails;
 import org.eclipse.ecsp.oauth2.server.core.entities.Authorization;
 import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationException;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
@@ -31,6 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2DeviceCode;
@@ -2107,6 +2110,128 @@ class AuthorizationServiceTest {
             .contains("referer")
             .contains("app.test.com")
             .contains("session_id");  // null session_id should become "unknown"
+    }
+
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithCustomWebAuthDetails_PrincipalInAttribute() {
+        // Tests addBrowserDetailsToAttributes and addBrowserDetailsToAccessToken via save()
+        // when authorization has "java.security.Principal" attribute with CustomWebAuthenticationDetails
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+
+        // Create CustomWebAuthenticationDetails
+        CustomWebAuthenticationDetails details = new CustomWebAuthenticationDetails(
+                "192.168.1.100", "session-id-001",
+                "Mozilla/5.0 Test Browser", "en-US", "https://example.com");
+
+        // Build Authentication with CustomWebAuthenticationDetails
+        UsernamePasswordAuthenticationToken principalAuth =
+                new UsernamePasswordAuthenticationToken(PRINCIPAL_NAME, null);
+        principalAuth.setDetails(details);
+
+        // Build OAuth2Authorization with access token and principal attribute
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "test-access-token",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .attribute("java.security.Principal", principalAuth)
+            .build();
+
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
+        authorizationService.save(authorization);
+
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+
+        // Verify browser details added to access token metadata
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata).contains("user_agent");
+        assertThat(metadata).contains("ip_address");
+
+        // Verify browser details added to attributes
+        String attributes = savedAuth.getAttributes();
+        assertThat(attributes).contains("browser_details");
+    }
+
+    @Test
+    void testAddBrowserDetailsToAccessToken_WithNullAccessToken_ShouldSkipTokenMetadata() {
+        // Tests addBrowserDetailsToAccessToken when access token is null (only adds to attributes)
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+
+        // Create CustomWebAuthenticationDetails
+        CustomWebAuthenticationDetails details = new CustomWebAuthenticationDetails(
+                "10.0.0.1", null, "Safari/14.0", null, null);
+
+        // Build Authentication with CustomWebAuthenticationDetails
+        UsernamePasswordAuthenticationToken principalAuth =
+                new UsernamePasswordAuthenticationToken(PRINCIPAL_NAME, null);
+        principalAuth.setDetails(details);
+
+        // Build OAuth2Authorization WITHOUT access token but with principal attribute
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .attribute("java.security.Principal", principalAuth)
+            .build();
+
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
+        authorizationService.save(authorization);
+
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+
+        // Access token metadata should be null/empty since no access token
+        assertThat(savedAuth.getAttributes()).contains("browser_details");
+    }
+
+    @Test
+    void testAddBrowserDetailsToAttributes_WithNullDetails_ShouldReturnOriginal() {
+        // Tests the case when details are non-null but some fields are null
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator,
+                auditLogger);
+        when(this.clientManger.findById(Mockito.anyString())).thenReturn(REGISTERED_CLIENT);
+
+        // Create CustomWebAuthenticationDetails with all nulls except remoteAddress
+        CustomWebAuthenticationDetails details = new CustomWebAuthenticationDetails(
+                "192.168.0.1", null, null, null, null);
+
+        UsernamePasswordAuthenticationToken principalAuth =
+                new UsernamePasswordAuthenticationToken(PRINCIPAL_NAME, null);
+        principalAuth.setDetails(details);
+
+        OAuth2AccessToken accessToken = new OAuth2AccessToken(
+            OAuth2AccessToken.TokenType.BEARER, "test-null-details-token",
+            Instant.now(), Instant.now().plusSeconds(INT_3600));
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+            .id(ID)
+            .principalName(PRINCIPAL_NAME)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .accessToken(accessToken)
+            .attribute("java.security.Principal", principalAuth)
+            .build();
+
+        ArgumentCaptor<Authorization> captor = ArgumentCaptor.forClass(Authorization.class);
+        authorizationService.save(authorization);
+
+        verify(authorizationRepository).save(captor.capture());
+        Authorization savedAuth = captor.getValue();
+
+        // Null userAgent/acceptLanguage/referer/sessionId should be replaced with "unknown"
+        String metadata = savedAuth.getAccessTokenMetadata();
+        assertThat(metadata).contains("unknown");
     }
 
 

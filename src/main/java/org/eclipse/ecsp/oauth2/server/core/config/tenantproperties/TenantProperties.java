@@ -19,7 +19,6 @@
 package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
 import jakarta.annotation.PostConstruct;
-import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -76,6 +75,12 @@ public class TenantProperties {
     
     private boolean internalLoginEnabled = true;
     private boolean signUpEnabled;
+
+    /** MFA issuer/app name displayed in authenticator apps. Default: UIDAM. Overridable per tenant. */
+    private String mfaAppName = "UIDAM";
+
+    /** Per-tenant MFA enforcement policy (mode, step-up scopes, skip-users). */
+    private MfaPolicyProperties mfa = new MfaPolicyProperties();
 
     private static final String MAPPINGS_DELIMITER = ",";
     private static final String PAIR_DELIMITER = "#";

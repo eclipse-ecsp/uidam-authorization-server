@@ -47,6 +47,17 @@ public final class AuthorizationServerConstants {
     public static final String TENANT_EXTERNAL_URLS_CREATE_FEDRATED_USER = "create-fedrated-user-endpoint";
     public static final String TENANT_EXTERNAL_URLS_PASSWORD_POLICY_ENDPOINT = "password-policy-endpoint";
 
+    // MFA endpoint keys (tenant external-urls)
+    public static final String TENANT_EXTERNAL_URLS_MFA_ENROLL_INITIATE = "mfa-enroll-initiate-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_ENROLL_ACTIVATE = "mfa-enroll-activate-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_STATUS           = "mfa-status-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_SECRET           = "mfa-secret-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_REVOKE           = "mfa-revoke-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_RECOVERY_SEND   = "mfa-recovery-send-key-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_RECOVERY_VERIFY = "mfa-recovery-verify-key-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_GENERATE = "mfa-backup-codes-generate-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_VERIFY   = "mfa-backup-codes-verify-endpoint";
+
     public static final String TENANT_KEYSTORE_FILENAME = "key-store-filename";
     public static final String TENANT_KEYSTORE_JKS_ENCODED_CONTENT = "key-store-jks-encoded-content";
     public static final String TENANT_KEYSTORE_PASS = "key-store-password";
