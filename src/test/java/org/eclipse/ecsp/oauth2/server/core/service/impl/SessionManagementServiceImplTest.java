@@ -30,6 +30,9 @@ import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,6 +43,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -1485,11 +1489,27 @@ class SessionManagementServiceImplTest {
         assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Safari"));
     }
 
-    @Test
-    void testGetActiveSessionsForUser_ParsesInternetExplorer() {
-        // Arrange - Internet Explorer via MSIE - covers detectDesktopBrowser "Internet Explorer" branch
-        String attributes = "{\"browser_details\":{\"user_agent\":"
-                + "\"Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)\"}}";
+    static Stream<Arguments> provideUserAgentArgs() {
+        return Stream.of(
+            Arguments.of("Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)",
+             "Internet Explorer"),
+            Arguments.of("Mozilla/5.0 (Macintosh; PPC Mac OS X 10_6_8) Version/5.1.10 Safari/534.57.2",
+             "macOS"),
+            Arguments.of("Mozilla/5.0 (Android 12; Mobile; rv:109.0) Gecko/109.0 Firefox/109.0",
+             "Firefox Mobile"),
+            Arguments.of("Mozilla/5.0 (Android 12; Mobile; rv:109.0) OPR/79.0.4195.74926",
+             "Opera Mobile"),
+            Arguments.of("Mozilla/5.0 (Linux; Android 12; SAMSUNG SM-G998B) SamsungBrowser/17.0",
+             "Samsung Browser"),
+            Arguments.of("ExpoKit/1.0.0 (expo)",
+             "Expo App")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("provideUserAgentArgs")
+    void testGetActiveSessionsForUser_ParsesBrowserFromUserAgent(String userAgent, String expectedDeviceInfo) {
+        String attributes = "{\"browser_details\":{\"user_agent\":\"" + userAgent + "\"}}";
         Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
 
         when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
@@ -1501,12 +1521,10 @@ class SessionManagementServiceImplTest {
         when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
         when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
 
-        // Act
         ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
 
-        // Assert
         assertNotNull(result);
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Internet Explorer"));
+        assertTrue(result.getTokens().get(0).getDeviceInfo().contains(expectedDeviceInfo));
     }
 
     @Test
@@ -1535,29 +1553,6 @@ class SessionManagementServiceImplTest {
         assertTrue(result.getTokens().get(0).getDeviceInfo().contains("macOS"));
     }
 
-    @Test
-    void testGetActiveSessionsForUser_ParsesMacintoshWithSafari() {
-        // Arrange - Macintosh keyword (alternative) - covers "Macintosh" branch in detectOperatingSystem
-        String attributes = "{\"browser_details\":{\"user_agent\":"
-                + "\"Mozilla/5.0 (Macintosh; PPC Mac OS X 10_6_8) Version/5.1.10 Safari/534.57.2\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-
-        // Assert
-        assertNotNull(result);
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("macOS"));
-    }
 
     @Test
     void testGetActiveSessionsForUser_WithWindowsMobileUserAgent() {
@@ -1584,101 +1579,9 @@ class SessionManagementServiceImplTest {
         assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Windows Phone"));
     }
 
-    @Test
-    void testGetActiveSessionsForUser_ParsesFirefoxMobileOnAndroid() {
-        // Arrange - Firefox on Android - covers detectMobileBrowser "Firefox/" branch
-        String attributes = "{\"browser_details\":{\"user_agent\":"
-                + "\"Mozilla/5.0 (Android 12; Mobile; rv:109.0) Gecko/109.0 Firefox/109.0\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
 
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
 
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
 
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-
-        // Assert
-        assertNotNull(result);
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Firefox Mobile"));
-    }
-
-    @Test
-    void testGetActiveSessionsForUser_ParsesOperaMobileOnAndroid() {
-        // Arrange - Opera on Android - covers detectMobileBrowser "Opera/OPR" branch
-        String attributes = "{\"browser_details\":{\"user_agent\":"
-                + "\"Mozilla/5.0 (Android 12; Mobile; rv:109.0) OPR/79.0.4195.74926\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-
-        // Assert
-        assertNotNull(result);
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Opera Mobile"));
-    }
-
-    @Test
-    void testGetActiveSessionsForUser_ParsesSamsungBrowser() {
-        // Arrange - Samsung Browser - covers detectRegionalBrowser "SamsungBrowser" branch  
-        String attributes = "{\"browser_details\":{\"user_agent\":"
-                + "\"Mozilla/5.0 (Linux; Android 12; SAMSUNG SM-G998B) SamsungBrowser/17.0\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-
-        // Assert
-        assertNotNull(result);
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Samsung Browser"));
-    }
-
-    @Test
-    void testGetActiveSessionsForUser_ParsesExpoAppExpoKitVariant() {
-        // Arrange - Expo app - covers detectMobileAppFramework "Expo" branch
-        String attributes = "{\"browser_details\":{\"user_agent\":"
-                + "\"ExpoKit/1.0.0 (expo)\"}}";
-        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
-
-        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
-                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
-                .thenReturn(Collections.singletonList(auth));
-
-        ClientCacheDetails cacheDetails = new ClientCacheDetails();
-        cacheDetails.setRegisteredClient(registeredClient);
-        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
-        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
-
-        // Act
-        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
-
-        // Assert
-        assertNotNull(result);
-        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Expo App"));
-    }
 
     @Test
     void testGetActiveSessionsForUser_ParsesPythonRequestsClient() {

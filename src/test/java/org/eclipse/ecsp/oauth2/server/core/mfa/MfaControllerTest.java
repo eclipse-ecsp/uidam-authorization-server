@@ -29,6 +29,10 @@ import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -46,6 +50,7 @@ import org.springframework.ui.Model;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -99,26 +104,26 @@ class MfaControllerTest {
 
     // ─────────────── populateAppName / resolveMfaAppName ───────────────────
 
-    @Test
-    void populateAppName_whenTenantHasMfaAppName_returnsTenantAppName() {
-        TenantProperties props = new TenantProperties();
-        props.setTenantId("tenant1");
-        props.setMfaAppName("TenantApp");
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
-
-        String name = mfaController.populateAppName();
-        assertEquals("TenantApp - tenant1", name);
+    static Stream<Arguments> populateAppNameArgs() {
+        return Stream.of(
+            Arguments.of("tenant1", "TenantApp", "TenantApp - tenant1"),
+            Arguments.of("default", "DefaultApp", "DefaultApp"),
+            Arguments.of("tenant1", (String) null, "TestApp - tenant1"),
+            Arguments.of("tenant1", "  ", "TestApp - tenant1")
+        );
     }
 
-    @Test
-    void populateAppName_whenTenantIsDefault_returnsAppNameOnly() {
+    @ParameterizedTest
+    @MethodSource("populateAppNameArgs")
+    void populateAppName_withTenantProperties_returnsExpectedName(
+            String tenantId, String mfaAppName, String expectedName) {
         TenantProperties props = new TenantProperties();
-        props.setTenantId("default");
-        props.setMfaAppName("DefaultApp");
+        props.setTenantId(tenantId);
+        props.setMfaAppName(mfaAppName);
         when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
 
         String name = mfaController.populateAppName();
-        assertEquals("DefaultApp", name);
+        assertEquals(expectedName, name);
     }
 
     @Test
@@ -135,28 +140,6 @@ class MfaControllerTest {
 
         String name = mfaController.populateAppName();
         assertEquals("TestApp", name);
-    }
-
-    @Test
-    void populateAppName_whenTenantHasNoMfaAppName_usesDefaultAppName() {
-        TenantProperties props = new TenantProperties();
-        props.setTenantId("tenant1");
-        props.setMfaAppName(null);
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
-
-        String name = mfaController.populateAppName();
-        assertEquals("TestApp - tenant1", name);
-    }
-
-    @Test
-    void populateAppName_whenMfaAppNameIsBlank_usesDefaultAppName() {
-        TenantProperties props = new TenantProperties();
-        props.setTenantId("tenant1");
-        props.setMfaAppName("  ");
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
-
-        String name = mfaController.populateAppName();
-        assertEquals("TestApp - tenant1", name);
     }
 
     // ─────────────── enrollSetup ────────────────────────────────────────────
@@ -913,8 +896,9 @@ class MfaControllerTest {
         assertEquals("redirect:/login", view);
     }
 
-    @Test
-    void recoveryBackupSubmit_withBackupDisabled_redirectsToRecovery() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void recoveryBackupSubmit_redirectsToRecovery(boolean backupCodesEnabled) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
@@ -922,45 +906,7 @@ class MfaControllerTest {
         session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
         request.setSession(session);
 
-        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
-
-        Model model = new ExtendedModelMap();
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        String view = mfaController.recoveryBackupSubmit(TENANT_ID, "BACKUP1", request, response, model);
-
-        assertNotNull(view);
-    }
-
-    @Test
-    void recoveryBackupSubmit_withoutEmailVerification_redirectsToRecovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
-                USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        // No email verification flag
-        request.setSession(session);
-
-        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
-
-        Model model = new ExtendedModelMap();
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        String view = mfaController.recoveryBackupSubmit(TENANT_ID, "BACKUP1", request, response, model);
-
-        assertNotNull(view);
-    }
-
-    @Test
-    void recoveryBackupSubmit_withNullSession_redirectsToRecovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
-                USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        // No email verification, session present but no flag
-        request.setSession(session);
-
-        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
+        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(backupCodesEnabled);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();

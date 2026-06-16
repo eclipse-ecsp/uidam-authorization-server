@@ -30,6 +30,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -99,54 +101,18 @@ class MfaChallengeFilterTest {
 
     // ─────────────── Pass-through paths ─────────────────────────────────────
 
-    @Test
-    void doFilterInternal_mfaPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/mfa/challenge");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_cssPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/css/main.css");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_imagesPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/images/logo.png");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_actuatorPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/actuator/health");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_faviconPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/favicon.ico");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_tenantMfaPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/ecsp/mfa/challenge");
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "/mfa/challenge",
+        "/css/main.css",
+        "/images/logo.png",
+        "/actuator/health",
+        "/favicon.ico",
+        "/ecsp/mfa/challenge",
+        "/oauth2/authorize"
+    })
+    void doFilterInternal_passesThroughFilter(String uri) throws ServletException, IOException {
+        request.setRequestURI(uri);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -244,17 +210,6 @@ class MfaChallengeFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain, never()).doFilter(request, response);
-    }
-
-    // ─────────────── No authentication ───────────────────────────────────────
-
-    @Test
-    void doFilterInternal_noAuthentication_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/oauth2/authorize");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
     }
 
     // ─────────────── Case 2: Fully authenticated, MFA DISABLED ──────────────
