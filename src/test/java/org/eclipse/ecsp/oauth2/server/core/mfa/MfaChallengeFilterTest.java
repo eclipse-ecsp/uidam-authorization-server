@@ -31,6 +31,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -45,6 +49,7 @@ import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,7 +68,6 @@ import static org.mockito.Mockito.when;
 class MfaChallengeFilterTest {
 
     private static final String USERNAME = "testuser";
-    private static final String TENANT_ID = "ecsp";
 
     @Mock
     private MfaSecretService mfaSecretService;
@@ -110,54 +114,18 @@ class MfaChallengeFilterTest {
 
     // ─────────────── Pass-through paths ─────────────────────────────────────
 
-    @Test
-    void doFilterInternal_mfaPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/mfa/challenge");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_cssPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/css/main.css");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_imagesPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/images/logo.png");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_actuatorPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/actuator/health");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_faviconPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/favicon.ico");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void doFilterInternal_tenantMfaPath_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/ecsp/mfa/challenge");
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "/mfa/challenge",
+        "/css/main.css",
+        "/images/logo.png",
+        "/actuator/health",
+        "/favicon.ico",
+        "/ecsp/mfa/challenge",
+        "/oauth2/authorize"
+    })
+    void doFilterInternal_passThroughPaths_passesThrough(String uri) throws ServletException, IOException {
+        request.setRequestURI(uri);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -179,78 +147,31 @@ class MfaChallengeFilterTest {
 
     // ─────────────── Case 1: MFA pending in DB ───────────────────────────────
 
-    @Test
-    void doFilterInternal_pendingInSession_enrolledUser_redirectsToChallenge()
+    static Stream<Arguments> pendingAuthRedirectData() {
+        return Stream.of(
+            Arguments.of(null, true, "/mfa/challenge"),
+            Arguments.of(null, false, "/mfa/enroll/setup"),
+            Arguments.of("mytenant", true, "/mytenant/mfa/challenge")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("pendingAuthRedirectData")
+    void doFilterInternal_pendingInSession_redirectsCorrectly(String tenant, boolean enrolled, String expectedRedirect)
             throws ServletException, IOException {
         request.setRequestURI("/oauth2/authorize");
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
         when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
-        // null tenant → mfaPath resolves to plain "/mfa/challenge"
-        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
+        if (tenant != null) {
+            when(mfaStateService.loadTenant(request)).thenReturn(tenant);
+        }
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(enrolled);
 
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain, never()).doFilter(request, response);
-        assertEquals("/mfa/challenge", response.getRedirectedUrl());
-    }
-
-    @Test
-    void doFilterInternal_pendingInSession_unenrolledUser_redirectsToEnrollSetup()
-            throws ServletException, IOException {
-        request.setRequestURI("/oauth2/authorize");
-        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
-                USERNAME, Collections.emptyList());
-        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
-        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain, never()).doFilter(request, response);
-        assertEquals("/mfa/enroll/setup", response.getRedirectedUrl());
-    }
-
-    @Test
-    void doFilterInternal_pendingInSession_tenantSpecific_redirectsWithTenant()
-            throws ServletException, IOException {
-        request.setRequestURI("/oauth2/authorize");
-        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
-                USERNAME, Collections.emptyList());
-        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
-        when(mfaStateService.loadTenant(request)).thenReturn("mytenant");
-        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain, never()).doFilter(request, response);
-        assertEquals("/mytenant/mfa/challenge", response.getRedirectedUrl());
-    }
-
-    @Test
-    void doFilterInternal_pendingInDb_notEnrolled_redirectsToEnroll()
-            throws ServletException, IOException {
-        // Pending user who is not (yet) enrolled → redirect to enrollment setup.
-        request.setRequestURI("/oauth2/authorize");
-        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
-                USERNAME, Collections.emptyList());
-        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
-        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain, never()).doFilter(request, response);
-        assertEquals("/mfa/enroll/setup", response.getRedirectedUrl());
-    }
-
-    // ─────────────── No authentication ───────────────────────────────────────
-
-    @Test
-    void doFilterInternal_noAuthentication_passesThroughFilter() throws ServletException, IOException {
-        request.setRequestURI("/oauth2/authorize");
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        verify(filterChain).doFilter(request, response);
+        assertEquals(expectedRedirect, response.getRedirectedUrl());
     }
 
     // ─────────────── Case 2: Fully authenticated, MFA DISABLED ──────────────

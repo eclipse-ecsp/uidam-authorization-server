@@ -205,7 +205,7 @@ public class TotpService {
             byte[] keyBytes  = decodeBase32(base32Secret);
             byte[] timeBytes = ByteBuffer.allocate(HMAC_BYTE_LENGTH).putLong(timeStep).array();
 
-            Mac mac = Mac.getInstance("HmacSHA1");
+            Mac mac = Mac.getInstance("HmacSHA1"); // NOSONAR java:S4790 - TOTP (RFC 6238/4226) mandates HMAC-SHA1
             mac.init(new SecretKeySpec(keyBytes, "HmacSHA1"));
             byte[] hash = mac.doFinal(timeBytes);
 

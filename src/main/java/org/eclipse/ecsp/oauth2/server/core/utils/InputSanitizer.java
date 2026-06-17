@@ -42,12 +42,12 @@ public final class InputSanitizer {
             + "|--"                                // SQL comment
             + "|;\\s*(?:DROP|ALTER|INSERT|UPDATE|DELETE|EXEC|UNION|CREATE|TRUNCATE)" // SQL statements after semicolon
             + "|\\b(?:OR|AND)\\s*\\d+\\s*=\\s*\\d+" // boolean injection: OR 1=1, or1=1, AND 1=1
-            + "|'\\s*(?:OR|AND)(?:\\s|\\d)"        // quote-prefixed injection: ' OR ..., 'or1, 'and1
+            + "|'\\s*(?:OR|AND)[\\s\\d]"            // quote-prefixed injection: ' OR ..., 'or1, 'and1
             + "|\\bUNION\\s+(?:ALL\\s+)?SELECT\\b" // UNION SELECT
             + "|/\\*.*?\\*/"                       // SQL block comments
             + "|&#\\d+;?"                          // HTML numeric entities
-            + "|&#x[0-9a-fA-F]+;?"                 // HTML hex entities
-            + "|\\\\x[0-9a-fA-F]{2}",              // hex escape sequences
+            + "|&#x[0-9a-f]+;?"                 // HTML hex entities
+            + "|\\\\x[0-9a-f]{2}",              // hex escape sequences
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL
     );
 

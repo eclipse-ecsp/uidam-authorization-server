@@ -29,6 +29,9 @@ import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -45,6 +48,7 @@ import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -117,26 +121,25 @@ class MfaControllerTest {
 
     // ─────────────── populateAppName / resolveMfaAppName ───────────────────
 
-    @Test
-    void populateAppName_whenTenantHasMfaAppName_returnsTenantAppName() {
-        TenantProperties props = new TenantProperties();
-        props.setTenantId("tenant1");
-        props.setMfaAppName("TenantApp");
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
-
-        String name = mfaController.populateAppName();
-        assertEquals("TenantApp - tenant1", name);
+    static Stream<Arguments> populateAppNameData() {
+        return Stream.of(
+            Arguments.of("tenant1", "TenantApp", "TenantApp - tenant1"),
+            Arguments.of("default", "DefaultApp", "DefaultApp"),
+            Arguments.of("tenant1", null, "TestApp - tenant1"),
+            Arguments.of("tenant1", "  ", "TestApp - tenant1")
+        );
     }
 
-    @Test
-    void populateAppName_whenTenantIsDefault_returnsAppNameOnly() {
+    @ParameterizedTest
+    @MethodSource("populateAppNameData")
+    void populateAppName_withVariousTenantConfig_returnsExpectedName(
+            String tenantId, String mfaAppName, String expected) {
         TenantProperties props = new TenantProperties();
-        props.setTenantId("default");
-        props.setMfaAppName("DefaultApp");
+        props.setTenantId(tenantId);
+        props.setMfaAppName(mfaAppName);
         when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
 
-        String name = mfaController.populateAppName();
-        assertEquals("DefaultApp", name);
+        assertEquals(expected, mfaController.populateAppName());
     }
 
     @Test
@@ -153,28 +156,6 @@ class MfaControllerTest {
 
         String name = mfaController.populateAppName();
         assertEquals("TestApp", name);
-    }
-
-    @Test
-    void populateAppName_whenTenantHasNoMfaAppName_usesDefaultAppName() {
-        TenantProperties props = new TenantProperties();
-        props.setTenantId("tenant1");
-        props.setMfaAppName(null);
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
-
-        String name = mfaController.populateAppName();
-        assertEquals("TestApp - tenant1", name);
-    }
-
-    @Test
-    void populateAppName_whenMfaAppNameIsBlank_usesDefaultAppName() {
-        TenantProperties props = new TenantProperties();
-        props.setTenantId("tenant1");
-        props.setMfaAppName("  ");
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(props);
-
-        String name = mfaController.populateAppName();
-        assertEquals("TestApp - tenant1", name);
     }
 
     // ─────────────── enrollSetup ────────────────────────────────────────────
