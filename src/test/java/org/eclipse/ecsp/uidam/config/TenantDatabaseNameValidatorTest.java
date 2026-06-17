@@ -32,7 +32,10 @@ package org.eclipse.ecsp.uidam.config;
 
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.InvocationTargetException;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -267,12 +270,8 @@ class TenantDatabaseNameValidatorTest {
         java.lang.reflect.Constructor<TenantDatabaseNameValidator> constructor =
             TenantDatabaseNameValidator.class.getDeclaredConstructor();
         constructor.setAccessible(true);
-        assertThrows(UnsupportedOperationException.class, () -> {
-            try {
-                constructor.newInstance();
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                throw (RuntimeException) e.getCause();
-            }
-        });
+        InvocationTargetException ex = assertThrows(InvocationTargetException.class,
+            () -> constructor.newInstance());
+        assertInstanceOf(UnsupportedOperationException.class, ex.getCause());
     }
 }
