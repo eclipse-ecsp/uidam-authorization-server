@@ -36,6 +36,9 @@ import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -47,6 +50,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
@@ -920,57 +924,33 @@ class ConfigRefreshListenerTest {
         assertDoesNotThrow(() -> listener.onApplicationEvent(event));
     }
 
-    @Test
-    void checkMultitenancyToggle_whenNewValueIsNull_shouldReturn() {
-        // Arrange - cache has "true", but getProperty returns null
-        Set<String> changedKeys = new HashSet<>();
-        changedKeys.add("tenant.multitenant.enabled");
-
-        when(event.getKeys()).thenReturn(changedKeys);
-        when(environment.getProperty("tenant.multitenant.enabled")).thenReturn(null);
-
-        // Act - null new value causes early return
-        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+    static Stream<Arguments> propertyChangeData() {
+        return Stream.of(
+            Arguments.of("tenant.multitenant.enabled", null),
+            Arguments.of("tenant.ids", " , , "),
+            Arguments.of("credential.test", "someValue")
+        );
     }
 
-    @Test
-    void parseTenantIds_withOnlyCommasAndSpaces_shouldReturnEmpty() {
-        // Arrange - a property change that results in all-empty IDs after filtering
+    @ParameterizedTest
+    @MethodSource("propertyChangeData")
+    void onApplicationEvent_withVariousPropertyChanges_doesNotThrow(String key, String returnValue) {
         Set<String> changedKeys = new HashSet<>();
-        changedKeys.add("tenant.ids");
-
+        changedKeys.add(key);
         when(event.getKeys()).thenReturn(changedKeys);
-        // Tenant IDs with empty segments after splitting (triggers filter lambda)
-        when(environment.getProperty("tenant.ids")).thenReturn(" , , ");
+        when(environment.getProperty(key)).thenReturn(returnValue);
 
-        // Act - parseTenantIds called with all-whitespace IDs, the filter removes them
         assertDoesNotThrow(() -> listener.onApplicationEvent(event));
     }
 
     @Test
     void getCurrentValue_whenEnvironmentThrowsException_shouldReturnNull() {
-        // Arrange - trigger exception in getCurrentValue via environment
         Set<String> changedKeys = new HashSet<>();
         changedKeys.add("some.property.that.causes.exception");
 
         when(event.getKeys()).thenReturn(changedKeys);
         when(environment.getProperty("some.property.that.causes.exception"))
             .thenThrow(new RuntimeException("Environment access error"));
-
-        // Act - getCurrentValue should catch exception and return null
-        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
-    }
-
-    @Test
-    void isSensitiveProperty_withNullKey_shouldReturnFalse() {
-        // A property with null key (simulate via property update that results in null key processing)
-        // isSensitiveProperty(null) returns false - tested via a property with null returned by env
-        // We can trigger this via passing a key whose value doesn't matter but not sensitive
-        Set<String> changedKeys = new HashSet<>();
-        changedKeys.add("credential.test");  // contains "credential" -> sensitive -> masked
-
-        when(event.getKeys()).thenReturn(changedKeys);
-        when(environment.getProperty("credential.test")).thenReturn("someValue");
 
         assertDoesNotThrow(() -> listener.onApplicationEvent(event));
     }

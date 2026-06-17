@@ -29,10 +29,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
+
+import java.util.stream.Stream;
 
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.RECAPTCHA_URL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -147,51 +152,21 @@ class CaptchaServiceImplTest {
         assertTrue(response);
     }
 
-    /**
-     * This test method tests the functionality to get the client IP.
-     * It sets up the necessary parameters and then calls the getClientIp method.
-     * The test asserts that the returned response is equal to the provided xforwardedfor.
-     */
-    @Test
-    void testGetClientIp() {
-        when(httpServletRequest.getHeader(anyString())).thenReturn("xforwardedfor");
-        when(httpServletRequest.getRemoteAddr()).thenReturn("xforwarded");
-        String response = captchaService.getClientIp(httpServletRequest);
-        assertEquals("xforwardedfor", response);
+    static Stream<Arguments> clientIpData() {
+        return Stream.of(
+            Arguments.of("xforwardedfor", "xforwarded", "xforwardedfor"),
+            Arguments.of(null, "192.168.1.1", "192.168.1.1"),
+            Arguments.of("", "10.0.0.1", "10.0.0.1"),
+            Arguments.of("10.0.0.1,10.0.0.2,10.0.0.3", "10.0.0.1", "10.0.0.1")
+        );
     }
 
-    /**
-     * Test getClientIp when X-Forwarded-For is null returns remoteAddr.
-     */
-    @Test
-    void testGetClientIpWhenXforwardedForIsNull() {
-        when(httpServletRequest.getHeader(anyString())).thenReturn(null);
-        when(httpServletRequest.getRemoteAddr()).thenReturn("192.168.1.1");
-        String response = captchaService.getClientIp(httpServletRequest);
-        assertEquals("192.168.1.1", response);
-    }
-
-    /**
-     * Test getClientIp when X-Forwarded-For is empty returns remoteAddr.
-     */
-    @Test
-    void testGetClientIpWhenXforwardedForIsEmpty() {
-        when(httpServletRequest.getHeader(anyString())).thenReturn("");
-        when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.1");
-        String response = captchaService.getClientIp(httpServletRequest);
-        assertEquals("10.0.0.1", response);
-    }
-
-    /**
-     * Test getClientIp when X-Forwarded-For contains the remoteAddr returns first element.
-     */
-    @Test
-    void testGetClientIpWhenXforwardedForContainsRemoteAddr() {
-        // Header contains remoteAddr, so split and take first
-        when(httpServletRequest.getHeader(anyString())).thenReturn("10.0.0.1,10.0.0.2,10.0.0.3");
-        when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.1");
-        String response = captchaService.getClientIp(httpServletRequest);
-        assertEquals("10.0.0.1", response);
+    @ParameterizedTest
+    @MethodSource("clientIpData")
+    void testGetClientIp(String xforwardedFor, String remoteAddr, String expected) {
+        when(httpServletRequest.getHeader(anyString())).thenReturn(xforwardedFor);
+        when(httpServletRequest.getRemoteAddr()).thenReturn(remoteAddr);
+        assertEquals(expected, captchaService.getClientIp(httpServletRequest));
     }
 
     /**

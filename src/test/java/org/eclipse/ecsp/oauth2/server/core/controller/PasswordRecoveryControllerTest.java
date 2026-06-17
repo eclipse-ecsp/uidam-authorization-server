@@ -32,6 +32,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -41,6 +44,7 @@ import org.springframework.web.servlet.View;
 
 import java.util.Base64;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
@@ -402,69 +406,25 @@ class PasswordRecoveryControllerTest {
                 .andExpect(status().isOk());
     }
 
-    /**
-     * Test password recovery with dangerous input (XSS) in username is rejected.
-     */
-    @Test
-    void testPasswordForgotDangerousUsername() throws Exception {
-        TenantProperties tenantProperties = createMockTenantProperties();
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-
-        this.mockMvc
-                .perform(post("/ecsp/recovery/forgotPassword")
-                        .param("username", "<script>alert('xss')</script>")
-                        .param("accountName", "ignite"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("recovery/forgot-password"))
-                .andExpect(model().attributeExists("error"));
+    static Stream<Arguments> dangerousInputData() {
+        return Stream.of(
+            Arguments.of("<script>alert('xss')</script>", "ignite"),
+            Arguments.of("validuser", "'; DROP TABLE users; --"),
+            Arguments.of("admin' OR 1=1 --", "ignite"),
+            Arguments.of("validuser", "<img onerror=alert(1)>")
+        );
     }
 
-    /**
-     * Test password recovery with SQL injection in accountName is rejected.
-     */
-    @Test
-    void testPasswordForgotSqlInjectionAccountName() throws Exception {
+    @ParameterizedTest
+    @MethodSource("dangerousInputData")
+    void testPasswordForgotDangerousInput(String username, String accountName) throws Exception {
         TenantProperties tenantProperties = createMockTenantProperties();
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
 
         this.mockMvc
                 .perform(post("/ecsp/recovery/forgotPassword")
-                        .param("username", "validuser")
-                        .param("accountName", "'; DROP TABLE users; --"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("recovery/forgot-password"))
-                .andExpect(model().attributeExists("error"));
-    }
-
-    /**
-     * Test password recovery with SQL injection in username is rejected.
-     */
-    @Test
-    void testPasswordForgotSqlInjectionUsername() throws Exception {
-        TenantProperties tenantProperties = createMockTenantProperties();
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-
-        this.mockMvc
-                .perform(post("/ecsp/recovery/forgotPassword")
-                        .param("username", "admin' OR 1=1 --")
-                        .param("accountName", "ignite"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("recovery/forgot-password"))
-                .andExpect(model().attributeExists("error"));
-    }
-
-    /**
-     * Test password recovery with XSS in accountName is rejected.
-     */
-    @Test
-    void testPasswordForgotXssAccountName() throws Exception {
-        TenantProperties tenantProperties = createMockTenantProperties();
-        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-
-        this.mockMvc
-                .perform(post("/ecsp/recovery/forgotPassword")
-                        .param("username", "validuser")
-                        .param("accountName", "<img onerror=alert(1)>"))
+                        .param("username", username)
+                        .param("accountName", accountName))
                 .andExpect(status().isOk())
                 .andExpect(view().name("recovery/forgot-password"))
                 .andExpect(model().attributeExists("error"));
