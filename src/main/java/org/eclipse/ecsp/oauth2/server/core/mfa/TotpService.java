@@ -4,6 +4,8 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -32,7 +34,8 @@ public class TotpService {
     private static final int TOTP_DIGITS         = 6;
     private static final int TOTP_PERIOD_SECONDS = 30;
 
-    private final String issuer;
+    private final String defaultIssuer;
+    private final TenantConfigurationService tenantConfigurationService;
 
     // ...existing code (other constants)...
     private static final int  MILLIS_PER_SECOND  = 1000;
@@ -53,10 +56,12 @@ public class TotpService {
     /**
      * Constructs a TotpService with the configured application name.
      *
-     * @param mfaProperties MFA configuration properties
+     * @param mfaProperties              MFA configuration properties
+     * @param tenantConfigurationService service for tenant-specific configuration
      */
-    public TotpService(MfaProperties mfaProperties) {
-        this.issuer = mfaProperties.getAppName();
+    public TotpService(MfaProperties mfaProperties, TenantConfigurationService tenantConfigurationService) {
+        this.defaultIssuer = mfaProperties.getAppName();
+        this.tenantConfigurationService = tenantConfigurationService;
     }
 
     /**
@@ -135,20 +140,61 @@ public class TotpService {
 
     /**
      * Build the otpauth:// URI for QR code generation.
+     *
+     * <p>The account label is formatted as {@code issuer-tenantId:username} when a non-default
+     * tenant is active, matching the pattern used by
+     * {@code MfaManagementService#buildOtpAuthUri} in the user-management service.
+     * Spaces are encoded as {@code %20} (not {@code +}) as required by authenticator apps.
      */
     public String buildOtpAuthUri(String username, String secret) {
         try {
-            String account   = URLEncoder.encode(issuer + ":" + username, StandardCharsets.UTF_8);
-            String issuerEnc = URLEncoder.encode(issuer, StandardCharsets.UTF_8);
+            String resolvedIssuer = resolveIssuer();
+            // URLEncoder uses application/x-www-form-urlencoded rules (spaces → '+').
+            // Authenticator apps expect RFC 3986 percent-encoding (spaces → '%20').
+            String account   = URLEncoder.encode(resolvedIssuer + ":" + username, StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+            String issuerEnc = URLEncoder.encode(resolvedIssuer, StandardCharsets.UTF_8)
+                    .replace("+", "%20");
             return "otpauth://totp/" + account
                     + "?secret=" + secret
                     + "&issuer=" + issuerEnc
-                    + "&algorithm=SHA256&digits=" + TOTP_DIGITS
+                    + "&digits=" + TOTP_DIGITS
                     + "&period=" + TOTP_PERIOD_SECONDS;
         } catch (Exception ex) {
-            LOGGER.warn("[MFA] URI encoding failed: {}", ex.getMessage());
+            LOGGER.error("[MFA] URI encoding failed", ex);
         }
-        return "otpauth://totp/" + issuer + ":" + username + "?secret=" + secret;
+        return "otpauth://totp/" + defaultIssuer + ":" + username + "?secret=" + secret;
+    }
+
+    /**
+     * Resolve the MFA issuer/app name from tenant properties, postfixing the tenant ID
+     * when a non-default tenant is active — e.g. {@code UIDAM-acme}.
+     *
+     * <p>Mirrors {@code MfaManagementService#resolveIssuer()} in the user-management service
+     * so that the issuer label is consistent across both services.
+     *
+     * @return the resolved issuer string for the current tenant context
+     */
+    private String resolveIssuer() {
+        String appName = defaultIssuer;
+        String tenantId = null;
+        try {
+            TenantProperties tenantProps = tenantConfigurationService.getTenantProperties();
+            if (tenantProps != null) {
+                if (tenantProps.getMfaAppName() != null && !tenantProps.getMfaAppName().isBlank()) {
+                    appName = tenantProps.getMfaAppName();
+                }
+                if (tenantProps.getTenantId() != null && !tenantProps.getTenantId().isBlank()) {
+                    tenantId = tenantProps.getTenantId();
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.debug("[MFA] Could not resolve tenant MFA app name, using default: {}", ex.getMessage());
+        }
+        if (tenantId != null && !tenantId.isBlank() && !"default".equalsIgnoreCase(tenantId)) {
+            return appName + "-" + tenantId;
+        }
+        return appName;
     }
 
     /**
@@ -159,8 +205,8 @@ public class TotpService {
             byte[] keyBytes  = decodeBase32(base32Secret);
             byte[] timeBytes = ByteBuffer.allocate(HMAC_BYTE_LENGTH).putLong(timeStep).array();
 
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(keyBytes, "HmacSHA256"));
+            Mac mac = Mac.getInstance("HmacSHA1");
+            mac.init(new SecretKeySpec(keyBytes, "HmacSHA1"));
             byte[] hash = mac.doFinal(timeBytes);
 
             int offset = hash[hash.length - 1] & LOW_NIBBLE_MASK;

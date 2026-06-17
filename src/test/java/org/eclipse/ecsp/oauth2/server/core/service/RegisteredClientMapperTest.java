@@ -43,6 +43,9 @@ import static org.eclipse.ecsp.oauth2.server.core.test.TestCommonStaticData.getC
 import static org.eclipse.ecsp.oauth2.server.core.test.TestCommonStaticData.getClientWithEmptyScope;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.SECONDS_300;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * This class tests the functionality of the RegisteredClientMapper.
@@ -54,6 +57,8 @@ class RegisteredClientMapperTest {
 
     private static final int ACCESS_TOKEN_TTL = 3600;
     private static final int REFRESH_TOKEN_TTL = 7200;
+    private static final int EXPLICIT_ACCESS_TTL = 1800;
+    private static final int EXPLICIT_REFRESH_TTL = 3600;
 
     @Mock
     TenantConfigurationService tenantConfigurationService;
@@ -89,7 +94,7 @@ class RegisteredClientMapperTest {
     @Test
     void testToRegisteredClient() {
         RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(getClient());
-        assert registeredClient != null;
+        assertNotNull(registeredClient);
         assertEquals("testClientId", registeredClient.getClientId());
     }
 
@@ -148,6 +153,75 @@ class RegisteredClientMapperTest {
         RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(registeredClientDetails);
         assert registeredClient != null;
         assertEquals("testClientId", registeredClient.getClientId());
+    }
+
+    /**
+     * Tests that a public client (auth method = "none") produces reuseRefreshTokens=false
+     * and uses the standard TTL from tenant properties.
+     */
+    @Test
+    void testToRegisteredClient_publicClient_enforcesRefreshTokenRotation() {
+        RegisteredClientDetails clientDetails = getClient();
+        // Override to public client (auth method = none) — keep client secret to avoid password encoder NPE
+        clientDetails.setClientAuthenticationMethods(
+                java.util.List.of(org.springframework.security.oauth2.core.ClientAuthenticationMethod.NONE.getValue()));
+        clientDetails.setAccessTokenValidity(0);
+        clientDetails.setRefreshTokenValidity(0);
+
+        RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(clientDetails);
+
+        assertNotNull(registeredClient);
+        assertEquals("testClientId", registeredClient.getClientId());
+        // Rotation must be enforced for public clients
+        assertFalse(registeredClient.getTokenSettings().isReuseRefreshTokens(),
+                "reuseRefreshTokens must be false for public clients");
+        // TTL must equal the tenant default (ACCESS_TOKEN_TTL / REFRESH_TOKEN_TTL)
+        assertEquals(java.time.Duration.ofSeconds(ACCESS_TOKEN_TTL),
+                registeredClient.getTokenSettings().getAccessTokenTimeToLive());
+        assertEquals(java.time.Duration.ofSeconds(REFRESH_TOKEN_TTL),
+                registeredClient.getTokenSettings().getRefreshTokenTimeToLive());
+    }
+
+    /**
+     * Tests that a public client with explicit access/refresh token validity overrides tenant defaults.
+     */
+    @Test
+    void testToRegisteredClient_publicClient_usesExplicitValidity() {
+        RegisteredClientDetails clientDetails = getClient();
+        clientDetails.setClientAuthenticationMethods(
+                java.util.List.of(org.springframework.security.oauth2.core.ClientAuthenticationMethod.NONE.getValue()));
+        // keep client secret to avoid password encoder NPE
+        clientDetails.setAccessTokenValidity(EXPLICIT_ACCESS_TTL);
+        clientDetails.setRefreshTokenValidity(EXPLICIT_REFRESH_TTL);
+
+        RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(clientDetails);
+
+        assertNotNull(registeredClient);
+        assertEquals(java.time.Duration.ofSeconds(EXPLICIT_ACCESS_TTL),
+                registeredClient.getTokenSettings().getAccessTokenTimeToLive(),
+                "Explicit access token TTL should override tenant default for public client");
+        assertEquals(java.time.Duration.ofSeconds(EXPLICIT_REFRESH_TTL),
+                registeredClient.getTokenSettings().getRefreshTokenTimeToLive(),
+                "Explicit refresh token TTL should override tenant default for public client");
+        assertFalse(registeredClient.getTokenSettings().isReuseRefreshTokens());
+    }
+
+    /**
+     * Tests that a client with null auth methods is not treated as a public client.
+     */
+    @Test
+    void testToRegisteredClient_nullAuthMethods_treatedAsConfidential() {
+        RegisteredClientDetails clientDetails = getClient();
+        clientDetails.setClientAuthenticationMethods(null);
+        clientDetails.setAccessTokenValidity(0);
+        clientDetails.setRefreshTokenValidity(0);
+
+        RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(clientDetails);
+
+        assertNotNull(registeredClient);
+        // reuseRefreshTokens follows tenant property (true in setup mock)
+        assertTrue(registeredClient.getTokenSettings().isReuseRefreshTokens(),
+                "reuseRefreshTokens should follow tenant property when auth methods are null");
     }
 
 }

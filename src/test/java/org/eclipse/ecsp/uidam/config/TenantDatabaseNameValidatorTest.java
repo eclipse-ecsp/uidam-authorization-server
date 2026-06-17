@@ -263,11 +263,11 @@ class TenantDatabaseNameValidatorTest {
     }
 
     @Test
-    void testUtilityClassCannotBeInstantiated() throws Exception {
-        java.lang.reflect.Constructor<TenantDatabaseNameValidator> constructor =
-            TenantDatabaseNameValidator.class.getDeclaredConstructor();
-        constructor.setAccessible(true);
+    void testUtilityClassCannotBeInstantiated() {
         assertThrows(UnsupportedOperationException.class, () -> {
+            java.lang.reflect.Constructor<TenantDatabaseNameValidator> constructor =
+                TenantDatabaseNameValidator.class.getDeclaredConstructor();
+            constructor.setAccessible(true);
             try {
                 constructor.newInstance();
             } catch (java.lang.reflect.InvocationTargetException e) {

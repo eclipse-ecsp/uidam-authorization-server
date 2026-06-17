@@ -82,6 +82,8 @@ public final class AuthorizationServerConstants {
     public static final String USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN = "The user already exists. Please try again "
             + "with a different email.";
     public static final String UNEXPECTED_ERROR = "An unexpected error occurred. Please try again later.";
+    public static final String INVALID_INPUT_ERROR = "Invalid input. Please check your entries and try again.";
+    public static final String INVALID_CHARACTERS_ERROR = "Invalid characters in input";
     public static final String ADD_REQ_PAR = "Please add all required fields.";
     public static final String INVALID_PASSWORD = "Your password does not meet the security requirements. "
             + "Ensure it complies with all password policies.";

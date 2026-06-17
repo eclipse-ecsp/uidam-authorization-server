@@ -41,4 +41,10 @@ public class ClientProperties {
      * all user scopes from the user details will be included in the 'scope' and 'scopes' claims.
      */
     private Boolean authCodeScopelessUserScopes;
+    /**
+     * If true, public clients (PKCE, ClientAuthenticationMethod.NONE) are allowed to use
+     * the refresh_token grant type without providing a client_secret.
+     * Refresh token rotation is enforced for security.
+     */
+    private Boolean publicClientRefreshTokenEnabled;
 }

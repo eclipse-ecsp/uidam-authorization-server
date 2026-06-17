@@ -33,9 +33,6 @@ package org.eclipse.ecsp.uidam.config;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
@@ -53,7 +50,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -888,26 +884,17 @@ class TenantDefaultPropertiesProcessorTest {
         assertDoesNotThrow(() -> failedTenants.contains("tenant1"));
     }
 
-    static Stream<Arguments> provideDatabaseValidationArgs() {
-        return Stream.of(
-            Arguments.of("EQUAL", "jdbc:postgresql://localhost:5432/ecsp", true),
-            Arguments.of("EQUAL", "jdbc:postgresql://localhost:5432/wrongdb", false),
-            Arguments.of("CONTAINS", "jdbc:postgresql://localhost:5432/ecsp_tenant_db", true)
-        );
-    }
-
-    @ParameterizedTest
-    @MethodSource("provideDatabaseValidationArgs")
-    void validateDatabaseName_withVariousModes(String mode, String jdbcUrl, boolean expectEmpty) {
+    @Test
+    void validateDatabaseName_withEqualMode_andMatchingDbName_shouldPass() {
+        // Arrange - standard validation disabled, EQUAL mode, matching DB name
         final String tenantIds = "ecsp";
 
         when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
             Boolean.class, true)).thenReturn(false);
         when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
-            "EQUAL")).thenReturn(mode);
-        lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
-            .thenReturn(false);
+            "EQUAL")).thenReturn("EQUAL"); // Override to EQUAL mode
 
+        // Mock property sources with valid default
         Map<String, Object> defaultProps = new HashMap<>();
         defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
         MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
@@ -916,16 +903,78 @@ class TenantDefaultPropertiesProcessorTest {
         when(propertySources.iterator()).thenReturn(sources.iterator());
         lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
 
+        // Valid JDBC URL where DB name matches tenant ID "ecsp"
         lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
-            .thenReturn(jdbcUrl);
+            .thenReturn("jdbc:postgresql://localhost:5432/ecsp");
 
+        // Act
         List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
 
-        if (expectEmpty) {
-            assertTrue(failedTenants.isEmpty());
-        } else {
-            assertTrue(failedTenants.contains("ecsp"));
-        }
+        // Assert - tenant passes DB name validation (ecsp matches ecsp)
+        assertTrue(failedTenants.isEmpty());
+    }
+
+    @Test
+    void validateDatabaseName_withEqualMode_andMismatchedDbName_shouldFail() {
+        // Arrange - standard validation disabled, EQUAL mode, DB name doesn't match tenant ID
+        final String tenantIds = "ecsp";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(false);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("EQUAL"); // Override to EQUAL mode
+        // Must mock multitenancy property to avoid NPE in removeFailedTenantsFromEnvironment
+        lenient().when(configurableEnvironment.getProperty("tenant.multitenant.enabled", Boolean.class, false))
+            .thenReturn(false);
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // JDBC URL where DB name "wrongdb" does NOT match tenant ID "ecsp"
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/wrongdb");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - tenant fails DB name validation
+        assertTrue(failedTenants.contains("ecsp"));
+    }
+
+    @Test
+    void validateDatabaseName_withContainsMode_andValidUrl_shouldPass() {
+        // Arrange - standard validation disabled, CONTAINS mode
+        final String tenantIds = "ecsp";
+
+        when(configurableEnvironment.getProperty("tenant.config.validation.enabled",
+            Boolean.class, true)).thenReturn(false);
+        when(configurableEnvironment.getProperty("uidam.tenant.config.dbname.validation",
+            "EQUAL")).thenReturn("CONTAINS"); // Override to CONTAINS mode
+
+        // Mock property sources with valid default
+        Map<String, Object> defaultProps = new HashMap<>();
+        defaultProps.put("tenant.props.default.jdbc-url", "jdbc:postgresql://localhost:5432/default");
+        MapPropertySource defaultPropertySource = new MapPropertySource("defaultProps", defaultProps);
+        List<PropertySource<?>> sources = new ArrayList<>();
+        sources.add(defaultPropertySource);
+        when(propertySources.iterator()).thenReturn(sources.iterator());
+        lenient().when(propertySources.contains("generatedTenantProperties")).thenReturn(false);
+
+        // JDBC URL where DB name contains tenant ID "ecsp"
+        lenient().when(configurableEnvironment.getProperty("tenants.profile.ecsp.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/ecsp_tenant_db");
+
+        // Act
+        List<String> failedTenants = processor.refreshTenantProperties(tenantIds, configurableEnvironment);
+
+        // Assert - passes CONTAINS mode validation
+        assertTrue(failedTenants.isEmpty());
     }
 
     @Test

@@ -22,6 +22,7 @@
 	</script>
     <script src='https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit' async defer></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script th:src="@{/js/input-validator.js}"></script>
 </head>
 <body>
 <div class="login-page">
@@ -41,6 +42,7 @@
                 <div class="container-auth-input">
                     <label for="username" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Username*</label>
                     <input type="text" id="username" name="username" placeholder="Username*"/>
+                    <div id="usernameError" style="color: red; font-size: 12px; display: none;"></div>
                     <div class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
 
                 </div>
@@ -53,6 +55,7 @@
                 <div class="container-auth-input2" th:if="true == ${isAccountFieldEnabled}">
                     <label for="account_name" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Account Name</label>
                     <input type="text" id="account_name" name="account_name" th:pattern="${T(org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants).ACC_NAME_REGEX}" placeholder="Account Name"/>
+                    <div id="account_nameError" style="color: red; font-size: 12px; display: none;"></div>
 
                 </div>
 
@@ -88,8 +91,9 @@
             </form>
         </div>
 
-		<div th:if="(true == ${isExternalIdpEnabled} and false == ${isIDPAutoRedirectionEnabled}) or
-        (true == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled})">
+		<div th:if="((true == ${isExternalIdpEnabled} and false == ${isIDPAutoRedirectionEnabled}) or
+        (true == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled}))
+        and false == ${#lists.isEmpty(externalIdpList)}">
 			<div style="text-align: center;">
 				<div class="login-header">Log in via...</div>
 				<div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
@@ -107,7 +111,8 @@
 			</div>
 		</div>
 
-        <div th:if="false == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled}">
+        <div th:if="false == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled}
+        and false == ${#lists.isEmpty(externalIdpList)}">
             <h3 th:align="center">Redirecting...</h3>
             <tr th:each="externalIdp: ${externalIdpList}">
                 <meta http-equiv="refresh"
@@ -124,7 +129,7 @@
             function handleInputFields() {
                 var username = $('#username').val().trim();
                 var password = $('#password').val().trim();
-                var accountName = $('#account_name').val().trim();
+                var accountName = ($('#account_name').val() || '').trim();
                 var recaptchaResponse = $('#g-recaptcha-response').val();
                 var isCaptchaFieldEnabled = $('#g-recaptcha').length > 0;
 
@@ -134,7 +139,10 @@
                     areFieldsFilled = areFieldsFilled && recaptchaResponse !== '';
                 }
 
-                if (areFieldsFilled) {
+                // Check all input fields for dangerous content (scripts, SQL injection, etc.)
+                var inputsSafe = InputValidator.isSafe(username) && InputValidator.isSafe(accountName);
+
+                if (areFieldsFilled && inputsSafe) {
                     $('#submitLogin').prop('disabled', false).addClass('enabled');
                 } else {
                     $('#submitLogin').prop('disabled', true).removeClass('enabled');
@@ -189,7 +197,16 @@
                 $('#g-recaptcha-response').hide();
             }
 
+            // Attach real-time dangerous input validation
+            InputValidator.attachValidation(['username', 'account_name']);
+
             $('.login-form').on('submit', function(event) {
+                // Validate all input fields for dangerous content before submission
+                if (!InputValidator.validateFields(['username', 'account_name'])) {
+                    event.preventDefault();
+                    return false;
+                }
+
                 $('.container-auth-input input').each(function() {
                     var errorMessage = $(this).siblings('.error-message');
                     if ($(this).val().trim() === '') {

@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.eclipse.ecsp.oauth2.server.core.common.CustomOauth2TokenGenErrorCodes;
 import org.eclipse.ecsp.oauth2.server.core.common.UpdatePasswordData;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
+import org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessages;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.PasswordRecoveryException;
 import org.eclipse.ecsp.oauth2.server.core.exception.UidamApplicationException;
@@ -48,6 +49,7 @@ import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDt
 import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
+import org.eclipse.ecsp.oauth2.server.core.utils.MfaSecretEncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,9 +68,9 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import java.util.Collections;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_ADD_USER_EVENTS_ENDPOINT;
@@ -411,6 +413,10 @@ public class UserManagementClient {
     }
 
     private String extractMessage(String input) {
+        if (!StringUtils.hasText(input)) {
+            return null;
+        }
+
         String startToken = " Error ='{ Error ='";
         String endToken = "', parameters=";
 
@@ -458,16 +464,21 @@ public class UserManagementClient {
                 errorDesc = USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN;
             } else if (HttpStatus.BAD_REQUEST == ex.getStatusCode()) {
                 errorCode = CustomOauth2TokenGenErrorCodes.BAD_REQUEST.name();
-                if (userErrorResponse.getMessage() != null
-                        && this.extractMessage(userErrorResponse.getMessage()) != null
-                        && Objects.requireNonNull(this.extractMessage(userErrorResponse.getMessage()))
-                                .contains(PASSWORD)) {
+                String extractedMessage = this.extractMessage(userErrorResponse.getMessage());
+                if (StringUtils.hasText(extractedMessage)
+                        && extractedMessage.contains(PASSWORD)) {
                     errorDesc = INVALID_PASSWORD;
+                } else if (StringUtils.hasText(extractedMessage)) {
+                    errorDesc = INVALID_INPUT_ERROR;
+                } else {
+                    // extractMessage returned null, use UNEXPECTED_ERROR
+                    errorDesc = UNEXPECTED_ERROR;
                 }
             } else {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
             }
         } else {
+            // Cannot parse response body, treat as server error even if BAD_REQUEST status
             errorCode = OAuth2ErrorCodes.SERVER_ERROR;
         }
 
@@ -628,8 +639,12 @@ public class UserManagementClient {
     /**
      * Get the TOTP secret for a user (ACTIVE or PENDING enrollment only).
      *
+     * <p>The secret is stored encrypted in user-management (AES-256-GCM). This method
+     * fetches the encrypted blob and decrypts it using the tenant's configured
+     * {@code mfa-secret-encryption-key} and {@code mfa-secret-encryption-salt} before returning.
+     *
      * @param username the user's username
-     * @return Optional containing the Base32 secret, or empty if not found
+     * @return Optional containing the decrypted Base32 TOTP secret, or empty if not found
      */
     public java.util.Optional<String> getMfaSecret(String username) {
         LOGGER.debug("[MFA] Fetching TOTP secret for username='{}'", username);
@@ -637,11 +652,21 @@ public class UserManagementClient {
             TenantProperties tenantProperties = getCurrentTenantProperties();
             WebClient currentWebClient = getWebClientForCurrentTenant();
             String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_SECRET);
-            String secret = currentWebClient.method(HttpMethod.GET).uri(uri, username)
+            String encryptedSecret = currentWebClient.method(HttpMethod.GET).uri(uri, username)
                     .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
-                    .accept(MediaType.APPLICATION_JSON).retrieve()
+                    .accept(MediaType.TEXT_PLAIN).retrieve()
                     .bodyToMono(String.class).block();
-            return java.util.Optional.ofNullable(secret);
+            // Defensive: strip surrounding JSON quotes if the server returned a quoted string.
+            if (encryptedSecret != null && encryptedSecret.startsWith("\"")
+                    && encryptedSecret.endsWith("\"") && encryptedSecret.length() > 1) {
+                encryptedSecret = encryptedSecret.substring(1, encryptedSecret.length() - 1);
+            }
+            if (encryptedSecret == null) {
+                return java.util.Optional.empty();
+            }
+            // Decrypt the secret using the per-tenant key/salt before returning.
+            String plainSecret = decryptMfaSecret(encryptedSecret, tenantProperties);
+            return java.util.Optional.of(plainSecret);
         } catch (WebClientResponseException ex) {
             if (ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
                 LOGGER.error("[MFA] Error fetching secret for username='{}'", username, ex);
@@ -650,6 +675,40 @@ public class UserManagementClient {
             }
             return java.util.Optional.empty();
         }
+    }
+
+    /**
+     * Decrypt the encrypted MFA secret using the tenant-configured key and salt.
+     *
+     * @param encryptedSecret the AES-256-GCM encrypted, Base64-encoded TOTP secret
+     * @param tenantProperties the properties for the current tenant
+     * @return the decrypted Base32 TOTP secret
+     */
+    private String decryptMfaSecret(String encryptedSecret, TenantProperties tenantProperties) {
+        String key  = resolveEncryptionKey(tenantProperties);
+        String salt = resolveEncryptionSalt(tenantProperties);
+        try {
+            return MfaSecretEncryptionUtil.decrypt(encryptedSecret, key, salt);
+        } catch (MfaSecretEncryptionUtil.MfaDecryptionException ex) {
+            LOGGER.error("[MFA] Failed to decrypt TOTP secret for tenant='{}': {}",
+                    tenantProperties.getTenantId(), ex.getMessage());
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to decrypt MFA secret", null));
+        }
+    }
+
+    private String resolveEncryptionKey(TenantProperties props) {
+        if (props.getMfaSecretEncryptionKey() != null && !props.getMfaSecretEncryptionKey().isBlank()) {
+            return props.getMfaSecretEncryptionKey();
+        }
+        return "ChangeMe-MfaKey!";
+    }
+
+    private String resolveEncryptionSalt(TenantProperties props) {
+        if (props.getMfaSecretEncryptionSalt() != null && !props.getMfaSecretEncryptionSalt().isBlank()) {
+            return props.getMfaSecretEncryptionSalt();
+        }
+        return "ChangeMe-MfaSalt";
     }
 
     /**
@@ -812,7 +871,8 @@ public class UserManagementClient {
         if (errorMessage != null) {
             if (HttpStatus.NOT_FOUND.isSameCodeAs(statusCode)) {
                 errorCode = CustomOauth2TokenGenErrorCodes.USER_NOT_FOUND.name();
-                errorDesc = errorMessage;
+                // Used generic error message to prevent username enumeration attacks
+                errorDesc = ResponseMessages.INVALID_CREDENTIALS_ERROR;
                 metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_NOT_FOUND);
             } else if (HttpStatus.FORBIDDEN.isSameCodeAs(statusCode)) {
                 // IMPORTANT: Check for temporary lock FIRST before checking message content

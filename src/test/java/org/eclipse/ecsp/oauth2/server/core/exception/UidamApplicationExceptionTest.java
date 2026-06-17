@@ -95,13 +95,13 @@ class UidamApplicationExceptionTest {
     @Test
     void equals_nullObject_returnsFalse() {
         UidamApplicationException ex = new UidamApplicationException("KEY", HttpStatus.OK);
-        assertNotEquals(null, ex);
+        assertNotEquals(ex, null);
     }
 
     @Test
     void equals_differentClass_returnsFalse() {
         UidamApplicationException ex = new UidamApplicationException("KEY", HttpStatus.OK);
-        assertNotEquals("string", ex);
+        assertNotEquals(ex, "string");
     }
 
     @Test

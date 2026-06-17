@@ -4,7 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties.MfaMode;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
@@ -20,23 +20,25 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * Filter inserted after CustomUserPwdAuthenticationFilter.
  *
+ * <p>All MFA transient state that was previously held in {@code HttpSession} is now stored
+ * in the shared database via {@link MfaStateService}, making this filter pod-affinity-free.
+ *
  * <p>Logic:
  * <ol>
- *   <li>If the session already carries an {@code MFA_PENDING} marker
+ *   <li>If the database already holds an {@code MFA_PENDING} record for this session
  *       → re-check live enrollment status: redirect to /{tenant}/mfa/challenge when the user is
- *       ACTIVE-enrolled, otherwise to /{tenant}/mfa/enroll/setup (covers abandoned enrollments
- *       that leave a stale PENDING marker).</li>
+ *       ACTIVE-enrolled, otherwise to /{tenant}/mfa/enroll/setup.</li>
  *   <li>If the user is fully authenticated AND MFA is enforced AND ACTIVE-enrolled
- *       → downgrade to MfaPendingAuthenticationToken and redirect to /{tenant}/mfa/challenge.</li>
+ *       → downgrade to MfaPendingAuthenticationToken (persisted to DB) and redirect to challenge.</li>
  *   <li>If the user is fully authenticated AND MFA is enforced AND NOT ACTIVE-enrolled
- *       (any non-ACTIVE status, including PENDING)
- *       → redirect to /{tenant}/mfa/enroll/setup so they can register; never pass through.</li>
+ *       → persist pending token and redirect to enrollment setup.</li>
  *   <li>Otherwise (MFA disabled, skip-listed user, or CONDITIONAL without step-up) pass through.</li>
  * </ol>
  */
@@ -44,15 +46,10 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MfaChallengeFilter.class);
 
+    // These constants are kept for backward-compatibility with any code that still references them,
+    // but they are NO LONGER used to read/write HttpSession attributes.
     static final String SESSION_MFA_PENDING  = "MFA_PENDING_AUTH";
-    /** Session key for persisting the resolved tenant ID across MFA redirect hops. */
     static final String SESSION_MFA_TENANT   = "MFA_TENANT_ID";
-    /**
-     * Session key set by MfaController after successful MFA completion.
-     * Prevents MfaChallengeFilter from re-intercepting the /oauth2/authorize redirect
-     * that immediately follows MFA, which would cause an infinite challenge loop.
-     * Cleared on first use (single-use pass-through).
-     */
     static final String SESSION_MFA_VERIFIED = "MFA_VERIFIED_ONCE";
 
     private static final String MFA_PREFIX  = "/mfa";
@@ -61,21 +58,25 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     private static final String ACTUATOR    = "/actuator";
     private static final String FAVICON     = "/favicon";
 
-    private static final int  MIN_PATH_PARTS      = 2;
+    private static final int MIN_PATH_PARTS = 2;
 
     private final MfaSecretService mfaSecretService;
     private final TenantConfigurationService tenantConfigurationService;
+    private final MfaStateService mfaStateService;
 
     /**
      * Constructs a MfaChallengeFilter.
      *
      * @param mfaSecretService           production MFA service for checking enrollment status.
      * @param tenantConfigurationService service for resolving the per-tenant MFA policy.
+     * @param mfaStateService            stateless DB-backed MFA state manager.
      */
     public MfaChallengeFilter(MfaSecretService mfaSecretService,
-                              TenantConfigurationService tenantConfigurationService) {
+                              TenantConfigurationService tenantConfigurationService,
+                              MfaStateService mfaStateService) {
         this.mfaSecretService = mfaSecretService;
         this.tenantConfigurationService = tenantConfigurationService;
+        this.mfaStateService = mfaStateService;
     }
 
     @Override
@@ -94,20 +95,17 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
 
         LOGGER.debug("[MFA-FILTER] >>> Evaluating URI: {}", uri);
 
-        HttpSession session = request.getSession(false);
-        boolean hasSession = session != null;
-        LOGGER.debug("[MFA-FILTER] Session present={}", hasSession);
-        // --- MFA just completed: single-use pass-through to let /oauth2/authorize through ---
-        if (session != null && Boolean.TRUE.equals(session.getAttribute(SESSION_MFA_VERIFIED))) {
-            session.removeAttribute(SESSION_MFA_VERIFIED); // consume immediately
-            LOGGER.info("[MFA-FILTER] MFA_VERIFIED flag consumed – single-use pass-through: {}", uri);
+        // --- MFA just completed: single-use DB flag consumed to let /oauth2/authorize through ---
+        if (mfaStateService.consumeMfaVerified(request)) {
+            LOGGER.info("[MFA-FILTER] MFA_VERIFIED_ONCE consumed – single-use pass-through: {}", uri);
             chain.doFilter(request, response);
             return;
         }
 
-        // --- Case 1: MFA pending token already in session (password OK, MFA not done) ---
-        if (session != null && session.getAttribute(SESSION_MFA_PENDING) != null) {
-            handlePendingSession(session, response);
+        // --- Case 1: MFA pending token already in DB (password OK, MFA not done) ---
+        Optional<MfaPendingAuthenticationToken> pendingOpt = mfaStateService.loadPending(request);
+        if (pendingOpt.isPresent()) {
+            handlePendingFromDb(request, response, pendingOpt.get());
             return;
         }
 
@@ -125,40 +123,26 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
 
         if (auth.isAuthenticated() && !(auth instanceof MfaPendingAuthenticationToken)) {
             handleAuthenticatedUser(request, response, chain, auth);
-            return;
-        } else if (auth instanceof MfaPendingAuthenticationToken) {
-            LOGGER.info("[MFA-FILTER] Auth is MfaPendingAuthenticationToken"
-                    + " (should have been caught by session check) - passing through");
         } else {
-            LOGGER.info("[MFA-FILTER] Auth not fully authenticated (class={}) - passing through",
-                    auth.getClass().getSimpleName());
+            LOGGER.info("[MFA-FILTER] Auth not fully authenticated or already pending – passing through");
+            chain.doFilter(request, response);
         }
-
-        chain.doFilter(request, response);
     }
 
     /**
-     * Handle a request that already carries an {@code MFA_PENDING} marker in the session.
-     *
-     * <p>A pending marker can survive an abandoned enrollment (the user opened the enrollment
-     * page and closed it without finishing). In that case the user is still NOT enrolled, so
-     * routing them to the challenge page would be wrong. We therefore re-check the live
-     * enrollment status and only show the challenge to ACTIVE-enrolled users; everyone else is
-     * sent (back) to the enrollment page.
-     *
-     * @param session  the current HTTP session (guaranteed non-null, holds the pending marker)
-     * @param response the HTTP response used to issue the redirect
+     * Handle a request for which the DB already has a pending MFA token.
+     * Re-checks the live enrollment status to route to challenge vs. enroll.
      */
-    private void handlePendingSession(HttpSession session, HttpServletResponse response) throws IOException {
-        String tenant = (String) session.getAttribute(SESSION_MFA_TENANT);
-        Object pending = session.getAttribute(SESSION_MFA_PENDING);
-        String username = pending instanceof MfaPendingAuthenticationToken token ? token.getName() : null;
+    private void handlePendingFromDb(HttpServletRequest request, HttpServletResponse response,
+                                     MfaPendingAuthenticationToken pending) throws IOException {
+        String tenant = mfaStateService.loadTenant(request);
+        String username = pending.getName();
 
-        boolean enrolled = username != null && mfaSecretService.isEnrolled(username);
+        boolean enrolled = mfaSecretService.isEnrolled(username);
         String target = enrolled
                 ? mfaPath(tenant, "/mfa/challenge")
                 : mfaPath(tenant, "/mfa/enroll/setup");
-        LOGGER.info("[MFA-FILTER] Case 1 – MFA_PENDING in session for user='{}', enrolled={} → redirecting to: {}",
+        LOGGER.info("[MFA-FILTER] Case 1 – MFA_PENDING in DB for user='{}', enrolled={} → redirecting to: {}",
                 username, enrolled, target);
         SecurityContextHolder.clearContext();
         response.sendRedirect(target);
@@ -178,14 +162,12 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         MfaMode mode = policy.getMode();
         LOGGER.info("[MFA-FILTER] Tenant '{}' MFA mode={} for user='{}'", tenant, mode, username);
 
-        // --- Policy gate 1: MFA disabled for the tenant ---
         if (mode == MfaMode.DISABLED) {
             LOGGER.info("[MFA-FILTER] MFA DISABLED for tenant='{}' – passing through user='{}'", tenant, username);
             chain.doFilter(request, response);
             return;
         }
 
-        // --- Policy gate 2: user is in the skip-list (e.g. admin / service accounts) ---
         if (policy.isUserSkipped(username)) {
             LOGGER.info("[MFA-FILTER] user='{}' is in MFA skip-list for tenant='{}' – passing through",
                     username, tenant);
@@ -193,22 +175,32 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
             return;
         }
 
-        // --- Policy gate 3: CONDITIONAL mode only enforces when a step-up scope is requested ---
-        if (mode == MfaMode.CONDITIONAL && !requiresStepUp(request, auth, policy)) {
-            LOGGER.info("[MFA-FILTER] CONDITIONAL mode and no step-up scope matched for user='{}' "
+        String clientId = request.getParameter("client_id");
+        if (policy.isClientSkipped(clientId)) {
+            LOGGER.info("[MFA-FILTER] client_id='{}' is in MFA skip-list for tenant='{}' – passing through",
+                    clientId, tenant);
+            chain.doFilter(request, response);
+            return;
+        }
+
+        String accountName = resolveAccountId(auth);
+        if (policy.isAccountSkipped(accountName)) {
+            LOGGER.info("[MFA-FILTER] accountId='{}' is in MFA skip-list for tenant='{}' – passing through",
+                    accountName, tenant);
+            chain.doFilter(request, response);
+            return;
+        }
+
+        if (mode == MfaMode.CONDITIONAL && !requiresStepUp(request, auth, policy, clientId, accountName)) {
+            LOGGER.info("[MFA-FILTER] CONDITIONAL mode and no step-up condition matched for user='{}' "
                     + "– passing through", username);
             chain.doFilter(request, response);
             return;
         }
 
         boolean enrolled = mfaSecretService.isEnrolled(username);
-
         LOGGER.info("[MFA-FILTER] Enforcing MFA – user='{}' enrolled={}", username, enrolled);
 
-        // Decision tree when MFA is enforced:
-        //   enrolled=true  → challenge page
-        //   enrolled=false → enrollment page (PENDING is treated the same as NOT_ENROLLED so
-        //                    an abandoned enrollment never bypasses MFA via chain.doFilter()).
         if (enrolled) {
             handleEnrolledUser(request, response, auth, username, tenant);
         } else {
@@ -219,9 +211,6 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     /**
      * Resolve the per-tenant MFA policy, falling back to a safe default (REQUIRED) if the
      * tenant or its policy cannot be resolved.
-     *
-     * @param tenant the resolved tenant ID
-     * @return the effective {@link MfaPolicyProperties} (never {@code null})
      */
     private MfaPolicyProperties resolveMfaPolicy(String tenant) {
         try {
@@ -236,23 +225,48 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         return new MfaPolicyProperties();
     }
 
-    /**
-     * Determine whether the current request requires an MFA step-up under CONDITIONAL mode.
-     *
-     * <p>The requested OAuth2 {@code scope} parameter is matched against the tenant's configured
-     * step-up scopes. If the request carries no scopes (e.g. a portal login), the user's own
-     * granted authorities/scopes are checked instead.
-     *
-     * @param request the current HTTP request
-     * @param auth    the authenticated user
-     * @param policy  the tenant MFA policy
-     * @return {@code true} if MFA must be enforced for this request
-     */
-    private boolean requiresStepUp(HttpServletRequest request, Authentication auth, MfaPolicyProperties policy) {
+    private boolean requiresStepUp(HttpServletRequest request, Authentication auth,
+            MfaPolicyProperties policy, String clientId, String accountName) {
+
+        // 0. Per-user MFA override: mfaRequired attribute from user-management (highest priority in CONDITIONAL)
+        //    true  → always enforce MFA for this user
+        //    false → always skip MFA for this user
+        //    null  → no per-user override, continue to normal step-up rules
+        if (auth instanceof CustomUserPwdAuthenticationToken customToken) {
+            Boolean perUserMfa = customToken.getMfaRequired();
+            if (perUserMfa != null) {
+                LOGGER.info("[MFA-FILTER] CONDITIONAL per-user mfaRequired='{}' for user='{}' – overrides step-up",
+                        perUserMfa, auth.getName());
+                return perUserMfa;
+            }
+        }
+
+        // 1. Step-up client check: if the requesting client_id is in the step-up list → enforce MFA
+        Set<String> stepUpClients = policy.getStepUpClientSet();
+        if (!stepUpClients.isEmpty() && clientId != null && !clientId.isBlank()) {
+            boolean clientMatch = stepUpClients.stream().anyMatch(c -> c.equalsIgnoreCase(clientId));
+            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on client_id='{}' vs stepUpClients={} -> {}",
+                    clientId, stepUpClients, clientMatch);
+            if (clientMatch) {
+                return true;
+            }
+        }
+
+        // 2. Step-up account check: if the user's account ID (from user-management record) is in the step-up list
+        Set<String> stepUpAccounts = policy.getStepUpAccountSet();
+        if (!stepUpAccounts.isEmpty() && accountName != null && !accountName.isBlank()) {
+            boolean accountMatch = stepUpAccounts.stream().anyMatch(a -> a.equalsIgnoreCase(accountName));
+            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on accountId='{}' vs stepUpAccounts={} -> {}",
+                    accountName, stepUpAccounts, accountMatch);
+            if (accountMatch) {
+                return true;
+            }
+        }
+
+        // 3. Step-up scope check (original behaviour)
         Set<String> stepUpScopes = policy.getStepUpScopeSet();
         if (stepUpScopes.isEmpty()) {
-            // No step-up scopes configured for a CONDITIONAL tenant → nothing triggers MFA.
-            LOGGER.info("[MFA-FILTER] CONDITIONAL mode but no step-up-scopes configured – MFA not enforced");
+            LOGGER.info("[MFA-FILTER] CONDITIONAL mode but no step-up conditions configured – MFA not enforced");
             return false;
         }
 
@@ -264,7 +278,6 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
             return match;
         }
 
-        // No scopes on the request (e.g. portal login) → check all of the user's granted scopes.
         Set<String> userScopes = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .map(MfaChallengeFilter::normalizeScope)
@@ -276,11 +289,19 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Extract the requested OAuth2 scopes from the {@code scope} request parameter (space-delimited).
-     *
-     * @param request the current HTTP request
-     * @return the set of requested scopes (possibly empty, never {@code null})
+     * Extract the account ID from the {@link Authentication} token.
+     * Returns the account ID sourced from the user-management service record
+     * (populated in {@code CustomUserPwdAuthenticationToken} from
+     * {@code UserDetailsResponse.getAccountId()}, same origin as the user's granted scopes).
+     * Returns {@code null} for any other token type.
      */
+    private String resolveAccountId(Authentication auth) {
+        if (auth instanceof CustomUserPwdAuthenticationToken customToken) {
+            return customToken.getAccountId();
+        }
+        return null;
+    }
+
     private Set<String> extractRequestedScopes(HttpServletRequest request) {
         String scopeParam = request.getParameter("scope");
         if (scopeParam == null || scopeParam.isBlank()) {
@@ -292,13 +313,6 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
                 .collect(Collectors.toSet());
     }
 
-    /**
-     * Normalise a Spring Security authority into a bare scope name by stripping a leading
-     * {@code SCOPE_} prefix if present.
-     *
-     * @param authority the granted authority string
-     * @return the normalised scope
-     */
     private static String normalizeScope(String authority) {
         if (authority != null && authority.startsWith("SCOPE_")) {
             return authority.substring("SCOPE_".length());
@@ -306,41 +320,30 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         return authority;
     }
 
-    /** Enrolled user: redirect to the MFA challenge page. */
+    /** Enrolled user: persist pending token to DB and redirect to MFA challenge page. */
     private void handleEnrolledUser(HttpServletRequest request, HttpServletResponse response,
-            Authentication auth, String username, String tenant)
-            throws IOException {
+            Authentication auth, String username, String tenant) throws IOException {
         String target = mfaPath(tenant, "/mfa/challenge");
         LOGGER.info("[MFA-FILTER] MFA challenge required for user='{}' – redirecting to: {}", username, target);
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(username, auth.getAuthorities());
-        HttpSession newSession = request.getSession(true);
-        newSession.setAttribute(SESSION_MFA_PENDING, pending);
-        newSession.setAttribute(SESSION_MFA_TENANT, tenant);
+        mfaStateService.savePending(request, pending, tenant);
         SecurityContextHolder.clearContext();
         response.sendRedirect(target);
     }
 
-    /** Not enrolled and no pending enrollment: redirect to first-time enrollment setup. */
+    /** Not enrolled: persist pending token to DB and redirect to enrollment setup. */
     private void redirectToEnrollSetup(HttpServletRequest request, HttpServletResponse response,
             Authentication auth, String username, String tenant) throws IOException {
         String target = mfaPath(tenant, "/mfa/enroll/setup");
         LOGGER.info("[MFA-FILTER] First-time MFA enroll for user='{}' – redirecting to: {}", username, target);
-        HttpSession newSession = request.getSession(true);
-        newSession.setAttribute(SESSION_MFA_PENDING,
-                new MfaPendingAuthenticationToken(username, auth.getAuthorities()));
-        newSession.setAttribute(SESSION_MFA_TENANT, tenant);
+        mfaStateService.savePending(request,
+                new MfaPendingAuthenticationToken(username, auth.getAuthorities()), tenant);
         SecurityContextHolder.clearContext();
         response.sendRedirect(target);
     }
 
     /**
      * Build a tenant-aware MFA path.
-     * For default tenant or no tenant: returns the plain path.
-     * For named tenant: returns /{tenant}{path}.
-     *
-     * @param tenant the resolved tenant ID (may be null).
-     * @param path   the MFA path, e.g. "/mfa/challenge".
-     * @return the fully-qualified redirect path.
      */
     static String mfaPath(String tenant, String path) {
         String defaultTenant = TenantUtils.getDefaultTenant();
@@ -352,19 +355,13 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
 
     /**
      * Resolve the tenant from the incoming request URI or fall back to the default tenant.
-     * For a URL like /{tenant}/login or /{tenant}/oauth2/authorize we read parts[1].
-     *
-     * @param request the current HTTP request.
-     * @return the tenant ID string (never null).
      */
     private String resolveTenantFromRequest(HttpServletRequest request) {
         String uri = request.getRequestURI();
         if (uri != null && uri.startsWith("/")) {
             String[] parts = uri.split("/");
-            // parts[0] is empty, parts[1] is the first segment
             if (parts.length >= MIN_PATH_PARTS) {
                 String candidate = parts[1];
-                // If it looks like a tenant (not a known static/api segment), use it
                 if (!candidate.isEmpty()
                         && !candidate.equals("oauth2")
                         && !candidate.equals("login")

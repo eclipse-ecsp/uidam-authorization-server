@@ -103,13 +103,13 @@ class ResponseMessageTest {
     @Test
     void equals_null_returnsFalse() {
         ResponseMessage msg = new ResponseMessage("KEY");
-        assertNotEquals(null, msg);
+        assertNotEquals(msg, null);
     }
 
     @Test
     void equals_differentClass_returnsFalse() {
         ResponseMessage msg = new ResponseMessage("KEY");
-        assertNotEquals("some string", msg);
+        assertNotEquals(msg, "some string");
     }
 
     @Test

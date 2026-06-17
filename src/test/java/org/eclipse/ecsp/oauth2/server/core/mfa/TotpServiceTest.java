@@ -20,14 +20,15 @@
 
 package org.eclipse.ecsp.oauth2.server.core.mfa;
 
+import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 /**
  * Unit tests for TotpService covering TOTP algorithm, QR code generation, and utility methods.
@@ -44,7 +45,8 @@ class TotpServiceTest {
     void setUp() {
         mfaProperties = new MfaProperties();
         mfaProperties.setAppName("TestApp");
-        totpService = new TotpService(mfaProperties);
+        TenantConfigurationService tenantConfigurationService = mock(TenantConfigurationService.class);
+        totpService = new TotpService(mfaProperties, tenantConfigurationService);
     }
 
     // ─────────────── validateCode ────────────────────────────────────────────

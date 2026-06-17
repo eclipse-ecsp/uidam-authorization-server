@@ -209,6 +209,7 @@
 
     <script src='https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit' async defer></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script th:src="@{/js/input-validator.js}"></script>
 </head>
 <body>
 <div class="login-page">
@@ -232,25 +233,27 @@
 		    <div class="container-auth-input">
                 <label for="email" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Email*</label>
                 <input type="email" id="email" name="email" placeholder="Email*" th:onblur="validateEmail()"/>
-                <div id="emailError" style="color: red;"></div>
+				<div id="emailError" style="color: red; font-size: 12px; display: none;"></div>
 				<div class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
 
             </div>
             <div class="container-auth-input">
                 <label for="firstName" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">First Name*</label>
                 <input type="text" id="firstName" name="firstName" placeholder="First Name*" maxlength="50"/>
+                <div id="firstNameError" style="color: red; font-size: 12px; display: none;"></div>
                 <div class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
 
             </div>
 			<div class="container-auth-input">
                 <label for="lastName" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Last Name</label>
                 <input type="text" id="lastName" name="lastName" placeholder="Last Name" maxlength="50"/>
+                <div id="lastNameError" style="color: red; font-size: 12px; display: none;"></div>
 
             </div>
             <div class="container-auth-input" style="margin-bottom: 5px;">
 				<label for="password" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Password*</label>
 				<input type="password" id="password" name="password" placeholder="Password*" onfocus="showPasswordPolicy()"  maxlength="50"/>
-				<div id="passwordError" class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;"></div>
+				<div id="passwordError" style="color: red; font-size: 12px; display: none;"></div>
 				<div class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
 			</div>
 			
@@ -328,7 +331,10 @@
 					areFieldsFilled = areFieldsFilled && recaptchaResponse !== '';
 				}
 
-				if (areFieldsFilled && password === confirmPassword && termsAccepted) {
+				// Check all input fields for dangerous content (scripts, SQL injection, etc.)
+				var inputsSafe = InputValidator.isSafe(email) && InputValidator.isSafe(firstName) && InputValidator.isSafe(lastName);
+
+				if (areFieldsFilled && password === confirmPassword && termsAccepted && inputsSafe) {
 					$('#submit').prop('disabled', false).addClass('enabled');
 				} else {
 					$('#submit').prop('disabled', true).removeClass('enabled');
@@ -374,6 +380,17 @@
 			});
 
 			handleInputFields();
+
+			// Attach real-time dangerous input validation
+			InputValidator.attachValidation(['email', 'firstName', 'lastName']);
+
+			$('form').on('submit', function(event) {
+				// Validate all input fields for dangerous content before submission
+				if (!InputValidator.validateFields(['email', 'firstName', 'lastName'])) {
+					event.preventDefault();
+					return false;
+				}
+			});
 
 			$('.sign-up-form').on('submit', function(event) {
 				$('.container-auth-input input').each(function() {
