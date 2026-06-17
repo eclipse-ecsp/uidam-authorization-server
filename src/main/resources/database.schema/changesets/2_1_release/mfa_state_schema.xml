@@ -23,11 +23,17 @@
       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
 
     <!--
-        Release 2.0 – MFA stateless multi-pod support.
+        Release 2.1 – MFA stateless multi-pod support.
 
         Adds columns to authorization_security_context so that the MFA pending-authentication
         token and the single-use MFA-verified flag are stored in the shared database instead of
         the in-memory HttpSession.  This makes the MFA flow pod-affinity-free.
+
+        Also persists the account ID and the per-user `mfaRequired` override carried on the
+        authenticated CustomUserPwdAuthenticationToken, so they survive the DB round-trip and are
+        available to MfaChallengeFilter on the subsequent /oauth2/authorize request (otherwise the
+        values were lost on reload and CONDITIONAL per-user MFA / account-based step-up never
+        triggered).
     -->
     <changeSet id="mfa-pending-columns-to-authorization-security-context" author="HarmanAutoMFA">
         <addColumn tableName="authorization_security_context">
@@ -40,6 +46,10 @@
             <!-- Single-use flag: set after MFA completes, consumed by MfaChallengeFilter on the
                  very next /oauth2/authorize request to prevent re-interception. -->
             <column name="MFA_VERIFIED_ONCE" type="BOOLEAN" defaultValueBoolean="false"/>
+            <!-- Account ID sourced from the user-management record (carried on the token). -->
+            <column name="ACCOUNT_ID" type="${STRING_SMALL}"/>
+            <!-- Per-user MFA override (mfaRequired user attribute). NULL = no per-user override. -->
+            <column name="MFA_REQUIRED" type="BOOLEAN"/>
         </addColumn>
     </changeSet>
 

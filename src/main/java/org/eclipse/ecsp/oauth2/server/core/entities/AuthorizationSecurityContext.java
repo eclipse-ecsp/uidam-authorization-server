@@ -50,6 +50,22 @@ public class AuthorizationSecurityContext {
     private String principal;
     @Column(name = "ACCOUNT_NAME")
     private String accountName;
+    /**
+     * Account ID sourced from the user-management record, carried on the authenticated
+     * {@code CustomUserPwdAuthenticationToken}. Persisted so it survives the DB round-trip
+     * between the login request and the subsequent {@code /oauth2/authorize} request where
+     * {@code MfaChallengeFilter} evaluates account-based MFA rules.
+     */
+    @Column(name = "ACCOUNT_ID")
+    private String accountId;
+    /**
+     * Per-user MFA override (the {@code mfaRequired} user attribute) carried on the
+     * authenticated token. Persisted so the value is available to {@code MfaChallengeFilter}
+     * in CONDITIONAL mode after the security context is reloaded from the database.
+     * {@code null} = no per-user override.
+     */
+    @Column(name = "MFA_REQUIRED")
+    private Boolean mfaRequired;
     @Column(name = "AUTHORITIES")
     private String authorities;
     @Column(name = "AUTHORIZED_CLIENT_REGISTRATION_ID")

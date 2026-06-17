@@ -34,7 +34,7 @@
   <!-- Release 1.4 - Performance Indexes -->
   <include file="changesets/1_4_release/performance_indexes_schema.xml" relativeToChangelogFile="true" />
 
-  <!-- Release 2.0 - MFA stateless multi-pod support -->
-  <include file="changesets/2_0_release/mfa_state_schema.xml" relativeToChangelogFile="true" />
+  <!-- Release 2.1 - MFA stateless multi-pod support + per-user mfaRequired/account ID on security context -->
+  <include file="changesets/2_1_release/mfa_state_schema.xml" relativeToChangelogFile="true" />
 
 </databaseChangeLog>

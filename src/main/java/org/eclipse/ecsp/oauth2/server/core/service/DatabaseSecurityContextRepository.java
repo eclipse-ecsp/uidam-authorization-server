@@ -195,6 +195,10 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
         String accountName = null;
         if (authentication instanceof CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken) {
             accountName = customUserPwdAuthenticationToken.getAccountName();
+            // Persist the per-user MFA override and account ID so they survive the DB round-trip
+            // and are available to MfaChallengeFilter on the subsequent /oauth2/authorize request.
+            authorizationSecurityContext.setAccountId(customUserPwdAuthenticationToken.getAccountId());
+            authorizationSecurityContext.setMfaRequired(customUserPwdAuthenticationToken.getMfaRequired());
         }
         if (StringUtils.isEmpty(accountName)) {
             TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
@@ -293,9 +297,10 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
             }
             AbstractAuthenticationToken abstractAuthenticationToken = null;
             if (StringUtils.isEmpty(authorizationSecurityContext.getAuthorizedClientRegistrationId())) {
-                abstractAuthenticationToken = new CustomUserPwdAuthenticationToken(
+                abstractAuthenticationToken = CustomUserPwdAuthenticationToken.authenticated(
                     authorizationSecurityContext.getPrincipal(), PROTECTED_CREDS,
-                    authorizationSecurityContext.getAccountName(), grantedAuthorities);
+                    authorizationSecurityContext.getAccountName(), authorizationSecurityContext.getAccountId(),
+                    authorizationSecurityContext.getMfaRequired(), grantedAuthorities);
             } else {
                 Map<String, Object> principal = new HashMap<>(parseMap(this.objectMapper,
                     authorizationSecurityContext.getPrincipal()));
