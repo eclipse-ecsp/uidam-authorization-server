@@ -120,6 +120,7 @@ maven/mavencentral/org.apache.tomcat.embed/tomcat-embed-el/11.0.22, Apache-2.0, 
 maven/mavencentral/org.apache.tomcat.embed/tomcat-embed-websocket/11.0.22, Apache-2.0, approved, #21065
 maven/mavencentral/org.apache.tomcat/tomcat-annotations-api/11.0.22, Apache-2.0, approved, #21067
 maven/mavencentral/org.apache.ws.commons.axiom/axiom-api/1.4.0, Apache-2.0, approved, #20720
+maven/mavencentral/org.apereo.cas.client/cas-client-core/4.0.4, Apache-2.0, approved, #20717
 maven/mavencentral/org.apiguardian/apiguardian-api/1.1.2, Apache-2.0, approved, #17641
 maven/mavencentral/org.aspectj/aspectjweaver/1.9.25.1, EPL-1.0, approved, tools.aspectj
 maven/mavencentral/org.assertj/assertj-core/3.27.7, Apache-2.0, approved, #17980
@@ -141,7 +142,7 @@ maven/mavencentral/org.hamcrest/hamcrest-core/3.0, BSD-3-Clause, approved, clear
 maven/mavencentral/org.hamcrest/hamcrest/3.0, BSD-3-Clause, approved, #17661
 maven/mavencentral/org.hdrhistogram/HdrHistogram/2.2.2, BSD-2-Clause AND CC0-1.0 AND CC0-1.0, approved, #14828
 maven/mavencentral/org.hibernate.models/hibernate-models/1.1.1, Apache-2.0, approved, #27318
-maven/mavencentral/org.hibernate.orm/hibernate-core/7.3.1.Final, Apache-2.0 AND (EPL-2.0 OR BSD-3-Clause), approved, #27317
+maven/mavencentral/org.hibernate.orm/hibernate-core/7.4.0.Final, Apache-2.0 AND (EPL-2.0 OR BSD-3-Clause), approved, #28749
 maven/mavencentral/org.hibernate.validator/hibernate-validator/9.0.1.Final, Apache-2.0, approved, clearlydefined
 maven/mavencentral/org.javassist/javassist/3.21.0-GA, MPL-1.1 OR LGPL-2.1-or-later OR Apache-2.0, approved, CQ14999
 maven/mavencentral/org.jboss.logging/jboss-logging/3.6.3.Final, Apache-2.0, approved, #26108
