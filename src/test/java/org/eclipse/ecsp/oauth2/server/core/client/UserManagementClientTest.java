@@ -591,12 +591,47 @@ class UserManagementClientTest {
         Mockito.when(requestBodySpecMock.bodyValue(userDto))
                 .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
         Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
-        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class)).thenReturn(
-                Mono.error(new WebClientResponseException(HttpStatus.SC_BAD_REQUEST, ACCOUNT_NAME, null, null, null)));
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
 
-        Exception thrown = assertThrows(OAuth2AuthenticationException.class,
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
-        assertNotNull(thrown.getMessage());
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+    }
+
+    @Test
+    void selfCreateUser_ThrowsWebClientResponseExceptionForPasswordPolicyError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage(" Error ='{ Error ='Password validation failed', parameters=test}");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.INVALID_PASSWORD, thrown.getError().getDescription());
     }
 
     @Test
@@ -992,6 +1027,9 @@ class UserManagementClientTest {
         externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_VERIFY,
                 "/v1/users/{username}/mfa/backup-codes/verify");
         props.setExternalUrls(externalUrls);
+        // Set the test encryption key/salt so getMfaSecret decryption works
+        props.setMfaSecretEncryptionKey("TestKey-1234567!");
+        props.setMfaSecretEncryptionSalt("TestSalt-1234567");
         return props;
     }
 
@@ -1149,17 +1187,22 @@ class UserManagementClientTest {
         when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
         when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
 
+        // Encrypt the plain secret using the same key/salt configured on mfaProps
+        final String plainSecret = "BASE32SECRET";
+        final String encryptedSecret = org.eclipse.ecsp.oauth2.server.core.utils.MfaSecretEncryptionUtil
+                .encrypt(plainSecret, mfaProps.getMfaSecretEncryptionKey(), mfaProps.getMfaSecretEncryptionSalt());
+
         when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
         when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
         when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
         when(requestBodySpecMock.accept(any())).thenReturn(requestBodySpecMock);
         when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
-        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.just("BASE32SECRET"));
+        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.just(encryptedSecret));
 
         java.util.Optional<String> result = userManagementClient.getMfaSecret("testuser");
 
         assertNotNull(result);
-        assertEquals("BASE32SECRET", result.orElse(null));
+        assertEquals(plainSecret, result.orElse(null));
     }
 
     @Test

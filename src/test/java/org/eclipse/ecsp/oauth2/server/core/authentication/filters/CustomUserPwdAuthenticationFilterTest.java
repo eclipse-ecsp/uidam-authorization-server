@@ -18,7 +18,6 @@
 
 package org.eclipse.ecsp.oauth2.server.core.authentication.filters;
 
-import jakarta.servlet.ServletException;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
@@ -32,14 +31,15 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import java.io.IOException;
-
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessages.INVALID_CREDENTIALS_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_ACCOUNT_NAME;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.TEST_USER_NAME;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -87,7 +87,7 @@ class CustomUserPwdAuthenticationFilterTest {
      * The test asserts that the returned Authentication object is not null.
      */
     @Test
-    void testAttemptAuthenticationSuccess() throws ServletException, IOException {
+    void testAttemptAuthenticationSuccess() {
         mockHttpServletRequest.setMethod("POST");
         mockHttpServletRequest.addParameter("username", TEST_USER_NAME);
         mockHttpServletRequest.addParameter("password", TEST_PASSWORD);
@@ -107,7 +107,7 @@ class CustomUserPwdAuthenticationFilterTest {
      * The test asserts that the returned Authentication object is not null.
      */
     @Test
-    void testAttemptAuthenticationFieldsNull() throws ServletException, IOException {
+    void testAttemptAuthenticationFieldsNull() {
         mockHttpServletRequest.setMethod("POST");
         CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken =
             new CustomUserPwdAuthenticationToken(null, null, null);
@@ -126,6 +126,54 @@ class CustomUserPwdAuthenticationFilterTest {
         assertThrows(AuthenticationServiceException.class,
                 () -> customUserPwdAuthenticationFilter.attemptAuthentication(mockHttpServletRequest,
                     mockHttpServletResponse));
+    }
+
+    @Test
+    void testAttemptAuthenticationDangerousUsername() {
+        mockHttpServletRequest.setMethod("POST");
+        mockHttpServletRequest.addParameter("username", "<script>alert('xss')</script>");
+        mockHttpServletRequest.addParameter("password", TEST_PASSWORD);
+        mockHttpServletRequest.addParameter("account_name", TEST_ACCOUNT_NAME);
+        AuthenticationException exception = assertThrows(AuthenticationException.class,
+            () -> customUserPwdAuthenticationFilter.attemptAuthentication(
+                mockHttpServletRequest, mockHttpServletResponse));
+        assertEquals(INVALID_CREDENTIALS_ERROR, exception.getMessage());
+    }
+
+    @Test
+    void testAttemptAuthenticationDangerousAccountName() {
+        mockHttpServletRequest.setMethod("POST");
+        mockHttpServletRequest.addParameter("username", TEST_USER_NAME);
+        mockHttpServletRequest.addParameter("password", TEST_PASSWORD);
+        mockHttpServletRequest.addParameter("account_name", "; DROP TABLE users");
+        AuthenticationException exception = assertThrows(AuthenticationException.class,
+            () -> customUserPwdAuthenticationFilter.attemptAuthentication(
+                mockHttpServletRequest, mockHttpServletResponse));
+        assertEquals(INVALID_CREDENTIALS_ERROR, exception.getMessage());
+    }
+
+    @Test
+    void testAttemptAuthenticationSqlInjectionUsername() {
+        mockHttpServletRequest.setMethod("POST");
+        mockHttpServletRequest.addParameter("username", "admin' OR 1=1");
+        mockHttpServletRequest.addParameter("password", TEST_PASSWORD);
+        mockHttpServletRequest.addParameter("account_name", TEST_ACCOUNT_NAME);
+        AuthenticationException exception = assertThrows(AuthenticationException.class,
+            () -> customUserPwdAuthenticationFilter.attemptAuthentication(
+                mockHttpServletRequest, mockHttpServletResponse));
+        assertEquals(INVALID_CREDENTIALS_ERROR, exception.getMessage());
+    }
+
+    @Test
+    void testAttemptAuthenticationXssAccountName() {
+        mockHttpServletRequest.setMethod("POST");
+        mockHttpServletRequest.addParameter("username", TEST_USER_NAME);
+        mockHttpServletRequest.addParameter("password", TEST_PASSWORD);
+        mockHttpServletRequest.addParameter("account_name", "<img onerror=alert(1)>");
+        AuthenticationException exception = assertThrows(AuthenticationException.class,
+            () -> customUserPwdAuthenticationFilter.attemptAuthentication(
+                mockHttpServletRequest, mockHttpServletResponse));
+        assertEquals(INVALID_CREDENTIALS_ERROR, exception.getMessage());
     }
 
 }

@@ -1,5 +1,6 @@
 package org.eclipse.ecsp.oauth2.server.core.request.dto;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -16,6 +17,7 @@ public class BaseUserDto {
     private String state;
     private String city;
     @NotNull
+    @Email
     private String email;
     private String status;
     private String aud;

@@ -403,6 +403,74 @@ class PasswordRecoveryControllerTest {
     }
 
     /**
+     * Test password recovery with dangerous input (XSS) in username is rejected.
+     */
+    @Test
+    void testPasswordForgotDangerousUsername() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/forgotPassword")
+                        .param("username", "<script>alert('xss')</script>")
+                        .param("accountName", "ignite"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/forgot-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
+     * Test password recovery with SQL injection in accountName is rejected.
+     */
+    @Test
+    void testPasswordForgotSqlInjectionAccountName() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/forgotPassword")
+                        .param("username", "validuser")
+                        .param("accountName", "'; DROP TABLE users; --"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/forgot-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
+     * Test password recovery with SQL injection in username is rejected.
+     */
+    @Test
+    void testPasswordForgotSqlInjectionUsername() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/forgotPassword")
+                        .param("username", "admin' OR 1=1 --")
+                        .param("accountName", "ignite"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/forgot-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
+     * Test password recovery with XSS in accountName is rejected.
+     */
+    @Test
+    void testPasswordForgotXssAccountName() throws Exception {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        this.mockMvc
+                .perform(post("/ecsp/recovery/forgotPassword")
+                        .param("username", "validuser")
+                        .param("accountName", "<img onerror=alert(1)>"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("recovery/forgot-password"))
+                .andExpect(model().attributeExists("error"));
+    }
+
+    /**
      * Test password forgot with recaptcha response present.
      */
     @Test

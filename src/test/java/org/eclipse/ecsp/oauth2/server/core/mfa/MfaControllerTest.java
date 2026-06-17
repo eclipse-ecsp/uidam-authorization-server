@@ -20,12 +20,12 @@
 
 package org.eclipse.ecsp.oauth2.server.core.mfa;
 
-import jakarta.servlet.http.HttpSession;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,8 +33,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.mock.web.MockHttpSession;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -43,16 +41,19 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.ui.ExtendedModelMap;
 import org.springframework.ui.Model;
 
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -78,23 +79,40 @@ class MfaControllerTest {
     @Mock
     private TenantConfigurationService tenantConfigurationService;
 
+    @Mock
+    private MfaStateService mfaStateService;
+
     private MfaProperties mfaProperties;
     private MfaController mfaController;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        // Initialize the TenantUtils singleton so that TenantUtils.getDefaultTenant()
+        // returns "ecsp" (the same as TENANT_ID) instead of throwing/returning null.
+        TenantUtils tenantUtils = new TenantUtils();
+        Field defaultTenantField = TenantUtils.class.getDeclaredField("defaultTenant");
+        defaultTenantField.setAccessible(true);
+        defaultTenantField.set(tenantUtils, TENANT_ID);
+
         mfaProperties = new MfaProperties();
         mfaProperties.setAppName("TestApp");
         MfaProperties.Recovery recovery = new MfaProperties.Recovery();
         recovery.setResendCooldownSeconds(60);
         mfaProperties.setRecovery(recovery);
 
-        mfaController = new MfaController(mfaSecretService, totpService, mfaProperties, tenantConfigurationService);
+        mfaController = new MfaController(mfaSecretService, totpService, mfaProperties,
+                tenantConfigurationService, mfaStateService);
         SecurityContextHolder.clearContext();
 
         TenantProperties tenantProperties = new TenantProperties();
         tenantProperties.setTenantId(TENANT_ID);
         lenient().when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+
+        // Default: no pending token in DB for any request
+        lenient().when(mfaStateService.loadPending(any())).thenReturn(Optional.empty());
+        lenient().when(mfaStateService.loadTenant(any())).thenReturn(null);
+        lenient().when(mfaStateService.getRecoverySentAt(anyString())).thenReturn(null);
+        lenient().when(mfaStateService.isRecoveryEmailVerified(anyString())).thenReturn(false);
     }
 
     // ─────────────── populateAppName / resolveMfaAppName ───────────────────
@@ -163,10 +181,9 @@ class MfaControllerTest {
 
     @Test
     void enrollSetup_withAuthenticatedUser_returnsEnrollSetupView() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         setAuthenticatedUser(USERNAME);
+        lenient().when(mfaStateService.loadPending(any())).thenReturn(Optional.empty());
 
         MfaEnrollInitiateResponseDto enrollData = new MfaEnrollInitiateResponseDto(
                 BASE32_SECRET, QR_URI, MANUAL_KEY);
@@ -182,10 +199,9 @@ class MfaControllerTest {
 
     @Test
     void enrollSetup_withManualKeyNull_formatsManualKey() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         setAuthenticatedUser(USERNAME);
+        lenient().when(mfaStateService.loadPending(any())).thenReturn(Optional.empty());
 
         MfaEnrollInitiateResponseDto enrollData = new MfaEnrollInitiateResponseDto(
                 BASE32_SECRET, QR_URI, null);
@@ -202,9 +218,7 @@ class MfaControllerTest {
 
     @Test
     void enrollSetup_withNullTenantId_usesDefaultTenant() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         setAuthenticatedUser(USERNAME);
 
         MfaEnrollInitiateResponseDto enrollData = new MfaEnrollInitiateResponseDto(
@@ -221,8 +235,6 @@ class MfaControllerTest {
     @Test
     void enrollSetup_whenUnauthenticated_returnsError() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
 
         Model model = new ExtendedModelMap();
         String view = mfaController.enrollSetup(TENANT_ID, request, model);
@@ -234,11 +246,9 @@ class MfaControllerTest {
     @Test
     void enrollSetup_withPendingSession_returnsEnrollSetupView() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         MfaEnrollInitiateResponseDto enrollData = new MfaEnrollInitiateResponseDto(
                 BASE32_SECRET, QR_URI, MANUAL_KEY);
@@ -256,10 +266,10 @@ class MfaControllerTest {
     @Test
     void enrollVerify_withValidCode_returnsBackupCodesView() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_ENROLL_SECRET", BASE32_SECRET);
-        session.setAttribute("MFA_ENROLL_USERNAME", USERNAME);
-        request.setSession(session);
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
 
         when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
         doNothing().when(mfaSecretService).activateEnrollment(USERNAME);
@@ -278,10 +288,10 @@ class MfaControllerTest {
     @Test
     void enrollVerify_withValidCodeBackupDisabled_returnsBackupCodesViewEmpty() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_ENROLL_SECRET", BASE32_SECRET);
-        session.setAttribute("MFA_ENROLL_USERNAME", USERNAME);
-        request.setSession(session);
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
 
         when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
         doNothing().when(mfaSecretService).activateEnrollment(USERNAME);
@@ -297,10 +307,10 @@ class MfaControllerTest {
     @Test
     void enrollVerify_withValidCodeBackupCodesGenerateFails_returnsBackupCodesViewEmpty() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_ENROLL_SECRET", BASE32_SECRET);
-        session.setAttribute("MFA_ENROLL_USERNAME", USERNAME);
-        request.setSession(session);
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
 
         when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
         doNothing().when(mfaSecretService).activateEnrollment(USERNAME);
@@ -317,10 +327,10 @@ class MfaControllerTest {
     @Test
     void enrollVerify_withInvalidCode_returnsEnrollSetupWithError() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_ENROLL_SECRET", BASE32_SECRET);
-        session.setAttribute("MFA_ENROLL_USERNAME", USERNAME);
-        request.setSession(session);
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
 
         when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(false);
         when(totpService.formatManualKey(BASE32_SECRET)).thenReturn(MANUAL_KEY);
@@ -335,7 +345,8 @@ class MfaControllerTest {
     }
 
     @Test
-    void enrollVerify_withNullSession_redirectsToLogin() {
+    void enrollVerify_withNullUsername_redirectsToLogin() {
+        // No pending token in DB, no SecurityContext auth → username is null → redirect to login
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         Model model = new ExtendedModelMap();
@@ -348,8 +359,11 @@ class MfaControllerTest {
     @Test
     void enrollVerify_withNullSecret_returnsErrorView() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        // Secret not found in user-management
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.empty());
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -362,14 +376,11 @@ class MfaControllerTest {
 
     @Test
     void backupCodesConfirm_withValidSession_completesLogin() {
-        final MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_BACKUP_CODES_PENDING_USERNAME", USERNAME);
-        session.setAttribute("MFA_BACKUP_CODES_PENDING_TENANT", TENANT_ID);
+        MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.loadTenant(request)).thenReturn(TENANT_ID);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -380,21 +391,9 @@ class MfaControllerTest {
     }
 
     @Test
-    void backupCodesConfirm_withNullSession_redirectsToLogin() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-
-        Model model = new ExtendedModelMap();
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        String view = mfaController.backupCodesConfirm(TENANT_ID, request, response, model);
-
-        assertEquals("redirect:/login", view);
-    }
-
-    @Test
     void backupCodesConfirm_withNullUsername_returnsErrorView() {
+        // No pending token in DB → username is null
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -408,11 +407,9 @@ class MfaControllerTest {
     @Test
     void challengePage_withPendingToken_returnsChallengeView() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         Model model = new ExtendedModelMap();
         String view = mfaController.challengePage(TENANT_ID, request, model);
@@ -434,12 +431,10 @@ class MfaControllerTest {
     @Test
     void challengePage_withNullTenantId_usesDefaultTenant() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_TENANT, TENANT_ID);
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.loadTenant(request)).thenReturn(TENANT_ID);
 
         Model model = new ExtendedModelMap();
         String view = mfaController.challengePage(null, request, model);
@@ -452,11 +447,9 @@ class MfaControllerTest {
     @Test
     void challengeSubmit_withValidCode_completesLogin() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
         when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
@@ -472,11 +465,9 @@ class MfaControllerTest {
     @Test
     void challengeSubmit_withInvalidCode_returnsChallengeWithError() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
         when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(false);
@@ -492,11 +483,9 @@ class MfaControllerTest {
     @Test
     void challengeSubmit_withNullSecret_returnsChallengeWithError() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.empty());
 
@@ -523,8 +512,6 @@ class MfaControllerTest {
     @Test
     void reEnroll_withAuthenticatedUser_revokesAndRedirects() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
         setAuthenticatedUser(USERNAME);
 
         doNothing().when(mfaSecretService).revoke(USERNAME);
@@ -540,8 +527,6 @@ class MfaControllerTest {
     @Test
     void reEnroll_withTenantPathVar_usesPathTenant() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
         setAuthenticatedUser(USERNAME);
 
         doNothing().when(mfaSecretService).revoke(USERNAME);
@@ -556,8 +541,6 @@ class MfaControllerTest {
     @Test
     void reEnroll_withParamTenantId_usesParamTenant() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
         setAuthenticatedUser(USERNAME);
 
         doNothing().when(mfaSecretService).revoke(USERNAME);
@@ -572,8 +555,6 @@ class MfaControllerTest {
     @Test
     void reEnroll_withUnauthenticatedUser_returnsErrorView() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -587,12 +568,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryPage_withPendingToken_returnsRecoveryView() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         Model model = new ExtendedModelMap();
         String view = mfaController.recoveryPage(TENANT_ID, request, model);
@@ -615,12 +594,10 @@ class MfaControllerTest {
 
     @Test
     void recoverySendEmail_success_returnsVerifyView() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         doNothing().when(mfaSecretService).sendRecoveryKey(USERNAME);
 
@@ -633,14 +610,12 @@ class MfaControllerTest {
 
     @Test
     void recoverySendEmail_withinCooldown_showsError() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        // Set last sent timestamp to now (within cooldown)
-        session.setAttribute("MFA_RECOVERY_SENT_AT", System.currentTimeMillis());
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        // Last-sent timestamp is now → still within the 60-second cooldown configured in setUp().
+        when(mfaStateService.getRecoverySentAt(USERNAME)).thenReturn(System.currentTimeMillis());
 
         Model model = new ExtendedModelMap();
         String view = mfaController.recoverySendEmail(TENANT_ID, request, model);
@@ -661,12 +636,10 @@ class MfaControllerTest {
 
     @Test
     void recoverySendEmail_whenOauth2ExceptionThrown_returnsRecoveryWithError() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         doThrow(new OAuth2AuthenticationException(new OAuth2Error("error", "OAuth2 error", null)))
                 .when(mfaSecretService).sendRecoveryKey(USERNAME);
@@ -680,12 +653,10 @@ class MfaControllerTest {
 
     @Test
     void recoverySendEmail_whenGenericExceptionThrown_returnsRecoveryWithError() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         doThrow(new RuntimeException("network error")).when(mfaSecretService).sendRecoveryKey(USERNAME);
 
@@ -700,13 +671,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryVerifyKey_withValidKeyAndBackupCodesEnabled_returnsBackupView() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_RECOVERY_SENT_AT", System.currentTimeMillis() - 90000L);
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.verifyRecoveryKeyAndRevoke(USERNAME, "ABCDEF")).thenReturn(true);
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
@@ -720,12 +688,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryVerifyKey_withValidKeyAndBackupCodesDisabled_redirectsToEnroll() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.verifyRecoveryKeyAndRevoke(USERNAME, "ABCDEF")).thenReturn(true);
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
@@ -740,12 +706,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryVerifyKey_withInvalidKey_returnsVerifyViewWithError() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.verifyRecoveryKeyAndRevoke(USERNAME, "WRONG")).thenReturn(false);
 
@@ -770,13 +734,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryVerifyKey_withValidKeySessionNotNull_clearsSentAt() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute("MFA_RECOVERY_SENT_AT", System.currentTimeMillis());
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.verifyRecoveryKeyAndRevoke(USERNAME, "ABCDEF")).thenReturn(true);
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
@@ -785,19 +746,18 @@ class MfaControllerTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         mfaController.recoveryVerifyKey(TENANT_ID, "ABCDEF", request, response, model);
 
-        // Session should have sent_at removed
+        // Recovery state should have been cleared in DB
+        verify(mfaStateService).clearRecoveryState(USERNAME);
     }
 
     // ─────────────── recoveryBackupPage ────────────────────────────────────────
 
     @Test
     void recoveryBackupPage_withPendingAndBackupEnabled_returnsBackupView() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
 
@@ -819,12 +779,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryBackupPage_withBackupDisabled_redirectsToRecovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
 
@@ -839,13 +797,11 @@ class MfaControllerTest {
 
     @Test
     void recoveryBackupSubmit_withValidBackupCode_redirectsToEnroll() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        session.setAttribute("MFA_RECOVERY_EMAIL_VERIFIED", Boolean.TRUE);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.isRecoveryEmailVerified(USERNAME)).thenReturn(true);
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
         MfaBackupCodeVerifyResponseDto result = new MfaBackupCodeVerifyResponseDto(true, 4, false);
@@ -862,13 +818,11 @@ class MfaControllerTest {
 
     @Test
     void recoveryBackupSubmit_withInvalidBackupCode_returnsBackupViewWithError() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        session.setAttribute("MFA_RECOVERY_EMAIL_VERIFIED", Boolean.TRUE);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.isRecoveryEmailVerified(USERNAME)).thenReturn(true);
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
         MfaBackupCodeVerifyResponseDto result = new MfaBackupCodeVerifyResponseDto(false, 4, false);
@@ -884,13 +838,11 @@ class MfaControllerTest {
 
     @Test
     void recoveryBackupSubmit_withNullResult_returnsBackupViewWithError() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        session.setAttribute("MFA_RECOVERY_EMAIL_VERIFIED", Boolean.TRUE);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.isRecoveryEmailVerified(USERNAME)).thenReturn(true);
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
         when(mfaSecretService.verifyBackupCode(USERNAME, "WRONG")).thenReturn(null);
@@ -915,12 +867,10 @@ class MfaControllerTest {
 
     @Test
     void recoveryBackupSubmit_withBackupDisabled_redirectsToRecovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
 
@@ -933,13 +883,11 @@ class MfaControllerTest {
 
     @Test
     void recoveryBackupSubmit_withoutEmailVerification_redirectsToRecovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        // No email verification flag
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        // Email-verified flag is false (default from setUp), so backup-code step is blocked.
 
         when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
 
@@ -948,45 +896,28 @@ class MfaControllerTest {
         String view = mfaController.recoveryBackupSubmit(TENANT_ID, "BACKUP1", request, response, model);
 
         assertNotNull(view);
-    }
-
-    @Test
-    void recoveryBackupSubmit_withNullSession_redirectsToRecovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
-                USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        // No email verification, session present but no flag
-        request.setSession(session);
-
-        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
-
-        Model model = new ExtendedModelMap();
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        String view = mfaController.recoveryBackupSubmit(TENANT_ID, "BACKUP1", request, response, model);
-
-        assertNotNull(view);
+        // Should NOT have invoked verifyBackupCode because the email-verified guard blocks it.
+        verify(mfaSecretService, never()).verifyBackupCode(anyString(), anyString());
     }
 
     // ─────────────── recoveryContinue ─────────────────────────────────────────
 
     @Test
-    void recoveryContinue_withNullSession_redirectsToLogin() {
+    void recoveryContinue_withNoSavedRequest_redirectsToTenantRoot() {
+        // With no saved OAuth2 request and the default tenant set to "ecsp" (= TENANT_ID),
+        // the controller redirects to the root rather than to /login.
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
         String view = mfaController.recoveryContinue(TENANT_ID, request, response, model);
 
-        assertEquals("redirect:/login", view);
+        assertEquals("redirect:/", view);
     }
 
     @Test
     void recoveryContinue_withSessionNoSavedRequest_redirectsToRoot() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -998,8 +929,6 @@ class MfaControllerTest {
     @Test
     void recoveryContinue_withNullTenantId_usesDefaultTenant() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -1013,8 +942,6 @@ class MfaControllerTest {
     @Test
     void recoveryReEnroll_withAuthenticatedUser_revokesAndRedirects() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
         setAuthenticatedUser(USERNAME);
 
         doNothing().when(mfaSecretService).revoke(USERNAME);
@@ -1030,30 +957,27 @@ class MfaControllerTest {
     @Test
     void recoveryReEnroll_withNullUsername_doesNotRevoke() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
-        request.setSession(session);
-        // No authentication set
+        // No authentication set, no pending token in DB → username resolves to null.
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();
         String view = mfaController.recoveryReEnroll(TENANT_ID, request, response, model);
 
         assertNotNull(view);
+        verify(mfaSecretService, never()).revoke(anyString());
     }
 
     // ─────────────── completeLogin with tenant ─────────────────────────────────
 
     @Test
     void challengeSubmit_withNonDefaultTenant_redirectsToTenantRoot() {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        MockHttpSession session = new MockHttpSession();
+        final MockHttpServletRequest request = new MockHttpServletRequest();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        request.setSession(session);
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
 
         when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
-        when(totpService.validateCode(anyString(), anyString(), anyString())).thenReturn(true);
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
 
         Model model = new ExtendedModelMap();
         MockHttpServletResponse response = new MockHttpServletResponse();

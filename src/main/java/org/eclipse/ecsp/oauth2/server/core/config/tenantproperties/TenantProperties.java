@@ -82,6 +82,22 @@ public class TenantProperties {
     /** Per-tenant MFA enforcement policy (mode, step-up scopes, skip-users). */
     private MfaPolicyProperties mfa = new MfaPolicyProperties();
 
+    /**
+     * AES-256-GCM encryption key used to decrypt TOTP secrets received from user-management.
+     * Must match the value configured in the user-management service for the same tenant.
+     * Override in production via ConfigMap / environment variable
+     * {@code DEFAULT_MFA_SECRET_ENCRYPTION_KEY}.
+     */
+    private String mfaSecretEncryptionKey = "ChangeMe-MfaKey!";
+
+    /**
+     * Salt for PBKDF2 key derivation used to decrypt TOTP secrets.
+     * Must match the value configured in the user-management service for the same tenant.
+     * Override in production via ConfigMap / environment variable
+     * {@code DEFAULT_MFA_SECRET_ENCRYPTION_SALT}.
+     */
+    private String mfaSecretEncryptionSalt = "ChangeMe-MfaSalt";
+
     private static final String MAPPINGS_DELIMITER = ",";
     private static final String PAIR_DELIMITER = "#";
     private static final int EXPECTED_PAIR_LENGTH = 2;

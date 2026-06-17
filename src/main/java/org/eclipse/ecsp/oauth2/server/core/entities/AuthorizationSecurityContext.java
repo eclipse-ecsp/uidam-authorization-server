@@ -65,4 +65,22 @@ public class AuthorizationSecurityContext {
     @Column(name = "UPDATED_DATE", nullable = false)
     private Timestamp updatedDate;
 
+    // ── MFA pending state (replaces HttpSession attributes) ─────────────────
+    /** Username whose password-auth passed but MFA challenge not yet completed. {@code null} = no pending MFA. */
+    @Column(name = "MFA_PENDING_USERNAME")
+    private String mfaPendingUsername;
+    /** Comma-separated GrantedAuthority strings for the pending-MFA user. */
+    @Column(name = "MFA_PENDING_AUTHORITIES")
+    private String mfaPendingAuthorities;
+    /** Resolved tenant ID stored alongside the pending MFA token. */
+    @Column(name = "MFA_TENANT")
+    private String mfaTenant;
+    /**
+     * Single-use flag consumed by {@code MfaChallengeFilter} on the first
+     * {@code /oauth2/authorize} request that follows a successful MFA verification
+     * to prevent the filter from re-intercepting and looping.
+     */
+    @Column(name = "MFA_VERIFIED_ONCE")
+    private Boolean mfaVerifiedOnce = Boolean.FALSE;
+
 }

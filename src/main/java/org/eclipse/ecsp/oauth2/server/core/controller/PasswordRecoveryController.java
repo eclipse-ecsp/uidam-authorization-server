@@ -34,6 +34,7 @@ import org.eclipse.ecsp.oauth2.server.core.exception.UserNotFoundException;
 import org.eclipse.ecsp.oauth2.server.core.service.PasswordPolicyService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.eclipse.ecsp.sql.multitenancy.TenantContext;
@@ -55,6 +56,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.BAD_REQUEST_LITERAL;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_CHANGE_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.RECOVERY_EMAIL_SENT;
@@ -152,6 +154,19 @@ public class PasswordRecoveryController {
                                        @RequestParam("accountName") String accountName, Model model)
             throws MalformedURLException {
         tenantId = TenantUtils.resolveTenantId(tenantId);
+
+        // Reject input containing scripts, HTML tags, or SQL injection patterns
+        if (!InputSanitizer.isSafe(username) || !InputSanitizer.isSafe(accountName)) {
+            LOGGER.error("Dangerous input detected in password recovery request");
+            TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+            model.addAttribute(CAPTCHA_FIELD_ENABLED, true);
+            model.addAttribute(CAPTCHA_SITE, tenantProperties.getCaptcha().getRecaptchaKeySite());
+            model.addAttribute(ERROR_LITERAL, INVALID_INPUT_ERROR);
+            model.addAttribute(ISSUER_PARAM, tenantId);
+            uiAttributeUtils.addUiAttributes(model, tenantId);
+            return new ModelAndView(RECOVERY_FORGOT_PASSWORD).addObject(model);
+        }
+
         isAccountNamePatternValid(accountName);
         String recaptchaResponse = obtainRecaptchaResponse(request);
         recaptchaResponse = (recaptchaResponse != null) ? recaptchaResponse : EMPTY_STRING;

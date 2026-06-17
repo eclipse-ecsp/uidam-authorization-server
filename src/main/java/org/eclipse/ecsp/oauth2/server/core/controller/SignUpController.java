@@ -27,14 +27,17 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserDto;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.PasswordPolicyService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,17 +46,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-
-
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ADD_REQ_PAR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.EMAIL_SENT_SUFFIX;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.FAILED_TO_CREATE_USER_WITH_USERNAME;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.PRIVACY_AGREEMENT;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.REDIRECT_LITERAL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SELF_SIGN_UP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SIGN_UP_NOT_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SLASH;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TERMS_OF_USE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UNEXPECTED_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.USER_CREATED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
@@ -67,10 +67,11 @@ import static org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils.obtai
  * Controller class for handling self user sign-up operations.
  */
 @Controller
-@RequestMapping({"/{tenantId}", "/"})
+@RequestMapping({ "/{tenantId}", "/" })
 public class SignUpController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SignUpController.class);
+    private static final int SIGN_UP_FIELD_MAX_LENGTH = 50;
 
     private UserManagementClient userManagementClient;
 
@@ -150,66 +151,118 @@ public class SignUpController {
      * @param redirectAttributes the redirect attributes to add flash attributes
      * @return a ModelAndView object to redirect to the appropriate view
      */
-    @PostMapping(value = SLASH + SELF_SIGN_UP, consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE})
+    @PostMapping(value = SLASH + SELF_SIGN_UP, consumes = { MediaType.APPLICATION_FORM_URLENCODED_VALUE })
     public ModelAndView addSelfUser(@PathVariable(value = "tenantId", required = false) String tenantId,
-                                    @ModelAttribute @Valid UserDto userDto,
-                                    HttpServletRequest request,
-                                    RedirectAttributes redirectAttributes) {
+            @Valid @ModelAttribute UserDto userDto,
+            BindingResult bindingResult,
+            HttpServletRequest request,
+            RedirectAttributes redirectAttributes) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
-        LOGGER.info("## addSelfUser - START for FirstName: {}", userDto.getFirstName());
+
+        // Reject request if bean validation failed (invalid patterns, size, etc.)
+        if (bindingResult.hasErrors()) {
+            LOGGER.error("Input validation failed with {} error(s)", bindingResult.getErrorCount());
+            redirectAttributes.addFlashAttribute(ERROR_LITERAL, INVALID_INPUT_ERROR);
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+        }
+
+        // Reject input containing scripts, HTML tags, or SQL injection patterns
+        if (!isSelfSignUpInputSafe(userDto)) {
+            LOGGER.error("Dangerous input detected in self sign-up request");
+            redirectAttributes.addFlashAttribute(ERROR_LITERAL, INVALID_INPUT_ERROR);
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+        }
+
+        if (!isSelfSignUpInputValid(userDto)) {
+            LOGGER.error("Self sign-up input validation failed");
+            redirectAttributes.addFlashAttribute(ERROR_LITERAL, INVALID_INPUT_ERROR);
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+        }
+
+        LOGGER.info("## addSelfUser - START for FirstName after input validation: {}", userDto.getFirstName());
+
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
         boolean reqParametersPresent = checkForReqParameters(userDto, obtainRecaptchaResponse(request),
-            request, tenantProperties);
+                request, tenantProperties);
         if (!reqParametersPresent) {
             LOGGER.error("Required parameters are missing");
             redirectAttributes.addFlashAttribute(ERROR_LITERAL, ADD_REQ_PAR);
             return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
         }
-        LOGGER.debug("Adding self user with username: {}", userDto.getFirstName());
-        if (tenantProperties.isSignUpEnabled()) {
-            try {
-                UserDetailsResponse userDetailsResponse = userManagementClient.selfCreateUser(userDto, request);
-                if (userDetailsResponse == null) {
-                    LOGGER.error(FAILED_TO_CREATE_USER_WITH_USERNAME, userDto.getUserName());
-                    redirectAttributes.addFlashAttribute(ERROR_LITERAL, UNEXPECTED_ERROR);
-                    return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
-                } else {
-                    LOGGER.info("User created successfully with username: {}", userDto.getUserName());
-                    if (!userDetailsResponse.isVerificationEmailSent()) {
-                        redirectAttributes.addFlashAttribute(MSG_LITERAL,
-                                AuthorizationServerConstants.USER_CREATED_SUCCESSFULLY);
-                    } else {
-                        redirectAttributes.addFlashAttribute(MSG_LITERAL,
-                                AuthorizationServerConstants.EMAIL_SENT_PREFIX
+
+        if (!tenantProperties.isSignUpEnabled()) {
+            LOGGER.debug(SIGN_UP_NOT_ENABLED);
+            redirectAttributes.addFlashAttribute(MSG_LITERAL, SIGN_UP_NOT_ENABLED);
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+        }
+
+        return handleSelfUserCreation(tenantId, userDto, request, redirectAttributes);
+    }
+
+    private ModelAndView handleSelfUserCreation(String tenantId, UserDto userDto, HttpServletRequest request,
+            RedirectAttributes redirectAttributes) {
+        LOGGER.debug("Processing self user creation request");
+        try {
+            UserDetailsResponse userDetailsResponse = userManagementClient.selfCreateUser(userDto, request);
+            if (userDetailsResponse == null) {
+                LOGGER.error(FAILED_TO_CREATE_USER_WITH_USERNAME, userDto.getUserName());
+                redirectAttributes.addFlashAttribute(ERROR_LITERAL, UNEXPECTED_ERROR);
+                return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+            }
+
+            LOGGER.info("User created successfully with username: {}", userDto.getUserName());
+            if (!userDetailsResponse.isVerificationEmailSent()) {
+                redirectAttributes.addFlashAttribute(MSG_LITERAL,
+                        AuthorizationServerConstants.USER_CREATED_SUCCESSFULLY);
+            } else {
+                redirectAttributes.addFlashAttribute(MSG_LITERAL,
+                        AuthorizationServerConstants.EMAIL_SENT_PREFIX
                                 + userDetailsResponse.getEmail()
                                 + "\n"
                                 + EMAIL_SENT_SUFFIX);
-                    }
-                    return new ModelAndView(REDIRECT_LITERAL  + tenantId + "/" + USER_CREATED);
-                }
-            } catch (Exception e) {
-                LOGGER.error(FAILED_TO_CREATE_USER_WITH_USERNAME, userDto.getEmail());
-                redirectAttributes.addFlashAttribute(ERROR_LITERAL, e.getMessage());
-                return new ModelAndView(REDIRECT_LITERAL  + tenantId + "/" + SELF_SIGN_UP);
             }
-        } else {
-            LOGGER.debug(SIGN_UP_NOT_ENABLED);
-            redirectAttributes.addFlashAttribute(MSG_LITERAL, SIGN_UP_NOT_ENABLED);
-            return new ModelAndView(REDIRECT_LITERAL  + tenantId + "/" + SELF_SIGN_UP);
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + USER_CREATED);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create self user", e);
+            redirectAttributes.addFlashAttribute(ERROR_LITERAL, resolveSignUpErrorMessage(e));
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
         }
     }
 
+    private String resolveSignUpErrorMessage(Exception e) {
+        if (e instanceof OAuth2AuthenticationException oauthEx
+                && oauthEx.getError() != null
+                && StringUtils.hasText(oauthEx.getError().getDescription())) {
+            return oauthEx.getError().getDescription();
+        }
+        return UNEXPECTED_ERROR;
+    }
+
+    private boolean isSelfSignUpInputValid(UserDto userDto) {
+        String firstName = userDto.getFirstName();
+        String lastName = userDto.getLastName();
+        String email = userDto.getEmail();
+        String password = userDto.getPassword();
+
+        return StringUtils.hasText(firstName)
+            && StringUtils.hasText(email)
+            && StringUtils.hasText(password)
+            && firstName.length() <= SIGN_UP_FIELD_MAX_LENGTH
+            && (!StringUtils.hasText(lastName) || lastName.length() <= SIGN_UP_FIELD_MAX_LENGTH)
+            && password.length() <= SIGN_UP_FIELD_MAX_LENGTH;
+    }
+
     private boolean checkForReqParameters(UserDto userDto, String recaptchaResp, HttpServletRequest request,
-        TenantProperties tenantProperties) {
+            TenantProperties tenantProperties) {
         boolean basicValidation = StringUtils.hasText(userDto.getFirstName())
-            && StringUtils.hasText(userDto.getEmail())
-            && StringUtils.hasText(userDto.getPassword())
-            && StringUtils.hasText(recaptchaResp);
+                && StringUtils.hasText(userDto.getEmail())
+                && StringUtils.hasText(userDto.getPassword())
+                && StringUtils.hasText(recaptchaResp);
         // Check terms acceptance only if termsPrivacyPolicy is configured
         boolean termsAccepted = true; // Default to true when no terms required
         if (tenantProperties.getUi() != null
-            && StringUtils.hasText(tenantProperties.getUi().getTermsPrivacyPolicy())
-            && isValidUrl(tenantProperties.getUi().getTermsPrivacyPolicy())) {
+                && StringUtils.hasText(tenantProperties.getUi().getTermsPrivacyPolicy())
+                && isValidUrl(tenantProperties.getUi().getTermsPrivacyPolicy())) {
             // Terms checkbox is required when termsPrivacyPolicy is configured
             String termsCheckboxValue = request.getParameter("termsCheckbox");
             termsAccepted = "on".equals(termsCheckboxValue);
@@ -225,9 +278,9 @@ public class SignUpController {
      */
     private void addTermsPrivacyPolicyUrl(Model model, TenantProperties tenantProperties) {
         String termsPrivacyPolicyUrl = "";
-        
+
         if (tenantProperties.getUi() != null
-            && StringUtils.hasText(tenantProperties.getUi().getTermsPrivacyPolicy())) {
+                && StringUtils.hasText(tenantProperties.getUi().getTermsPrivacyPolicy())) {
             String url = tenantProperties.getUi().getTermsPrivacyPolicy();
             if (isValidUrl(url)) {
                 termsPrivacyPolicyUrl = url;
@@ -235,7 +288,7 @@ public class SignUpController {
                 LOGGER.warn("Invalid terms privacy policy URL configured for tenant: {}", url);
             }
         }
-        
+
         model.addAttribute("termsPrivacyPolicy", termsPrivacyPolicyUrl);
     }
 
@@ -252,5 +305,15 @@ public class SignUpController {
         } catch (java.net.MalformedURLException e) {
             return false;
         }
+    }
+
+    /**
+     * Checks all user input fields for dangerous content (scripts, HTML tags, SQL injection).
+     * Returns false if any field contains potentially malicious input.
+     */
+    private boolean isSelfSignUpInputSafe(UserDto userDto) {
+        return InputSanitizer.isSafe(userDto.getFirstName())
+                && InputSanitizer.isSafe(userDto.getLastName())
+                && InputSanitizer.isSafe(userDto.getEmail());
     }
 }

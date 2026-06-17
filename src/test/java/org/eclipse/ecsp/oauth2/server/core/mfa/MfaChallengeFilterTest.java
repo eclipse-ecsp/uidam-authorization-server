@@ -22,6 +22,7 @@ package org.eclipse.ecsp.oauth2.server.core.mfa;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
@@ -34,7 +35,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -44,11 +44,14 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -69,6 +72,9 @@ class MfaChallengeFilterTest {
     private TenantConfigurationService tenantConfigurationService;
 
     @Mock
+    private MfaStateService mfaStateService;
+
+    @Mock
     private FilterChain filterChain;
 
     private MfaChallengeFilter filter;
@@ -86,10 +92,15 @@ class MfaChallengeFilterTest {
         defaultTenantField.setAccessible(true);
         defaultTenantField.set(tenantUtils, "ecsp");
 
-        filter = new MfaChallengeFilter(mfaSecretService, tenantConfigurationService);
+        filter = new MfaChallengeFilter(mfaSecretService, tenantConfigurationService, mfaStateService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         SecurityContextHolder.clearContext();
+
+        // Lenient defaults: no DB-verified flag, no pending token stored
+        lenient().when(mfaStateService.consumeMfaVerified(any())).thenReturn(false);
+        lenient().when(mfaStateService.loadPending(any())).thenReturn(Optional.empty());
+        lenient().when(mfaStateService.loadTenant(any())).thenReturn(null);
     }
 
     @AfterEach
@@ -158,29 +169,24 @@ class MfaChallengeFilterTest {
     @Test
     void doFilterInternal_mfaVerifiedFlag_consumesAndPassesThrough() throws ServletException, IOException {
         request.setRequestURI("/oauth2/authorize");
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_VERIFIED, Boolean.TRUE);
-        request.setSession(session);
+        // DB-backed flag returns true → single-use pass-through
+        when(mfaStateService.consumeMfaVerified(request)).thenReturn(true);
 
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
-        // Flag should be consumed (removed from session)
     }
 
-    // ─────────────── Case 1: MFA pending in session ──────────────────────────
+    // ─────────────── Case 1: MFA pending in DB ───────────────────────────────
 
     @Test
     void doFilterInternal_pendingInSession_enrolledUser_redirectsToChallenge()
             throws ServletException, IOException {
         request.setRequestURI("/oauth2/authorize");
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_TENANT, TENANT_ID);
-        request.setSession(session);
-
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        // null tenant → mfaPath resolves to plain "/mfa/challenge"
         when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -193,13 +199,9 @@ class MfaChallengeFilterTest {
     void doFilterInternal_pendingInSession_unenrolledUser_redirectsToEnrollSetup()
             throws ServletException, IOException {
         request.setRequestURI("/oauth2/authorize");
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_TENANT, TENANT_ID);
-        request.setSession(session);
-
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
         when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -212,13 +214,10 @@ class MfaChallengeFilterTest {
     void doFilterInternal_pendingInSession_tenantSpecific_redirectsWithTenant()
             throws ServletException, IOException {
         request.setRequestURI("/oauth2/authorize");
-        MockHttpSession session = new MockHttpSession();
         MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
                 USERNAME, Collections.emptyList());
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, pending);
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_TENANT, "mytenant");
-        request.setSession(session);
-
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.loadTenant(request)).thenReturn("mytenant");
         when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -228,22 +227,19 @@ class MfaChallengeFilterTest {
     }
 
     @Test
-    void doFilterInternal_pendingInSession_nonTokenPending_redirectsToEnroll()
+    void doFilterInternal_pendingInDb_notEnrolled_redirectsToEnroll()
             throws ServletException, IOException {
+        // Pending user who is not (yet) enrolled → redirect to enrollment setup.
         request.setRequestURI("/oauth2/authorize");
-        MockHttpSession session = new MockHttpSession();
-        // Set a non-token value as pending
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_PENDING, "some_string");
-        session.setAttribute(MfaChallengeFilter.SESSION_MFA_TENANT, TENANT_ID);
-        request.setSession(session);
-
-        // No stub for isEnrolled: username is null when pending is not a
-        // MfaPendingAuthenticationToken, so the filter short-circuits via
-        // "username != null && mfaSecretService.isEnrolled(username)" → enrolled=false.
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
 
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain, never()).doFilter(request, response);
+        assertEquals("/mfa/enroll/setup", response.getRedirectedUrl());
     }
 
     // ─────────────── No authentication ───────────────────────────────────────
@@ -292,6 +288,48 @@ class MfaChallengeFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
+    }
+
+    // ─────────────── Case 2: Fully authenticated, client in skip-list ─────────
+
+    @Test
+    void doFilterInternal_authenticatedUser_clientInSkipList_passesThrough()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        request.setParameter("client_id", "mobile-app");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.REQUIRED);
+        policy.setSkipClients("mobile-app,service-account-client");
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void doFilterInternal_authenticatedUser_clientNotInSkipList_enforcesMfa()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        request.setParameter("client_id", "web-portal");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.REQUIRED);
+        policy.setSkipClients("mobile-app,service-account-client");
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain, never()).doFilter(request, response);
+        assertNotNull(response.getRedirectedUrl());
     }
 
     // ─────────────── Case 2: Fully authenticated, CONDITIONAL mode ──────────
@@ -482,6 +520,145 @@ class MfaChallengeFilterTest {
 
         // Anonymous users are not authenticated via isAuthenticated(); passes through
         assertDoesNotThrow(() -> { });
+    }
+
+    // ─────────────── Case 2: Fully authenticated, account in skip-list ────────
+
+    @Test
+    void doFilterInternal_authenticatedUser_accountInSkipList_passesThrough()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        // accountId "acct-001" comes from the user-management record (same source as scopes)
+        CustomUserPwdAuthenticationToken auth = CustomUserPwdAuthenticationToken.authenticated(
+                USERNAME, "password", "any-account-name", "acct-001",
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.REQUIRED);
+        policy.setSkipAccounts("acct-001,acct-002");
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+    }
+
+    // ─────────────── CONDITIONAL: step-up by client_id ───────────────────────
+
+    @Test
+    void doFilterInternal_conditionalMode_stepUpClientMatches_enforcesMfa()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        request.setParameter("client_id", "admin-portal");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.CONDITIONAL);
+        policy.setStepUpClients("admin-portal,ops-dashboard");
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain, never()).doFilter(request, response);
+        assertNotNull(response.getRedirectedUrl());
+    }
+
+    @Test
+    void doFilterInternal_conditionalMode_stepUpClientNoMatch_passesThrough()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        request.setParameter("client_id", "mobile-app");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.CONDITIONAL);
+        policy.setStepUpClients("admin-portal,ops-dashboard");
+        // No step-up scopes or accounts configured
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+    }
+
+    // ─────────────── CONDITIONAL: step-up by accountId ───────────────────────
+
+    @Test
+    void doFilterInternal_conditionalMode_stepUpAccountMatches_enforcesMfa()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        // accountId "priv-acct-99" sourced from user-management record
+        CustomUserPwdAuthenticationToken auth = CustomUserPwdAuthenticationToken.authenticated(
+                USERNAME, "password", "any-login-account", "priv-acct-99",
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.CONDITIONAL);
+        policy.setStepUpAccounts("priv-acct-99,finance-acct");
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain, never()).doFilter(request, response);
+        assertNotNull(response.getRedirectedUrl());
+    }
+
+    @Test
+    void doFilterInternal_conditionalMode_stepUpAccountNoMatch_passesThrough()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        // accountId "regular-acct" does not match step-up list
+        CustomUserPwdAuthenticationToken auth = CustomUserPwdAuthenticationToken.authenticated(
+                USERNAME, "password", "any-login-account", "regular-acct",
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.CONDITIONAL);
+        policy.setStepUpAccounts("priv-acct-99,finance-acct");
+        // No step-up scopes or clients configured
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+    }
+
+    // ─────────────── Skip wins over step-up (priority verification) ───────────
+
+    @Test
+    void doFilterInternal_skipClientBeatsStepUpClient_passesThrough()
+            throws ServletException, IOException {
+        // client_id is in BOTH skip-clients and step-up-clients: skip must win
+        request.setRequestURI("/oauth2/authorize");
+        request.setParameter("client_id", "admin-portal");
+        setAuthenticatedUser(USERNAME);
+
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.CONDITIONAL);
+        policy.setSkipClients("admin-portal");
+        policy.setStepUpClients("admin-portal");
+        final TenantProperties props = new TenantProperties();
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
     }
 
     // ─────────────── Helper ──────────────────────────────────────────────────

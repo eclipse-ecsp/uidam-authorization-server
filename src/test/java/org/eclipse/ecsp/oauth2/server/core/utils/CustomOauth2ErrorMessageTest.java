@@ -91,6 +91,63 @@ class CustomOauth2ErrorMessageTest {
     }
 
     /**
+     * Tests that a description containing redirect_uri triggers the INVALID_REDIRECT_URI path.
+     */
+    @Test
+    void testSetCustomErrorMessageForRedirectUriDescription() {
+        OAuth2Error error = new OAuth2Error(
+                OAuth2ErrorCodes.INVALID_REQUEST,
+                "OAuth 2.0 Parameter: redirect_uri",
+                "https://example.com/error"
+        );
+        assertNotNull(CustomOauth2ErrorMessage.setCustomErrorMessage(
+                new OAuth2AuthenticationException(error, "redirect_uri"), response));
+    }
+
+    /**
+     * Tests that a description that does not match client_id or redirect_uri falls through to default mapping.
+     */
+    @Test
+    void testSetCustomErrorMessageForOtherDescription() {
+        OAuth2Error error = new OAuth2Error(
+                OAuth2ErrorCodes.INVALID_REQUEST,
+                "Some unrelated error description",
+                "https://example.com/error"
+        );
+        assertNotNull(CustomOauth2ErrorMessage.setCustomErrorMessage(
+                new OAuth2AuthenticationException(error, "unrelated"), response));
+    }
+
+    /**
+     * Tests that a null description does not cause NPE — covers the NPE fix in the utility.
+     */
+    @Test
+    void testSetCustomErrorMessageForNullDescription() {
+        OAuth2Error error = new OAuth2Error(
+                OAuth2ErrorCodes.INVALID_REQUEST,
+                null,
+                "https://example.com/error"
+        );
+        assertNotNull(CustomOauth2ErrorMessage.setCustomErrorMessage(
+                new OAuth2AuthenticationException(error, "null-desc"), response),
+                "Should not throw NPE when error description is null");
+    }
+
+    /**
+     * Tests that non-INVALID_REQUEST error codes (e.g. invalid_token) are mapped via the enum.
+     */
+    @Test
+    void testSetCustomErrorMessageForInvalidToken() {
+        OAuth2Error error = new OAuth2Error(
+                OAuth2ErrorCodes.INVALID_TOKEN,
+                "Token expired",
+                "https://example.com/error"
+        );
+        assertNotNull(CustomOauth2ErrorMessage.setCustomErrorMessage(
+                new OAuth2AuthenticationException(error, "invalid_token"), response));
+    }
+
+    /**
      * This method creates an OAuth2AuthenticationException for an invalid request.
      *
      * @return OAuth2AuthenticationException for an invalid request.

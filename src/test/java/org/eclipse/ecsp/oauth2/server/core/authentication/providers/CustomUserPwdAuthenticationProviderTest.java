@@ -488,7 +488,7 @@ class CustomUserPwdAuthenticationProviderTest {
         BadCredentialsException exception = assertThrows(BadCredentialsException.class,
                 () -> customUserPwdAuthenticationProvider.authenticate(authentication));
         
-        assertEquals("Bad credentials", exception.getMessage());
+        assertEquals("Invalid username or password", exception.getMessage());
         
         // Verify failure metrics were incremented
         verify(authorizationMetricsService).incrementMetricsForTenant(eq("test-tenant"), 

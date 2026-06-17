@@ -26,8 +26,10 @@ import org.eclipse.ecsp.oauth2.server.core.exception.PatternMismatchException;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -35,6 +37,7 @@ import org.springframework.util.StringUtils;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.EMPTY_STRING;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SPRING_SECURITY_FORM_ACCOUNT_NAME_KEY;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessages.INVALID_CREDENTIALS_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils.isAccountNamePatternValid;
 import static org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils.obtainRecaptchaResponse;
 
@@ -89,15 +92,21 @@ public class CustomUserPwdAuthenticationFilter extends UsernamePasswordAuthentic
         }
         String username = obtainUsername(request);
         username = (username != null) ? username.trim() : EMPTY_STRING;
+        if (!InputSanitizer.isSafe(username)) {
+            throw new BadCredentialsException(INVALID_CREDENTIALS_ERROR);
+        }
         String password = obtainPassword(request);
         password = (password != null) ? password : EMPTY_STRING;
         String accountName = obtainAccountName(request);
         accountName = (accountName != null) ? accountName : EMPTY_STRING;
+        if (!InputSanitizer.isSafe(accountName)) {
+            throw new BadCredentialsException(INVALID_CREDENTIALS_ERROR);
+        }
 
         try {
             isAccountNamePatternValid(accountName);
         } catch (PatternMismatchException e) {
-            throw new AuthenticationServiceException(e.getMessage());
+            throw new BadCredentialsException(INVALID_CREDENTIALS_ERROR);
         }
 
         String recaptchaResponse = obtainRecaptchaResponse(request);
