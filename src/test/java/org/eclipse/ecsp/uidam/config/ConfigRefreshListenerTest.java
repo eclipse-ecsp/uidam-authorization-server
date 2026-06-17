@@ -36,6 +36,9 @@ import org.eclipse.ecsp.sql.multitenancy.TenantDatabaseProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -47,6 +50,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
@@ -900,6 +904,157 @@ class ConfigRefreshListenerTest {
             .addOrUpdateTenantDataSource(eq("tenant1"), any(TenantDatabaseProperties.class));
         verify(tenantAwareDataSource).addOrUpdateTenantDataSource(eq("tenant3"), any(TenantDatabaseProperties.class));
         verify(liquibaseConfig).initializeTenantSchema("tenant3");
+    }
+
+    @Test
+    void checkMultitenancyToggle_whenEnabledFromDisabled_shouldLog() {
+        // Arrange - cache has "false" (disabled), new value is "true" (enabled)
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenant.multitenant.enabled");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        // Override setUp value: the cache already holds "true" from setUp, we need to simulate "false" -> "true"
+        // Re-init cache with false
+        when(environment.getProperty("tenant.multitenant.enabled")).thenReturn("false");
+        listener.initializePropertyCache();
+        // Now change to true
+        when(environment.getProperty("tenant.multitenant.enabled")).thenReturn("true");
+
+        // Act
+        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+    }
+
+    static Stream<Arguments> propertyChangeData() {
+        return Stream.of(
+            Arguments.of("tenant.multitenant.enabled", null),
+            Arguments.of("tenant.ids", " , , "),
+            Arguments.of("credential.test", "someValue")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("propertyChangeData")
+    void onApplicationEvent_withVariousPropertyChanges_doesNotThrow(String key, String returnValue) {
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add(key);
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty(key)).thenReturn(returnValue);
+
+        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+    }
+
+    @Test
+    void getCurrentValue_whenEnvironmentThrowsException_shouldReturnNull() {
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("some.property.that.causes.exception");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("some.property.that.causes.exception"))
+            .thenThrow(new RuntimeException("Environment access error"));
+
+        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+    }
+
+    @Test
+    void buildTenantDatabaseProperties_whenUserNameIsNull_shouldNotAddTenant() {
+        // Arrange - new tenant addition with null userName
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenant.ids");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("tenant.ids")).thenReturn("tenant1,tenant2,tenant3");
+        when(environment.getProperty("tenants.profile.tenant3.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/tenant3");
+        when(environment.getProperty("tenants.profile.tenant3.user-name")).thenReturn(null);
+
+        // Act
+        listener.onApplicationEvent(event);
+
+        // Assert - tenant3 not added because userName is null
+        verify(tenantAwareDataSource, never()).addOrUpdateTenantDataSource(eq("tenant3"), any());
+    }
+
+    @Test
+    void buildTenantDatabaseProperties_whenPasswordIsNull_shouldNotAddTenant() {
+        // Arrange - new tenant addition with null password
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenant.ids");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("tenant.ids")).thenReturn("tenant1,tenant2,tenant3");
+        when(environment.getProperty("tenants.profile.tenant3.jdbc-url"))
+            .thenReturn("jdbc:postgresql://localhost:5432/tenant3");
+        when(environment.getProperty("tenants.profile.tenant3.user-name")).thenReturn("user3");
+        when(environment.getProperty("tenants.profile.tenant3.password")).thenReturn(null);
+
+        // Act
+        listener.onApplicationEvent(event);
+
+        // Assert - tenant3 not added because password is null
+        verify(tenantAwareDataSource, never()).addOrUpdateTenantDataSource(eq("tenant3"), any());
+    }
+
+    @Test
+    void processTenantRemoval_whenRemoveTenantDataSourceThrowsException_shouldContinue() {
+        // Arrange - tenant2 removed, but removeTenantDataSource throws
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenant.ids");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("tenant.ids")).thenReturn("tenant1");
+        doThrow(new RuntimeException("Remove error")).when(tenantAwareDataSource).removeTenantDataSource("tenant2");
+
+        // Act - should handle exception gracefully
+        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+    }
+
+    @Test
+    void checkAndProcessTenantPropertyUpdates_whenTenantIdsIsNull_shouldReturn() {
+        // Arrange - non-tenant.ids change with null tenant.ids
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenants.profile.tenant1.jdbc-url");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("tenant.ids")).thenReturn(null);
+
+        // Act - checkAndProcessTenantPropertyUpdates returns early when tenant.ids is null
+        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+
+        // Assert - no data source update since tenant.ids is null
+        verify(tenantAwareDataSource, never()).addOrUpdateTenantDataSource(any(), any());
+    }
+
+    @Test
+    void processTenantUpdate_whenNoDatabasePropertyChanged_shouldSkipDataSourceUpdate() {
+        // Arrange - a non-database property change for tenant1
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenants.profile.tenant1.some-custom-flag");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("tenant.ids")).thenReturn("tenant1,tenant2");
+
+        // Act
+        listener.onApplicationEvent(event);
+
+        // Assert - no data source update for non-database property
+        verify(tenantAwareDataSource, never()).addOrUpdateTenantDataSource(eq("tenant1"), any());
+    }
+
+    @Test
+    void checkAndProcessTenantIdsChanges_whenNewTenantIdsIsNull_shouldReturn() {
+        // Arrange - tenant.ids changes, but getCurrentValue returns null
+        Set<String> changedKeys = new HashSet<>();
+        changedKeys.add("tenant.ids");
+
+        when(event.getKeys()).thenReturn(changedKeys);
+        when(environment.getProperty("tenant.ids")).thenReturn(null);
+
+        // Act - checkAndProcessTenantIdsChanges returns early when new value is null
+        assertDoesNotThrow(() -> listener.onApplicationEvent(event));
+
+        // Assert - no data source changes
+        verify(tenantAwareDataSource, never()).addOrUpdateTenantDataSource(any(), any());
+        verify(tenantAwareDataSource, never()).removeTenantDataSource(any());
     }
 
     @Test

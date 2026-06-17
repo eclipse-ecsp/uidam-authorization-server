@@ -484,8 +484,13 @@ public class ClaimsConfigManager {
             addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, true);
             LOGGER.debug("Claims added to JWT Access token for grant type - client_credentials");
         } else if (REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
-            setUserCustomClaims(claimsBuilder, userDetailsResponse);
-            scopeSet = populateUserScopes(userDetailsResponse, scopeSet);
+            if (userDetailsResponse != null) {
+                setUserCustomClaims(claimsBuilder, userDetailsResponse);
+                scopeSet = populateUserScopes(userDetailsResponse, scopeSet);
+            } else {
+                LOGGER.warn("userDetailsResponse is null during refresh_token grant "
+                        + "(PKCE/public client flow) - skipping user claims, using existing scope");
+            }
             addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, false);
             LOGGER.debug("Claims added to JWT Access token for grant type - refresh_token");
         }
@@ -777,7 +782,7 @@ public class ClaimsConfigManager {
                 LOGGER.debug("Requested scopes are empty and Client Scopes are not empty");
                 scopeSet = clientDetails.getRegisteredClient().getScopes();
             }
-            if (CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            if (userDetailsResponse == null || CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
                 LOGGER.info("User Scopes are empty");
                 claimsBuilder
                         .claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet));

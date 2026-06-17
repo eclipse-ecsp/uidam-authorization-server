@@ -30,6 +30,7 @@ import org.eclipse.ecsp.sql.multitenancy.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -170,6 +171,39 @@ class DatabaseSecurityContextRepositoryTest {
     }
 
     /**
+     * Verifies that when a security context is reloaded from the database, the per-user MFA override
+     * ({@code mfaRequired}) and the account ID are restored onto the rebuilt
+     * {@link CustomUserPwdAuthenticationToken}. This guards the CONDITIONAL per-user MFA flow, which
+     * relies on these values surviving the DB round-trip before {@code MfaChallengeFilter} runs.
+     */
+    @Test
+    void loadContextRestoresMfaRequiredAndAccountId() {
+        AuthorizationSecurityContext storedContext = new AuthorizationSecurityContext();
+        storedContext.setPrincipal(TEST_USER_NAME);
+        storedContext.setAuthorities(GRANTED_AUTORITIES);
+        storedContext.setAuthenticated(true);
+        storedContext.setSessionId(REQUESTED_SESSION_ID);
+        storedContext.setAccountId("10001");
+        storedContext.setMfaRequired(Boolean.TRUE);
+        Timestamp currentTimestamp = Timestamp.from(Instant.now());
+        storedContext.setCreatedDate(currentTimestamp);
+        storedContext.setUpdatedDate(currentTimestamp);
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID)).thenReturn(
+            Optional.of(storedContext));
+
+        SecurityContext context = databaseSecurityContextRepository.loadContext(
+            new HttpRequestResponseHolder(request, response));
+
+        assertNotNull(context.getAuthentication());
+        assertTrue(context.getAuthentication() instanceof CustomUserPwdAuthenticationToken);
+        CustomUserPwdAuthenticationToken token =
+            (CustomUserPwdAuthenticationToken) context.getAuthentication();
+        assertEquals("10001", token.getAccountId());
+        assertEquals(Boolean.TRUE, token.getMfaRequired());
+        assertTrue(token.isAuthenticated());
+    }
+
+    /**
      * This test method tests the loadDeferredContext method of the DatabaseSecurityContextRepository.
      * It asserts that the returned context is not null.
      */
@@ -196,6 +230,27 @@ class DatabaseSecurityContextRepositoryTest {
         assertDoesNotThrow(() ->
                 databaseSecurityContextRepository.saveContext(securityContext, request, response));
         verify(authorizationSecurityContextRepository, times(1)).save(any());
+    }
+
+    /**
+     * Verifies that the per-user MFA override and account ID carried on the authenticated
+     * {@link CustomUserPwdAuthenticationToken} are persisted to the security context entity so they
+     * can be reloaded on the subsequent {@code /oauth2/authorize} request.
+     */
+    @Test
+    void saveContextPersistsMfaRequiredAndAccountId() {
+        SecurityContext securityContext = new SecurityContextImpl();
+        CustomUserPwdAuthenticationToken authentication = CustomUserPwdAuthenticationToken.authenticated(
+            TEST_USER_NAME, TEST_PASSWORD, ACCOUNT_NAME, "10001", Boolean.TRUE, null);
+        securityContext.setAuthentication(authentication);
+
+        databaseSecurityContextRepository.saveContext(securityContext, request, response);
+
+        ArgumentCaptor<AuthorizationSecurityContext> captor =
+            ArgumentCaptor.forClass(AuthorizationSecurityContext.class);
+        verify(authorizationSecurityContextRepository, times(1)).save(captor.capture());
+        assertEquals("10001", captor.getValue().getAccountId());
+        assertEquals(Boolean.TRUE, captor.getValue().getMfaRequired());
     }
 
     /**

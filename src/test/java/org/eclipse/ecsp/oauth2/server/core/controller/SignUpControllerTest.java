@@ -37,13 +37,15 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.ui.ExtendedModelMap;
 import org.springframework.ui.Model;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.DEFAULT_MAX_LENGTH;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.DEFAULT_MIN_LENGTH;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.PRIVACY_AGREEMENT;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.REDIRECT_LITERAL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SELF_SIGN_UP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.USER_CREATED;
@@ -71,6 +73,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SignUpControllerTest {
+
+    private static final int EXCEEDS_MAX_FIELD_LENGTH = 51;
 
     @Mock
     UserManagementClient userManagementClient;
@@ -128,57 +132,88 @@ class SignUpControllerTest {
 
     @Test
     void addSelfUser_Success() {
-        UserDto userDto = new UserDto();
-        userDto.setUserName("testUser");
-        HttpServletRequest request = new MockHttpServletRequest();
+        UserDto userDto = createValidUserDto();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
         when(tenantProperties.isSignUpEnabled()).thenReturn(true);
         when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
                 .thenReturn(getUserDetailsResponse());
 
-        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
-        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, bindingResult, request,
+            redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
     }
 
     @Test
     void addSelfUser_Success_ver_mail() {
-        UserDto userDto = new UserDto();
-        userDto.setUserName("testUser");
-        HttpServletRequest request = new MockHttpServletRequest();
+        UserDto userDto = createValidUserDto();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
         when(tenantProperties.isSignUpEnabled()).thenReturn(true);
         when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
                 .thenReturn(getUserDetailsResponse1());
 
-        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
-        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, bindingResult, request,
+            redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
     }
 
     @Test
     void addSelfUserSignUpNotEnabled_Failure() {
-        UserDto userDto = new UserDto();
-        userDto.setUserName("testUser");
-        HttpServletRequest request = new MockHttpServletRequest();
+        UserDto userDto = createValidUserDto();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(false);
 
-        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class))).thenReturn(null);
-
-        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, bindingResult, request,
+            redirectAttributes);
         assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
-        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
     }
 
     @Test
     void addSelfUser_Exception() {
-        UserDto userDto = new UserDto();
-        userDto.setUserName("testUser");
-        HttpServletRequest request = new MockHttpServletRequest();
+        UserDto userDto = createValidUserDto();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
         when(tenantProperties.isSignUpEnabled()).thenReturn(true);
         when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
                 .thenThrow(new RuntimeException("Exception message"));
 
-        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, request, redirectAttributes);
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, bindingResult, request,
+            redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_DangerousInput_Rejected() {
+        UserDto userDto = createValidUserDto();
+        userDto.setFirstName("<script>alert('xss')</script>");
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, bindingResult, request,
+            redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_SqlInjection_Rejected() {
+        UserDto userDto = createValidUserDto();
+        userDto.setLastName("'; DROP TABLE users; --");
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        ModelAndView modelAndView = signUpController.addSelfUser("ecsp", userDto, bindingResult, request,
+            redirectAttributes);
         assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
         assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
     }
@@ -472,5 +507,303 @@ class SignUpControllerTest {
         userDetailsResponse.setVerificationEmailSent(false);
         // Set other necessary fields...
         return userDetailsResponse;
+    }
+
+    private UserDto createValidUserDto() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+        userDto.setFirstName("Test");
+        userDto.setLastName("User");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("StrongPass1!");
+        return userDto;
+    }
+
+    private MockHttpServletRequest createSignUpRequest() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-captcha-response");
+        return request;
+    }
+
+    @Test
+    void addSelfUser_DangerousEmail_Rejected() {
+        UserDto userDto = createValidUserDto();
+        userDto.setEmail("test<script>@example.com");
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        ModelAndView result = signUpController.addSelfUser(
+            "ecsp", userDto, bindingResult, request, redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, result.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_FieldExceedsMaxLength_Rejected() {
+        UserDto userDto = createValidUserDto();
+        userDto.setFirstName("A".repeat(EXCEEDS_MAX_FIELD_LENGTH));
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        ModelAndView result = signUpController.addSelfUser(
+            "ecsp", userDto, bindingResult, request, redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, result.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_InvalidEmail_Rejected() {
+        UserDto userDto = createValidUserDto();
+        userDto.setEmail("not-an-email");
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        ModelAndView result = signUpController.addSelfUser(
+            "ecsp", userDto, bindingResult, request, redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, result.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_EmptyFirstName_Rejected() {
+        UserDto userDto = createValidUserDto();
+        userDto.setFirstName("");
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        MockHttpServletRequest request = createSignUpRequest();
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        ModelAndView result = signUpController.addSelfUser(
+            "ecsp", userDto, bindingResult, request, redirectAttributes);
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, result.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+        assertEquals(INVALID_INPUT_ERROR, redirectAttributes.getFlashAttributes().get(ERROR_LITERAL));
+    }
+
+    // === Tests for addSelfUser paths that exercise the downstream code ===
+
+    @Test
+    void addSelfUser_WithAllParamsAndVerificationEmail_RedirectsToUserCreated() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        final RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        UserDetailsResponse response = getUserDetailsResponse();
+        response.setVerificationEmailSent(true);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParamsAndNoVerificationEmail_RedirectsToUserCreated() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        final RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        UserDetailsResponse response = getUserDetailsResponse();
+        response.setVerificationEmailSent(false);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParams_ClientReturnsNull_RedirectsToSignUp() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(null);
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParams_ClientThrowsException_RedirectsToSignUpWithError() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenThrow(new RuntimeException("User creation failed"));
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+        // Controller returns UNEXPECTED_ERROR for generic exceptions, not the exception message
+        assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR,
+                redirectAttributes.getFlashAttributes().get(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithAllParams_SignUpDisabled_RedirectsToSignUpWithMessage() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+        userDto.setUserName("testUser");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        when(tenantProperties.isSignUpEnabled()).thenReturn(false);
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(MSG_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithTermsRequired_CheckboxOn_AllParamsPresent_Success() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-token");
+        request.setParameter("termsCheckbox", "on");
+
+        // Setup tenant with valid terms URL
+        org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties uiProperties =
+            new org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties();
+        uiProperties.setTermsPrivacyPolicy("https://example.com/terms");
+        when(tenantProperties.getUi()).thenReturn(uiProperties);
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        UserDetailsResponse response = getUserDetailsResponse();
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+    }
+
+    @Test
+    void addSelfUser_WithTermsRequired_CheckboxOff_RedirectsWithError() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-token");
+        request.setParameter("termsCheckbox", "off");
+
+        // Setup tenant with valid terms URL
+        org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties uiProperties =
+            new org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties();
+        uiProperties.setTermsPrivacyPolicy("https://example.com/terms");
+        when(tenantProperties.getUi()).thenReturn(uiProperties);
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_WithInvalidTermsUrl_TermsNotRequired_AllParamsPresent_Success() {
+        UserDto userDto = new UserDto();
+        userDto.setFirstName("John");
+        userDto.setEmail("test@example.com");
+        userDto.setPassword("Pass@1234");
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("g-recaptcha-response", "valid-token");
+
+        // Terms URL is invalid, so terms not required
+        org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties uiProperties =
+            new org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UiProperties();
+        uiProperties.setTermsPrivacyPolicy("not-a-url");
+        when(tenantProperties.getUi()).thenReturn(uiProperties);
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+
+        UserDetailsResponse response = getUserDetailsResponse();
+        when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
+                .thenReturn(response);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView modelAndView = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + USER_CREATED, modelAndView.getViewName());
+    }
+
+    @Test
+    void selfSignUpInit_WithNullUiProperties_SetsEmptyTermsUrl() {
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(tenantProperties.getUi()).thenReturn(null);
+        when(tenantProperties.getCaptcha()).thenReturn(defaultCaptchaProperties());
+
+        Model model = new ExtendedModelMap();
+        String viewName = signUpController.selfSignUpInit("ecsp", model);
+
+        assertEquals(SELF_SIGN_UP, viewName);
+        assertTrue(model.containsAttribute("termsPrivacyPolicy"));
+        assertEquals("", model.getAttribute("termsPrivacyPolicy"));
     }
 }

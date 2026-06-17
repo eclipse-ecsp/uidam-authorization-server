@@ -47,6 +47,17 @@ public final class AuthorizationServerConstants {
     public static final String TENANT_EXTERNAL_URLS_CREATE_FEDRATED_USER = "create-fedrated-user-endpoint";
     public static final String TENANT_EXTERNAL_URLS_PASSWORD_POLICY_ENDPOINT = "password-policy-endpoint";
 
+    // MFA endpoint keys (tenant external-urls)
+    public static final String TENANT_EXTERNAL_URLS_MFA_ENROLL_INITIATE = "mfa-enroll-initiate-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_ENROLL_ACTIVATE = "mfa-enroll-activate-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_STATUS           = "mfa-status-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_SECRET           = "mfa-secret-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_REVOKE           = "mfa-revoke-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_RECOVERY_SEND   = "mfa-recovery-send-key-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_RECOVERY_VERIFY = "mfa-recovery-verify-key-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_GENERATE = "mfa-backup-codes-generate-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_VERIFY   = "mfa-backup-codes-verify-endpoint";
+
     public static final String TENANT_KEYSTORE_FILENAME = "key-store-filename";
     public static final String TENANT_KEYSTORE_JKS_ENCODED_CONTENT = "key-store-jks-encoded-content";
     public static final String TENANT_KEYSTORE_PASS = "key-store-password";
@@ -71,6 +82,8 @@ public final class AuthorizationServerConstants {
     public static final String USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN = "The user already exists. Please try again "
             + "with a different email.";
     public static final String UNEXPECTED_ERROR = "An unexpected error occurred. Please try again later.";
+    public static final String INVALID_INPUT_ERROR = "Invalid input. Please check your entries and try again.";
+    public static final String INVALID_CHARACTERS_ERROR = "Invalid characters in input";
     public static final String ADD_REQ_PAR = "Please add all required fields.";
     public static final String INVALID_PASSWORD = "Your password does not meet the security requirements. "
             + "Ensure it complies with all password policies.";

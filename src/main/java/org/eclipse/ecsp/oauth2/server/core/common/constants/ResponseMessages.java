@@ -39,4 +39,10 @@ public class ResponseMessages {
     public static final String USER_LOCKED_ERROR =
         "Consecutive log-in failures exceeded the maximum allowed login attempt. "
             + "Your account has been locked, Please contact admin!";
+
+    /**
+     * Generic authentication failure message that does not reveal whether the username exists.
+     * This prevents username enumeration attacks.
+     */
+    public static final String INVALID_CREDENTIALS_ERROR = "Invalid username or password";
 }

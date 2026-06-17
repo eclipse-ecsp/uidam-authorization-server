@@ -33,6 +33,20 @@ public class CustomUserPwdAuthenticationToken extends UsernamePasswordAuthentica
     private String accountName;
 
     /**
+     * The account ID of the user, sourced from the user-management service record
+     * (same origin as the user's granted scopes).  This is distinct from
+     * {@link #accountName} which is the login-form input provided by the user.
+     */
+    private String accountId;
+
+    /**
+     * Per-user MFA override for CONDITIONAL policy, sourced from the
+     * {@code mfaRequired} user attribute in user-management.
+     * {@code true} = always enforce; {@code false} = always skip; {@code null} = use normal step-up rules.
+     */
+    private Boolean mfaRequired;
+
+    /**
      * Constructor for CustomUserPwdAuthenticationToken.
      * It initializes principal, credentials and accountName.
      *
@@ -60,6 +74,43 @@ public class CustomUserPwdAuthenticationToken extends UsernamePasswordAuthentica
                                             Collection<? extends GrantedAuthority> authorities) {
         super(principal, credentials, authorities);
         this.accountName = accountName;
+    }
+
+    /**
+     * Constructor for CustomUserPwdAuthenticationToken with accountId.
+     * It initializes principal, credentials, accountName, accountId and authorities.
+     *
+     * @param principal The principal (user) making the request.
+     * @param credentials The credentials of the user.
+     * @param accountName The account name from the login request.
+     * @param accountId The account ID sourced from the user record in user-management.
+     * @param authorities The authorities granted to the user.
+     */
+    public CustomUserPwdAuthenticationToken(Object principal, Object credentials,
+                                            String accountName, String accountId,
+                                            Collection<? extends GrantedAuthority> authorities) {
+        super(principal, credentials, authorities);
+        this.accountName = accountName;
+        this.accountId = accountId;
+    }
+
+    /**
+     * Constructor for CustomUserPwdAuthenticationToken with accountId and mfaRequired.
+     *
+     * @param principal The principal (user) making the request.
+     * @param credentials The credentials of the user.
+     * @param accountName The account name from the login request.
+     * @param accountId The account ID sourced from the user record in user-management.
+     * @param mfaRequired Per-user MFA override from the user attribute; {@code null} means use normal rules.
+     * @param authorities The authorities granted to the user.
+     */
+    public CustomUserPwdAuthenticationToken(Object principal, Object credentials,
+                                            String accountName, String accountId, Boolean mfaRequired,
+                                            Collection<? extends GrantedAuthority> authorities) {
+        super(principal, credentials, authorities);
+        this.accountName = accountName;
+        this.accountId = accountId;
+        this.mfaRequired = mfaRequired;
     }
 
     /**
@@ -91,12 +142,72 @@ public class CustomUserPwdAuthenticationToken extends UsernamePasswordAuthentica
     }
 
     /**
+     * Creates an authenticated token carrying both the login-form account name and the
+     * account ID sourced from the user-management service record.
+     *
+     * @param principal The principal (user) making the request.
+     * @param credentials The credentials of the user.
+     * @param accountName The account name from the login request.
+     * @param accountId The account ID from the user record in user-management.
+     * @param authorities The authorities granted to the user.
+     * @return An authenticated CustomUserPwdAuthenticationToken.
+     */
+    public static CustomUserPwdAuthenticationToken authenticated(Object principal, Object credentials,
+                                                                 String accountName, String accountId,
+                                                                 Collection<? extends GrantedAuthority> authorities) {
+        return new CustomUserPwdAuthenticationToken(principal, credentials, accountName, accountId, authorities);
+    }
+
+    /**
+     * Creates an authenticated token with account ID and per-user MFA override.
+     *
+     * @param principal The principal (user) making the request.
+     * @param credentials The credentials of the user.
+     * @param accountName The account name from the login request.
+     * @param accountId The account ID from the user record in user-management.
+     * @param mfaRequired Per-user MFA override from the {@code mfaRequired} user attribute;
+     *                    {@code null} means no override — use normal step-up rules.
+     * @param authorities The authorities granted to the user.
+     * @return An authenticated CustomUserPwdAuthenticationToken.
+     */
+    public static CustomUserPwdAuthenticationToken authenticated(Object principal, Object credentials,
+                                                                 String accountName, String accountId,
+                                                                 Boolean mfaRequired,
+                                                                 Collection<? extends GrantedAuthority> authorities) {
+        return new CustomUserPwdAuthenticationToken(principal, credentials, accountName, accountId,
+                mfaRequired, authorities);
+    }
+
+    /**
      * This method retrieves the account name of the user.
      *
      * @return The account name of the user.
      */
     public String getAccountName() {
         return this.accountName;
+    }
+
+    /**
+     * Returns the account ID sourced from the user-management service record.
+     *
+     * @return The account ID of the user, or {@code null} if not available.
+     */
+    public String getAccountId() {
+        return this.accountId;
+    }
+
+    /**
+     * Returns the per-user MFA override sourced from the {@code mfaRequired} user attribute.
+     * <ul>
+     *   <li>{@code true}  – MFA is always required for this user in CONDITIONAL mode.</li>
+     *   <li>{@code false} – MFA is explicitly exempted for this user in CONDITIONAL mode.</li>
+     *   <li>{@code null}  – No per-user override; normal step-up evaluation applies.</li>
+     * </ul>
+     *
+     * @return the per-user MFA required flag, or {@code null} if not set.
+     */
+    public Boolean getMfaRequired() {
+        return this.mfaRequired;
     }
 
     /**
@@ -148,6 +259,7 @@ public class CustomUserPwdAuthenticationToken extends UsernamePasswordAuthentica
         sb.append("Principal=").append(getPrincipal() != null ? getPrincipal() : "null").append(", ");
         sb.append("Credentials=[PROTECTED], ");
         sb.append("Account Name=").append(getAccountName() != null ? getAccountName() : "null").append(", ");
+        sb.append("Account ID=").append(getAccountId() != null ? getAccountId() : "null").append(", ");
         sb.append("Authenticated=").append(isAuthenticated()).append(", ");
         sb.append("Details=").append(getDetails() != null ? getDetails() : "null").append(", ");
         sb.append("Granted Authorities=").append(getAuthorities() != null ? getAuthorities() : "null");

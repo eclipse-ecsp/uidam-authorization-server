@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <title>Recovery Successful – UIDAM</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: #fff; border-radius: 12px;
+            padding: 40px 44px; max-width: 460px; width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .icon { font-size: 56px; margin-bottom: 16px; }
+        h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+        .low-warning {
+            background: #fff8e1; border: 1px solid #f9c74f;
+            border-radius: 8px; padding: 14px 16px;
+            font-size: 13px; color: #7a5900; margin-bottom: 24px;
+            text-align: left; line-height: 1.5;
+        }
+        .info-box {
+            background: #e8f5e9; border: 1px solid #a5d6a7;
+            border-radius: 8px; padding: 14px 16px;
+            font-size: 13px; color: #2e7d32; margin-bottom: 24px;
+            text-align: left; line-height: 1.5;
+        }
+        .btn {
+            display: block; width: 100%;
+            background: #0f3460; color: #fff;
+            border: none; border-radius: 8px;
+            padding: 14px; font-size: 15px;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .btn:hover { background: #1a4a8a; }
+        .hint { font-size: 12px; color: #999; margin-top: 14px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="icon">✅</div>
+    <h1>Recovery Successful</h1>
+    <p class="subtitle">
+        You've been logged in using your backup code.
+        Your authenticator app is still active — you can continue using it for future logins.
+    </p>
+
+    <!-- All codes exhausted: force re-enrollment to get new codes -->
+    <div class="low-warning" th:if="${codesExhausted}">
+        ⚠️ <strong>You have no backup codes remaining.</strong>
+        Please re-enroll below to generate a new set of 8 backup codes and keep your account secure.
+    </div>
+
+    <!-- Low codes warning -->
+    <div class="low-warning" th:if="${lowBackupCodesWarning and !codesExhausted}">
+        ⚠️ <strong>Only <span th:text="${remainingBackupCodes}">N</span> backup code(s) left.</strong>
+        Consider re-enrolling soon to regenerate your backup codes.
+    </div>
+
+    <!-- Plenty of codes remaining -->
+    <div class="info-box" th:unless="${lowBackupCodesWarning}">
+        ✅ You have <strong th:text="${remainingBackupCodes}">N</strong> backup code(s) remaining.
+        Store them safely — each can only be used once.
+    </div>
+
+    <p class="subtitle">
+        Please <strong>re-enroll your authenticator app</strong> now to restore full MFA protection.
+        Scan the new QR code with your new phone or authenticator app.
+    </p>
+
+    <form th:action="${(tenantId != null and !#strings.isEmpty(tenantId))
+                       ? '/' + tenantId + '/mfa/recovery/re-enroll'
+                       : '/mfa/recovery/re-enroll'}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <!-- Required re-enroll: no codes left -->
+        <button type="submit" class="btn" th:if="${codesExhausted}">📱 Re-enroll My Authenticator App</button>
+        <!-- Optional re-enroll: codes are getting low -->
+        <button type="submit" class="btn" style="background:#e67e22;" th:if="${lowBackupCodesWarning and !codesExhausted}">
+            📱 Re-enroll to Regenerate Backup Codes
+        </button>
+        <!-- Re-enroll available for any user who wants to -->
+        <button type="submit" class="btn" style="background:#555; margin-top:10px;" th:unless="${codesExhausted or lowBackupCodesWarning}">
+            📱 Re-enroll Authenticator App
+        </button>
+    </form>
+
+    <!-- Continue link: resumes the original OAuth2 flow -->
+    <p th:unless="${codesExhausted}" style="text-align:center; margin-top:16px;">
+        <a th:href="${(tenantId != null and !#strings.isEmpty(tenantId))
+                      ? '/' + tenantId + '/mfa/recovery/continue'
+                      : '/mfa/recovery/continue'}"
+           style="font-size:14px; color:#0f3460;">
+            ↩ Continue without re-enrolling
+        </a>
+    </p>
+
+    <p class="hint">
+        You will need to complete MFA on all your devices on next login.
+    </p>
+</div>
+</body>
+</html>

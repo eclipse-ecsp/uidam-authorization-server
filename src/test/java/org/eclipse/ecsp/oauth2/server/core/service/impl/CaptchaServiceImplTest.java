@@ -29,10 +29,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
+
+import java.util.stream.Stream;
 
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.RECAPTCHA_URL;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -147,17 +152,52 @@ class CaptchaServiceImplTest {
         assertTrue(response);
     }
 
+    static Stream<Arguments> clientIpData() {
+        return Stream.of(
+            Arguments.of("xforwardedfor", "xforwarded", "xforwardedfor"),
+            Arguments.of(null, "192.168.1.1", "192.168.1.1"),
+            Arguments.of("", "10.0.0.1", "10.0.0.1"),
+            Arguments.of("10.0.0.1,10.0.0.2,10.0.0.3", "10.0.0.1", "10.0.0.1")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("clientIpData")
+    void testGetClientIp(String xforwardedFor, String remoteAddr, String expected) {
+        when(httpServletRequest.getHeader(anyString())).thenReturn(xforwardedFor);
+        when(httpServletRequest.getRemoteAddr()).thenReturn(remoteAddr);
+        assertEquals(expected, captchaService.getClientIp(httpServletRequest));
+    }
+
     /**
-     * This test method tests the functionality to get the client IP.
-     * It sets up the necessary parameters and then calls the getClientIp method.
-     * The test asserts that the returned response is equal to the provided xforwardedfor.
+     * Test getReCaptchaSecret returns the configured secret key.
      */
     @Test
-    void testGetClientIp() {
-        when(httpServletRequest.getHeader(anyString())).thenReturn("xforwardedfor");
-        when(httpServletRequest.getRemoteAddr()).thenReturn("xforwarded");
-        String response = captchaService.getClientIp(httpServletRequest);
-        assertEquals("xforwardedfor", response);
+    void testGetReCaptchaSecret() {
+        CaptchaProperties captchaProps = org.mockito.Mockito.mock(CaptchaProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        when(tenantProperties.getCaptcha()).thenReturn(captchaProps);
+        when(captchaProps.getRecaptchaKeySecret()).thenReturn("secretKey123");
+        String secret = captchaService.getReCaptchaSecret();
+        assertEquals("secretKey123", secret);
+    }
+
+    /**
+     * Test responseSanityCheck returns false for invalid characters.
+     */
+    @Test
+    void testResponseSanityCheckWithInvalidChars() {
+        boolean response = captchaService.responseSanityCheck("$$invalid$$");
+        org.junit.jupiter.api.Assertions.assertFalse(response);
+    }
+
+    /**
+     * Test responseSanityCheck returns false for empty string.
+     */
+    @Test
+    void testResponseSanityCheckWithEmpty() {
+        boolean response = captchaService.responseSanityCheck("");
+        org.junit.jupiter.api.Assertions.assertFalse(response);
     }
 
 }

@@ -247,13 +247,31 @@ public class RegisteredClientMapper {
         tokenSettingsBuilder.authorizationCodeTimeToLive(clientDetails.getAuthorizationCodeValidity() != 0
             ? Duration.ofSeconds(clientDetails.getAuthorizationCodeValidity())
             : Duration.ofSeconds(clientProperties.getAuthCodeTtl()));
+
         tokenSettingsBuilder.refreshTokenTimeToLive(clientDetails.getRefreshTokenValidity() != 0
             ? Duration.ofSeconds(clientDetails.getRefreshTokenValidity())
             : Duration.ofSeconds(clientProperties.getRefreshTokenTtl()));
-        tokenSettingsBuilder.reuseRefreshTokens(clientProperties.getReuseRefreshToken());
+        // Public clients (PKCE) must rotate refresh tokens; confidential clients follow tenant config.
+        boolean isPublicClient = isPublicClientAuthMethod(clientDetails);
+        tokenSettingsBuilder.reuseRefreshTokens(!isPublicClient && clientProperties.getReuseRefreshToken());
+
         tokenSettingsBuilder.idTokenSignatureAlgorithm(SignatureAlgorithm.RS256);
 
         return tokenSettingsBuilder.build();
+    }
+
+    /**
+     * Checks if the client is a public client (uses ClientAuthenticationMethod.NONE).
+     *
+     * @param clientDetails the client details to check
+     * @return true if the client authentication method includes "none"
+     */
+    private boolean isPublicClientAuthMethod(RegisteredClientDetails clientDetails) {
+        if (clientDetails.getClientAuthenticationMethods() == null) {
+            return false;
+        }
+        return clientDetails.getClientAuthenticationMethods().contains(
+                ClientAuthenticationMethod.NONE.getValue());
     }
 
     /**

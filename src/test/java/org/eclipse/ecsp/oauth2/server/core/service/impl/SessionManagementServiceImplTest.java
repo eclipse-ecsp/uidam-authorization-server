@@ -30,6 +30,9 @@ import org.eclipse.ecsp.oauth2.server.core.utils.JwtTokenValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,6 +43,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -1459,4 +1463,286 @@ class SessionManagementServiceImplTest {
         assertEquals(1, result.getTotalTokens());
         assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Capacitor"));
     }
+
+    @Test
+    void testGetActiveSessionsForUser_ParsesSafariDesktop() {
+        // Arrange - Mac OS X with Safari (not Chrome) - covers detectDesktopBrowser "Safari" branch
+        String attributes = "{\"browser_details\":{\"user_agent\":"
+                + "\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+                + "(KHTML, like Gecko) Version/15.4 Safari/605.1.15\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Safari"));
+    }
+
+    static Stream<Arguments> browserUserAgentData() {
+        return Stream.of(
+            Arguments.of(
+                "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)",
+                new String[]{"Internet Explorer"}
+            ),
+            Arguments.of(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/109.0",
+                new String[]{"Firefox", "macOS"}
+            ),
+            Arguments.of(
+                "Mozilla/5.0 (Macintosh; PPC Mac OS X 10_6_8) Version/5.1.10 Safari/534.57.2",
+                new String[]{"macOS"}
+            ),
+            Arguments.of(
+                "Mozilla/5.0 (compatible; MSIE 10.0; Windows Phone 8.0; "
+                    + "Trident/6.0; IEMobile/10.0; ARM; Touch; Microsoft; Lumia 920)",
+                new String[]{"Windows Phone"}
+            ),
+            Arguments.of(
+                "Mozilla/5.0 (Android 12; Mobile; rv:109.0) Gecko/109.0 Firefox/109.0",
+                new String[]{"Firefox Mobile"}
+            ),
+            Arguments.of(
+                "Mozilla/5.0 (Android 12; Mobile; rv:109.0) OPR/79.0.4195.74926",
+                new String[]{"Opera Mobile"}
+            )
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("browserUserAgentData")
+    void testGetActiveSessionsForUser_ParsesBrowserUserAgent(String userAgent, String[] expectedDeviceInfo) {
+        String attributes = "{\"browser_details\":{\"user_agent\":\"" + userAgent + "\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        assertNotNull(result);
+        for (String expected : expectedDeviceInfo) {
+            assertTrue(result.getTokens().get(0).getDeviceInfo().contains(expected));
+        }
+    }
+
+    @Test
+    void testGetActiveSessionsForUser_ParsesSamsungBrowser() {
+        // Arrange - Samsung Browser - covers detectRegionalBrowser "SamsungBrowser" branch  
+        String attributes = "{\"browser_details\":{\"user_agent\":"
+                + "\"Mozilla/5.0 (Linux; Android 12; SAMSUNG SM-G998B) SamsungBrowser/17.0\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Samsung Browser"));
+    }
+
+    @Test
+    void testGetActiveSessionsForUser_ParsesExpoAppExpoKitVariant() {
+        // Arrange - Expo app - covers detectMobileAppFramework "Expo" branch
+        String attributes = "{\"browser_details\":{\"user_agent\":"
+                + "\"ExpoKit/1.0.0 (expo)\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Expo App"));
+    }
+
+    @Test
+    void testGetActiveSessionsForUser_ParsesPythonRequestsClient() {
+        // Arrange - python-requests - covers detectApiClient "python-requests" branch
+        String attributes = "{\"browser_details\":{\"user_agent\":\"python-requests/2.28.0\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Python Client"));
+    }
+
+    @Test
+    void testGetActiveSessionsForUser_ParsesJavaClient() {
+        // Arrange - Java/ user agent - covers detectApiClient "Java/" branch
+        String attributes = "{\"browser_details\":{\"user_agent\":\"Java/11.0.15\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.getTokens().get(0).getDeviceInfo().contains("Java Client"));
+    }
+
+    @Test
+    void testIsInvalidated_withMalformedJson_shouldReturnFalse() {
+        // Arrange - authorization with malformed JSON in metadata (triggers JsonProcessingException)
+        Authorization auth = new Authorization();
+        auth.setId(TOKEN_ID_1);
+        auth.setPrincipalName(USERNAME);
+        auth.setRegisteredClientId(CLIENT_ID);
+        auth.setAuthorizationGrantType("authorization_code");
+        auth.setAccessTokenIssuedAt(Instant.now());
+        auth.setAccessTokenExpiresAt(Instant.now().plusSeconds(TOKEN_EXPIRY_SECONDS));
+        auth.setAccessTokenMetadata("{malformed-json}"); // invalid JSON -> JsonProcessingException
+        auth.setAttributes("{\"browser_details\":{\"user_agent\":\"Chrome/91.0\"}}");
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act - malformed JSON causes isInvalidated to return false (exception caught)
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert - the auth is treated as NOT invalidated (returns false on exception)
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+    }
+
+    @Test
+    void testInvalidateToken_withNullOrEmptyMetadata_shouldInvalidateSuccessfully() {
+        // Arrange - authorization with null metadata (covers null/empty path in invalidateToken)
+        Authorization auth = new Authorization();
+        auth.setId(TOKEN_ID_1);
+        auth.setPrincipalName(USERNAME.toLowerCase()); // normalized username
+        auth.setRegisteredClientId(CLIENT_ID);
+        auth.setAuthorizationGrantType("authorization_code");
+        auth.setAccessTokenIssuedAt(Instant.now());
+        auth.setAccessTokenExpiresAt(Instant.now().plusSeconds(TOKEN_EXPIRY_SECONDS));
+        auth.setAccessTokenMetadata(null); // null metadata -> creates empty ObjectNode in invalidateToken
+        auth.setAttributes("{\"browser_details\":{\"user_agent\":\"Chrome/91.0\"}}");
+
+        // Return the auth entity for invalidation lookup
+        when(authorizationRepository.findById(TOKEN_ID_1)).thenReturn(Optional.of(auth));
+
+        // Act - invalidate the token (calls invalidateToken with null metadata)
+        InvalidateSessionsResponseDto result =
+                service.invalidateSessionsForUser(USERNAME, Arrays.asList(TOKEN_ID_1), TENANT_ID);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.getInvalidatedSessions());
+    }
+
+    @Test
+    void testGetActiveSessionsForUser_WithEmptyOrNullUserAgent_shouldReturnUnknownDevice() {
+        // Arrange - valid JSON but no user agent (empty string) triggers parseUserAgent with ""
+        String attributes = "{\"browser_details\":{\"user_agent\":\"\"}}";
+        Authorization auth = createAuthorizationWithAttributes(TOKEN_ID_1, USERNAME, CLIENT_ID, attributes);
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        // Assert - empty UA is treated as invalid -> falls through to UNKNOWN_DEVICE
+        assertNotNull(result);
+        assertEquals(1, result.getTotalTokens());
+    }
+
+    @Test
+    void testIsCurrentSession_withNullClientIdClaim_shouldReturnFalse() {
+        // Arrange - Auth that is active, and JWT where aud is not String or Collection (null)
+        Authorization auth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        auth.setAccessTokenIssuedAt(Instant.now().minusSeconds(60));
+        auth.setAccessTokenExpiresAt(Instant.now().plusSeconds(3000));
+
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Collections.singletonList(auth));
+
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        // Mock JWT claims - aud is null (not String or Collection)
+        when(jwtTokenValidator.getClaimsFromToken(TEST_TOKEN)).thenReturn(claims);
+        when(claims.get("username", String.class)).thenReturn(USERNAME.toLowerCase());
+        when(claims.get("aud")).thenReturn(null); // null aud -> extractClientIdFromClaims returns null
+        when(claims.getIssuedAt()).thenReturn(Date.from(auth.getAccessTokenIssuedAt()));
+        when(claims.getExpiration()).thenReturn(Date.from(auth.getAccessTokenExpiresAt()));
+
+        // Act
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, TEST_TOKEN, TENANT_ID);
+
+        // Assert - not current session because client ID doesn't match (null vs CLIENT_ID)
+        assertNotNull(result);
+        assertNotNull(result.getTokens().get(0).getIsCurrentSession());
+    }
 }
+

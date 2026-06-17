@@ -23,6 +23,7 @@ import com.nimbusds.jose.proc.SecurityContext;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.ecsp.oauth2.server.core.authentication.customizer.FederatedIdentityIdTokenCustomizer;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.token.PublicClientAwareRefreshTokenGenerator;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +43,6 @@ import org.springframework.security.oauth2.server.authorization.token.Delegating
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.JwtGenerator;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator;
-import org.springframework.security.oauth2.server.authorization.token.OAuth2RefreshTokenGenerator;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenClaimsContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
@@ -129,7 +129,7 @@ public class AuthorizationServerConfig {
         jwtGenerator.setJwtCustomizer(jwtCustomizer);
         OAuth2AccessTokenGenerator accessTokenGenerator = new OAuth2AccessTokenGenerator();
         accessTokenGenerator.setAccessTokenCustomizer(opaqueAccessTokenCustomizer);
-        OAuth2RefreshTokenGenerator refreshTokenGenerator = new OAuth2RefreshTokenGenerator();
+        PublicClientAwareRefreshTokenGenerator refreshTokenGenerator = new PublicClientAwareRefreshTokenGenerator();
 
         LOGGER.debug("## tokenGenerator - END");
         return new DelegatingOAuth2TokenGenerator(jwtGenerator, accessTokenGenerator, refreshTokenGenerator);

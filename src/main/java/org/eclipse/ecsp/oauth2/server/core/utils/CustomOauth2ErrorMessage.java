@@ -60,11 +60,10 @@ public class CustomOauth2ErrorMessage {
                                                                   HttpServletResponse response) {
         if (oauth2AuthenticationException != null) {
             if (OAuth2ErrorCodes.INVALID_REQUEST.equals(oauth2AuthenticationException.getError().getErrorCode())) {
-                if (oauth2AuthenticationException.getError().getDescription()
-                    .contains(OAuth2ParameterNames.CLIENT_ID)) {
+                String description = oauth2AuthenticationException.getError().getDescription();
+                if (description != null && description.contains(OAuth2ParameterNames.CLIENT_ID)) {
                     return setCustomErrorResponse(response, CustomOauth2TokenGenErrorCodes.INVALID_CLIENT, null);
-                } else if (oauth2AuthenticationException.getError().getDescription()
-                    .contains(OAuth2ParameterNames.REDIRECT_URI)) {
+                } else if (description != null && description.contains(OAuth2ParameterNames.REDIRECT_URI)) {
                     return setCustomErrorResponse(response, CustomOauth2TokenGenErrorCodes.INVALID_REDIRECT_URI, null);
                 }
             }

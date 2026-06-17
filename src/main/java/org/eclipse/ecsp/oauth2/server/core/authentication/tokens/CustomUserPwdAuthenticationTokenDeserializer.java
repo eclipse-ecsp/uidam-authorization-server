@@ -64,11 +64,17 @@ class CustomUserPwdAuthenticationTokenDeserializer extends JsonDeserializer<Cust
         Object credentials = getCredentials(credentialsNode);
         JsonNode accountNameNode = readJsonNode(jsonNode, "accountName");
         String accountName = getAccountName(accountNameNode);
+        JsonNode accountIdNode = readJsonNode(jsonNode, "accountId");
+        String accountId = getAccountName(accountIdNode); // reuse same null/text extraction
+        JsonNode mfaRequiredNode = readJsonNode(jsonNode, "mfaRequired");
+        Boolean mfaRequired = (!mfaRequiredNode.isNull() && !mfaRequiredNode.isMissingNode())
+                ? mfaRequiredNode.asBoolean() : null;
         List<GrantedAuthority> authorities = mapper.readValue(readJsonNode(jsonNode, "authorities").traverse(mapper),
                 GRANTED_AUTHORITY_LIST);
         CustomUserPwdAuthenticationToken token = (!authenticated)
                 ? CustomUserPwdAuthenticationToken.unauthenticated(principal, credentials, accountName)
-                : CustomUserPwdAuthenticationToken.authenticated(principal, credentials, accountName, authorities);
+                : CustomUserPwdAuthenticationToken.authenticated(principal, credentials, accountName, accountId,
+                        mfaRequired, authorities);
         JsonNode detailsNode = readJsonNode(jsonNode, "details");
         if (detailsNode.isNull() || detailsNode.isMissingNode()) {
             token.setDetails(null);

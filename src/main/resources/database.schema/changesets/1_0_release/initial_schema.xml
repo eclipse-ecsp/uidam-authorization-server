@@ -22,90 +22,72 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
 
-    <changeSet id="install-uuid-authorization" author="Akshay Mathur">
+    <changeSet id="install-uuid-authorization-pgcrypto" author="Akshay Mathur">
         <sql>
-            CREATE
-            EXTENSION IF NOT EXISTS "uuid-ossp";
+            CREATE EXTENSION IF NOT EXISTS "pgcrypto";
         </sql>
     </changeSet>
 
-    <changeSet id="create-uuid-v4-function" author="Aakanksha Tejwani">
-        <sql>
+    <changeSet id="create-uuid-v4-function-pg" author="Aakanksha Tejwani">
+        <sql splitStatements="false" stripComments="false">
+            <![CDATA[
             CREATE OR REPLACE FUNCTION ${schema}.uuid_generate_v4()
             RETURNS uuid
-            LANGUAGE c
-            PARALLEL SAFE STRICT
-            AS '$libdir/uuid-ossp', $function$uuid_generate_v4$function$
-            ;
-        </sql>
-    </changeSet>
-
-    <changeSet id="create-uuid-function" author="Aakanksha Tejwani">
-        <createProcedure>
-            <![CDATA[
-            CREATE
-            OR REPLACE FUNCTION
-            ${schema}
-            .
-            get_uuid
-            (
-            )
-            RETURNS
-            numeric
-            LANGUAGE
-            'plpgsql'
-            COST
-            100
+            LANGUAGE plpgsql
             VOLATILE
-            PARALLEL
-            UNSAFE
-            AS
-            $BODY$
-            DECLARE
-            MAX_NUMERIC_VALUE NUMERIC(38) := 99999999999999999999999999999999999999;
-        ASCII_OF_0
-            int := 48;
-        ASCII_OF_9
-            int := 57;
-        ASCII_OF_A
-            int := 97;
-        source
-            VARCHAR(64);
-        dest
-            NUMERIC(38) := 0;
-        ch
-            int;
-        char_value
-            int;
+            PARALLEL SAFE
+            AS $BODY$
             BEGIN
-        source
-            := ${schema}.uuid_generate_v4();
-        source
-            := replace(source, '-', '');
-            for indx in 1..char_length(source) LOOP
-            ch := ascii(substr(source, indx, 1));
-            if
-            (ch >= ASCII_OF_0 AND ch <= ASCII_OF_9) then
-                char_value := ch - ASCII_OF_0;
-            else
-                char_value := ch - ASCII_OF_A + 10;
-            end if;
-            if
-            indx = 1 then
-                dest := char_value;
-            else
-                dest := dest * 10 + char_value;
-            end if;
-            while
-            dest > MAX_NUMERIC_VALUE LOOP
-                dest := floor(dest / 10);
-            end loop;
-            end loop;
-            return dest;
+                RETURN gen_random_uuid();
             END;
             $BODY$;
             ]]>
-        </createProcedure>
+        </sql>
+    </changeSet>
+
+    <changeSet id="create-uuid-function-pg" author="Aakanksha Tejwani">
+        <sql splitStatements="false" stripComments="false">
+            <![CDATA[
+            CREATE OR REPLACE FUNCTION ${schema}.get_uuid()
+            RETURNS numeric
+            LANGUAGE plpgsql
+            COST 100
+            VOLATILE
+            PARALLEL UNSAFE
+            AS $BODY$
+            DECLARE
+                MAX_NUMERIC_VALUE NUMERIC(38) := 99999999999999999999999999999999999999;
+                ASCII_OF_0 int := 48;
+                ASCII_OF_9 int := 57;
+                ASCII_OF_A int := 97;
+                source VARCHAR(64);
+                dest NUMERIC(38) := 0;
+                ch int;
+                char_value int;
+            BEGIN
+                source := ${schema}.uuid_generate_v4();
+                source := replace(source, '-', '');
+                for indx in 1..char_length(source) LOOP
+                    ch := ascii(substr(source, indx, 1));
+                    if (ch >= ASCII_OF_0 AND ch <= ASCII_OF_9) then
+                        char_value := ch - ASCII_OF_0;
+                    else
+                        char_value := ch - ASCII_OF_A + 10;
+                    end if;
+                    if indx = 1 then
+                        dest := char_value;
+                    else
+                        dest := dest * 10 + char_value;
+                    end if;
+                    while dest > MAX_NUMERIC_VALUE LOOP
+                        dest := floor(dest / 10);
+                    end loop;
+                end loop;
+                return dest;
+            END;
+            $BODY$;
+            ]]>
+        </sql>
     </changeSet>
 
 	<changeSet id="authorization" author="Akshay Mathur">

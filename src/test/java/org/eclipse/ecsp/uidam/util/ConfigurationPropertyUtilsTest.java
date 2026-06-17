@@ -33,6 +33,7 @@ package org.eclipse.ecsp.uidam.util;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.core.env.Environment;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -459,5 +460,33 @@ class ConfigurationPropertyUtilsTest {
         } catch (Exception e) {
             assertTrue(e.getCause() instanceof UnsupportedOperationException);
         }
+    }
+
+    @Test
+    void testGenerateFromGlobalJdbcUrl_SimpleUrl() {
+        String result = ReflectionTestUtils.invokeMethod(ConfigurationPropertyUtils.class,
+            "generateFromGlobalJdbcUrl", "tenant1", "jdbc:postgresql://host:5432/defaultdb");
+        assertEquals("jdbc:postgresql://host:5432/tenant1", result);
+    }
+
+    @Test
+    void testGenerateFromGlobalJdbcUrl_WithQueryParams() {
+        String result = ReflectionTestUtils.invokeMethod(ConfigurationPropertyUtils.class,
+            "generateFromGlobalJdbcUrl", "tenant1", "jdbc:postgresql://host:5432/defaultdb?ssl=true");
+        assertEquals("jdbc:postgresql://host:5432/tenant1?ssl=true", result);
+    }
+
+    @Test
+    void testGenerateFromGlobalJdbcUrl_NoSlash_ReturnsNull() {
+        String result = ReflectionTestUtils.invokeMethod(ConfigurationPropertyUtils.class,
+            "generateFromGlobalJdbcUrl", "tenant1", "jdbc:postgresql:noSlashAtAll");
+        assertNull(result);
+    }
+
+    @Test
+    void testGenerateFromGlobalJdbcUrl_ComplexParams() {
+        String result = ReflectionTestUtils.invokeMethod(ConfigurationPropertyUtils.class,
+            "generateFromGlobalJdbcUrl", "mytenant", "jdbc:postgresql://myhost:5432/db?ssl=true&schema=public");
+        assertEquals("jdbc:postgresql://myhost:5432/mytenant?ssl=true&schema=public", result);
     }
 }

@@ -55,6 +55,16 @@ public class UserDetailsResponse {
 
     private Set<String> roles;
     private Set<String> scopes;
+    /**
+     * Per-user MFA override for CONDITIONAL policy, sourced from the
+     * {@code mfaRequired} user attribute in user-management.
+     * <ul>
+     *   <li>{@code true}  – MFA is always required for this user in CONDITIONAL mode.</li>
+     *   <li>{@code false} – MFA is explicitly exempted for this user in CONDITIONAL mode.</li>
+     *   <li>{@code null}  – No per-user override; normal step-up evaluation applies.</li>
+     * </ul>
+     */
+    private Boolean mfaRequired;
     private Map<String, Object> additionalAttributes = new HashMap<>();
     private boolean isVerificationEmailSent;
 }

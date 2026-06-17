@@ -591,12 +591,47 @@ class UserManagementClientTest {
         Mockito.when(requestBodySpecMock.bodyValue(userDto))
                 .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
         Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
-        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class)).thenReturn(
-                Mono.error(new WebClientResponseException(HttpStatus.SC_BAD_REQUEST, ACCOUNT_NAME, null, null, null)));
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
 
-        Exception thrown = assertThrows(OAuth2AuthenticationException.class,
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
-        assertNotNull(thrown.getMessage());
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+    }
+
+    @Test
+    void selfCreateUser_ThrowsWebClientResponseExceptionForPasswordPolicyError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        TenantProperties mockTenantProperties = createMockTenantProperties();
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mockTenantProperties);
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage(" Error ='{ Error ='Password validation failed', parameters=test}");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.INVALID_PASSWORD, thrown.getError().getDescription());
     }
 
     @Test
@@ -968,4 +1003,828 @@ class UserManagementClientTest {
         assertEquals("server_error", thrown.getError().getErrorCode());
     }
 
+    // ─────────────── MFA Tests ────────────────────────────────────────────────
+
+    private TenantProperties createMockTenantPropertiesWithMfa() {
+        TenantProperties props = createMockTenantProperties();
+        HashMap<String, String> externalUrls = new HashMap<>(props.getExternalUrls());
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_ENROLL_INITIATE,
+                "/v1/users/{username}/mfa/enroll");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_ENROLL_ACTIVATE,
+                "/v1/users/{username}/mfa/activate");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_STATUS,
+                "/v1/users/{username}/mfa/status");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_SECRET,
+                "/v1/users/{username}/mfa/secret");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_REVOKE,
+                "/v1/users/{username}/mfa/revoke");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_RECOVERY_SEND,
+                "/v1/users/{username}/mfa/recovery/send");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_RECOVERY_VERIFY,
+                "/v1/users/{username}/mfa/recovery/verify");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_GENERATE,
+                "/v1/users/{username}/mfa/backup-codes/generate");
+        externalUrls.put(AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_VERIFY,
+                "/v1/users/{username}/mfa/backup-codes/verify");
+        props.setExternalUrls(externalUrls);
+        // Set the test encryption key/salt so getMfaSecret decryption works
+        props.setMfaSecretEncryptionKey("TestKey-1234567!");
+        props.setMfaSecretEncryptionSalt("TestSalt-1234567");
+        return props;
+    }
+
+    @Test
+    void testInitiateMfaEnrollment_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto dto =
+                new org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto(
+                        "SECRET", "otpauth://...", "SECR ET");
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto.class))
+                .thenReturn(Mono.just(dto));
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto result =
+                userManagementClient.initiateMfaEnrollment("testuser");
+
+        assertNotNull(result);
+        assertEquals("SECRET", result.secret());
+    }
+
+    @Test
+    void testInitiateMfaEnrollment_throwsOnError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto.class))
+                .thenReturn(Mono.error(new RuntimeException("network error")));
+
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> userManagementClient.initiateMfaEnrollment("testuser"));
+    }
+
+    @Test
+    void testActivateMfaEnrollment_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
+
+        userManagementClient.activateMfaEnrollment("testuser");
+        verify(webClientMock).method(any());
+    }
+
+    @Test
+    void testActivateMfaEnrollment_throwsOnError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.toBodilessEntity()).thenReturn(Mono.error(new RuntimeException("network error")));
+
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> userManagementClient.activateMfaEnrollment("testuser"));
+    }
+
+    @Test
+    void testGetMfaStatus_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto statusDto =
+                new org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto(
+                        true, "ACTIVE", false);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.accept(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto.class))
+                .thenReturn(Mono.just(statusDto));
+
+        java.util.Optional<org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto> result =
+                userManagementClient.getMfaStatus("testuser");
+
+        assertNotNull(result);
+        assertEquals(true, result.isPresent());
+    }
+
+    @Test
+    void testGetMfaStatus_returnsEmpty_on404() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.accept(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto.class))
+                .thenReturn(Mono.error(org.springframework.web.reactive.function.client.WebClientResponseException
+                        .create(404, "Not Found", null, new byte[0], null)));
+
+        java.util.Optional<org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto> result =
+                userManagementClient.getMfaStatus("testuser");
+
+        assertEquals(false, result.isPresent());
+    }
+
+    @Test
+    void testGetMfaStatus_returnsEmpty_onGenericError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.accept(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto.class))
+                .thenReturn(Mono.error(new RuntimeException("network error")));
+
+        java.util.Optional<org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto> result =
+                userManagementClient.getMfaStatus("testuser");
+
+        assertEquals(false, result.isPresent());
+    }
+
+    @Test
+    void testGetMfaSecret_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        // Encrypt the plain secret using the same key/salt configured on mfaProps
+        final String plainSecret = "BASE32SECRET";
+        final String encryptedSecret = org.eclipse.ecsp.oauth2.server.core.utils.MfaSecretEncryptionUtil
+                .encrypt(plainSecret, mfaProps.getMfaSecretEncryptionKey(), mfaProps.getMfaSecretEncryptionSalt());
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.accept(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(String.class)).thenReturn(Mono.just(encryptedSecret));
+
+        java.util.Optional<String> result = userManagementClient.getMfaSecret("testuser");
+
+        assertNotNull(result);
+        assertEquals(plainSecret, result.orElse(null));
+    }
+
+    @Test
+    void testGetMfaSecret_returnsEmpty_onError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.accept(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(String.class)).thenReturn(
+                Mono.error(org.springframework.web.reactive.function.client.WebClientResponseException
+                        .create(404, "Not Found", null, new byte[0], null)));
+
+        java.util.Optional<String> result = userManagementClient.getMfaSecret("testuser");
+
+        assertEquals(false, result.isPresent());
+    }
+
+    @Test
+    void testRevokeMfaEnrollment_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
+
+        userManagementClient.revokeMfaEnrollment("testuser");
+        verify(webClientMock).method(any());
+    }
+
+    @Test
+    void testRevokeMfaEnrollment_throwsOnError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.toBodilessEntity()).thenReturn(Mono.error(new RuntimeException("error")));
+
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> userManagementClient.revokeMfaEnrollment("testuser"));
+    }
+
+    @Test
+    void testSendMfaRecoveryKey_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.onStatus(any(), any())).thenReturn(responseSpecMock);
+        when(responseSpecMock.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
+
+        userManagementClient.sendMfaRecoveryKey("testuser");
+        verify(webClientMock).method(any());
+    }
+
+    @Test
+    void testSendMfaRecoveryKey_throwsOnError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.onStatus(any(), any())).thenReturn(responseSpecMock);
+        when(responseSpecMock.toBodilessEntity()).thenReturn(Mono.error(new RuntimeException("error")));
+
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> userManagementClient.sendMfaRecoveryKey("testuser"));
+    }
+
+    @Test
+    void testVerifyMfaRecoveryKey_returnsTrue() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
+        when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(Boolean.class)).thenReturn(Mono.just(Boolean.TRUE));
+
+        boolean result = userManagementClient.verifyMfaRecoveryKey("testuser", "ABC123");
+
+        assertEquals(true, result);
+    }
+
+    @Test
+    void testVerifyMfaRecoveryKey_returnsFalse_onError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
+        when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(Boolean.class)).thenReturn(Mono.error(new RuntimeException("error")));
+
+        boolean result = userManagementClient.verifyMfaRecoveryKey("testuser", "WRONG");
+
+        assertEquals(false, result);
+    }
+
+    @Test
+    void testVerifyMfaRecoveryKey_returnsFalse_whenResultIsNull() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
+        when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(Boolean.class)).thenReturn(Mono.empty());
+
+        boolean result = userManagementClient.verifyMfaRecoveryKey("testuser", "ABC123");
+
+        assertEquals(false, result);
+    }
+
+    @Test
+    void testGenerateMfaBackupCodes_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto dto =
+                new org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto(
+                        java.util.List.of("CODE1", "CODE2"), 2);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto.class))
+                .thenReturn(Mono.just(dto));
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto result =
+                userManagementClient.generateMfaBackupCodes("testuser");
+
+        assertNotNull(result);
+        assertEquals(2, result.count());
+    }
+
+    @Test
+    void testGenerateMfaBackupCodes_throwsOnError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString(), any(Object.class))).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto.class))
+                .thenReturn(Mono.error(new RuntimeException("error")));
+
+        assertThrows(org.springframework.security.oauth2.core.OAuth2AuthenticationException.class,
+                () -> userManagementClient.generateMfaBackupCodes("testuser"));
+    }
+
+    @Test
+    void testVerifyMfaBackupCode_success() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto dto =
+                new org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto(
+                        true, 4, false);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
+        when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto.class))
+                .thenReturn(Mono.just(dto));
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto result =
+                userManagementClient.verifyMfaBackupCode("testuser", "CODE1");
+
+        assertNotNull(result);
+        assertEquals(true, result.valid());
+    }
+
+    @Test
+    void testVerifyMfaBackupCode_returnsInvalid_onError() {
+        TenantProperties mfaProps = createMockTenantPropertiesWithMfa();
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(mfaProps);
+        when(tenantConfigurationService.getTenantProperties("ecsp")).thenReturn(mfaProps);
+
+        when(webClientMock.method(any())).thenReturn(requestBodyUriSpecMock);
+        when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        when(requestBodySpecMock.bodyValue(any())).thenReturn(requestHeadersSpecMock);
+        when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        when(responseSpecMock.bodyToMono(
+                org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto.class))
+                .thenReturn(Mono.error(new RuntimeException("error")));
+
+        org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto result =
+                userManagementClient.verifyMfaBackupCode("testuser", "WRONG");
+
+        assertNotNull(result);
+        assertEquals(false, result.valid());
+        assertEquals(0, result.remainingBackupCodes());
+    }
+
+    // ─── handleUserFetchError branch tests ───────────────────────────────────
+
+    @Test
+    void handleUserFetchError_ForbiddenWithTemporaryLock() {
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("Account temporarily locked for 15 minutes");
+        errorResponse.setIsTemporaryLock(Boolean.TRUE);
+        errorResponse.setMinutesLeftToUnlock(15L);
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.FORBIDDEN);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername("testUser", "testAccount"));
+
+        assertNotNull(thrown);
+        assertEquals("USER_TEMPORARILY_BLOCKED", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void handleUserFetchError_ForbiddenWithAccountMessage() {
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("Your account has been disabled");
+        errorResponse.setIsTemporaryLock(Boolean.FALSE);
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.FORBIDDEN);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername("testUser", "testAccount"));
+
+        assertNotNull(thrown);
+        assertEquals("ACCOUNT_NOT_FOUND", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void handleUserFetchError_ForbiddenWithGenericMessage() {
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("User is not active");
+        errorResponse.setIsTemporaryLock(Boolean.FALSE);
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.FORBIDDEN);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername("testUser", "testAccount"));
+
+        assertNotNull(thrown);
+        assertEquals("USER_NOT_ACTIVE", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void handleUserFetchError_NotFoundWithMessage() {
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("User not found in the system");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.NOT_FOUND);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername("testUser", "testAccount"));
+
+        assertNotNull(thrown);
+        assertEquals("USER_NOT_FOUND", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void handleUserFetchError_OtherStatusWithMessage() {
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("Internal server error occurred");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.GET)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString(), anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.accept(MediaType.APPLICATION_JSON)).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.getUserDetailsByUsername("testUser", "testAccount"));
+
+        assertNotNull(thrown);
+        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals("Internal server error occurred", thrown.getError().getDescription());
+    }
+
+    // ─── handleWebClientResponseException branch tests ──────────────────────
+
+    @Test
+    void selfCreateUser_NotFound_ShouldThrowResourceNotFound() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("Resource not found");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.NOT_FOUND);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("RESOURCE_NOT_FOUND", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_MethodNotAllowed_ShouldThrowServerError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("Method not allowed");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("server_error", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_Conflict_ShouldThrowRecordAlreadyExists() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("User already exists");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.CONFLICT);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("RECORD_ALREADY_EXISTS", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_BadRequestWithPasswordError_ShouldReturnInvalidPassword() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        // extractMessage extracts between " Error ='{ Error ='" and "', parameters="
+        // resulting text must contain "Password" (capital P) to trigger INVALID_PASSWORD
+        errorResponse.setMessage(" Error ='{ Error ='Password must be stronger', parameters=none}");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.INVALID_PASSWORD, thrown.getError().getDescription());
+    }
+
+    @Test
+    void selfCreateUser_BadRequestWithNonPasswordError_ShouldReturnBadRequest() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage(" Error ='{ Error ='username invalid', parameters=none}");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_OtherStatus_ShouldReturnServerError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setMessage("Internal error");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("server_error", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_WebClientResponseException_NullBody_ShouldReturnServerError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("server_error", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_WebClientResponseException_IllegalStateParsingBody_ShouldReturnServerError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class))
+                .thenThrow(new IllegalStateException("Could not decode"));
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("server_error", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void extractMessage_withNoPatternMatch_shouldReturnNull() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        // Message does not match the extractMessage pattern
+        errorResponse.setMessage("simple error message without pattern");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        // extractMessage returns null, so INVALID_PASSWORD is NOT returned, falls back to UNEXPECTED_ERROR
+        assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+    }
 }

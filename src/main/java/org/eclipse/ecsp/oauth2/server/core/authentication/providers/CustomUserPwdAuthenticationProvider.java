@@ -56,6 +56,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.SESSION_USER_RESPONSE_ENFORCE_AFTER_NO_OF_FAILURES;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.USER_CAPTCHA_REQUIRED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.USER_ENFORCE_AFTER_NO_OF_FAILURES;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessages.INVALID_CREDENTIALS_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessages.USER_LOCKED_ERROR;
 
 /**
@@ -207,7 +208,8 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
                 loginAttempt, maxAllowedLoginAttempt);
         }
         
-        throw new BadCredentialsException("Bad credentials");
+        // Use generic error message to prevent username enumeration attacks
+        throw new BadCredentialsException(INVALID_CREDENTIALS_ERROR);
     }
     
     /**
@@ -297,7 +299,8 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
         
         List<GrantedAuthority> grantedAuthorities = userDetailsResponse.getScopes().stream()
             .map(SimpleGrantedAuthority::new).collect(Collectors.toList());
-        return CustomUserPwdAuthenticationToken.authenticated(username, password, accountName, grantedAuthorities);
+        return CustomUserPwdAuthenticationToken.authenticated(username, password, accountName,
+                userDetailsResponse.getAccountId(), userDetailsResponse.getMfaRequired(), grantedAuthorities);
     }
     
     private void logSuccessfulAuthentication(UserDetailsResponse userDetailsResponse,

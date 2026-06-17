@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.eclipse.ecsp.oauth2.server.core.common.CustomOauth2TokenGenErrorCodes;
 import org.eclipse.ecsp.oauth2.server.core.common.UpdatePasswordData;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants;
+import org.eclipse.ecsp.oauth2.server.core.common.constants.ResponseMessages;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.exception.PasswordRecoveryException;
 import org.eclipse.ecsp.oauth2.server.core.exception.UidamApplicationException;
@@ -40,10 +41,15 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserDto;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.UserErrorResponse;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
+import org.eclipse.ecsp.oauth2.server.core.utils.MfaSecretEncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,13 +67,23 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Collections;
-import java.util.Objects;
+import java.util.Map;
 import java.util.UUID;
 
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.PASSWORD;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_ADD_USER_EVENTS_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_CREATE_FEDRATED_USER;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_GENERATE;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_VERIFY;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_ENROLL_ACTIVATE;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_ENROLL_INITIATE;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_RECOVERY_SEND;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_RECOVERY_VERIFY;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_REVOKE;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_SECRET;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_STATUS;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_PASSWORD_POLICY_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_SELF_CREATE_USER;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_USER_BY_USERNAME_ENDPOINT;
@@ -89,6 +105,10 @@ import static org.eclipse.ecsp.oauth2.server.core.utils.RequestResponseLogger.lo
  */
 @Component
 public class UserManagementClient {
+
+    private static final String BACKUP_CODE = "backupCode";
+
+    private static final String RECOVERY_KEY = "recoveryKey";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserManagementClient.class);
 
@@ -388,11 +408,15 @@ public class UserManagementClient {
             captchaServiceImpl.processResponse(recaptchaResponse, request);
         }
         addRequiredParameters(userDto);
-        LOGGER.debug("## validateCaptchaAndAddRequiredParams - END");
+        LOGGER.debug("## validateCaptchaAndAddRequiredParameters - END");
         return userDto;
     }
 
     private String extractMessage(String input) {
+        if (!StringUtils.hasText(input)) {
+            return null;
+        }
+
         String startToken = " Error ='{ Error ='";
         String endToken = "', parameters=";
 
@@ -440,16 +464,21 @@ public class UserManagementClient {
                 errorDesc = USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN;
             } else if (HttpStatus.BAD_REQUEST == ex.getStatusCode()) {
                 errorCode = CustomOauth2TokenGenErrorCodes.BAD_REQUEST.name();
-                if (userErrorResponse.getMessage() != null
-                        && this.extractMessage(userErrorResponse.getMessage()) != null
-                        && Objects.requireNonNull(this.extractMessage(userErrorResponse.getMessage()))
-                                .contains(PASSWORD)) {
+                String extractedMessage = this.extractMessage(userErrorResponse.getMessage());
+                if (StringUtils.hasText(extractedMessage)
+                        && extractedMessage.contains(PASSWORD)) {
                     errorDesc = INVALID_PASSWORD;
+                } else if (StringUtils.hasText(extractedMessage)) {
+                    errorDesc = INVALID_INPUT_ERROR;
+                } else {
+                    // extractMessage returned null, use UNEXPECTED_ERROR
+                    errorDesc = UNEXPECTED_ERROR;
                 }
             } else {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
             }
         } else {
+            // Cannot parse response body, treat as server error even if BAD_REQUEST status
             errorCode = OAuth2ErrorCodes.SERVER_ERROR;
         }
 
@@ -527,6 +556,303 @@ public class UserManagementClient {
         return null;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    //  MFA REST methods (internal auth-server → user-management, no gateway JWT)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Initiate MFA enrollment for a user: generates a secret in user-management and returns it.
+     *
+     * @param username the user's username
+     * @return {@link MfaEnrollInitiateResponseDto} with secret, QR URI and manual key
+     */
+    public MfaEnrollInitiateResponseDto initiateMfaEnrollment(String username) {
+        LOGGER.info("[MFA] Initiating enrollment for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_ENROLL_INITIATE);
+            return currentWebClient.method(HttpMethod.POST).uri(uri, username)
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .contentType(MediaType.APPLICATION_JSON).retrieve()
+                    .bodyToMono(MfaEnrollInitiateResponseDto.class).block();
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error initiating enrollment for username='{}': ", username, ex);
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to initiate MFA enrollment", null));
+        }
+    }
+
+    /**
+     * Activate MFA enrollment in user-management (mark PENDING → ACTIVE).
+     *
+     * @param username the user's username
+     */
+    public void activateMfaEnrollment(String username) {
+        LOGGER.info("[MFA] Activating enrollment for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_ENROLL_ACTIVATE);
+            currentWebClient.method(HttpMethod.POST).uri(uri, username)
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .contentType(MediaType.APPLICATION_JSON).retrieve()
+                    .toBodilessEntity().block();
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error activating enrollment for username='{}': ", username, ex);
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to activate MFA enrollment", null));
+        }
+    }
+
+    /**
+     * Get MFA enrollment status for a user.
+     *
+     * @param username the user's username
+     * @return Optional of {@link MfaStatusResponseDto}, empty on 404 or error
+     */
+    public java.util.Optional<MfaStatusResponseDto> getMfaStatus(String username) {
+        LOGGER.debug("[MFA] Fetching MFA status for username='{}'", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_STATUS);
+            MfaStatusResponseDto response = currentWebClient.method(HttpMethod.GET).uri(uri, username)
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .accept(MediaType.APPLICATION_JSON).retrieve()
+                    .bodyToMono(MfaStatusResponseDto.class).block();
+            return java.util.Optional.ofNullable(response);
+        } catch (WebClientResponseException ex) {
+            if (ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                return java.util.Optional.empty();
+            }
+            LOGGER.error("[MFA] Error fetching MFA status for username='{}': ", username, ex);
+            return java.util.Optional.empty();
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Unexpected error fetching MFA status for username='{}': ", username, ex);
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
+     * Get the TOTP secret for a user (ACTIVE or PENDING enrollment only).
+     *
+     * <p>The secret is stored encrypted in user-management (AES-256-GCM). This method
+     * fetches the encrypted blob and decrypts it using the tenant's configured
+     * {@code mfa-secret-encryption-key} and {@code mfa-secret-encryption-salt} before returning.
+     *
+     * @param username the user's username
+     * @return Optional containing the decrypted Base32 TOTP secret, or empty if not found
+     */
+    public java.util.Optional<String> getMfaSecret(String username) {
+        LOGGER.debug("[MFA] Fetching TOTP secret for username='{}'", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_SECRET);
+            String encryptedSecret = currentWebClient.method(HttpMethod.GET).uri(uri, username)
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .accept(MediaType.TEXT_PLAIN).retrieve()
+                    .bodyToMono(String.class).block();
+            // Defensive: strip surrounding JSON quotes if the server returned a quoted string.
+            if (encryptedSecret != null && encryptedSecret.startsWith("\"")
+                    && encryptedSecret.endsWith("\"") && encryptedSecret.length() > 1) {
+                encryptedSecret = encryptedSecret.substring(1, encryptedSecret.length() - 1);
+            }
+            if (encryptedSecret == null) {
+                return java.util.Optional.empty();
+            }
+            // Decrypt the secret using the per-tenant key/salt before returning.
+            String plainSecret = decryptMfaSecret(encryptedSecret, tenantProperties);
+            return java.util.Optional.of(plainSecret);
+        } catch (WebClientResponseException ex) {
+            if (ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                LOGGER.error("[MFA] Error fetching secret for username='{}'", username, ex);
+            } else {
+                LOGGER.error("[MFA] Unexpected error fetching secret for username='{}': {}", username, ex.getMessage());
+            }
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
+     * Decrypt the encrypted MFA secret using the tenant-configured key and salt.
+     *
+     * @param encryptedSecret the AES-256-GCM encrypted, Base64-encoded TOTP secret
+     * @param tenantProperties the properties for the current tenant
+     * @return the decrypted Base32 TOTP secret
+     */
+    private String decryptMfaSecret(String encryptedSecret, TenantProperties tenantProperties) {
+        String key  = resolveEncryptionKey(tenantProperties);
+        String salt = resolveEncryptionSalt(tenantProperties);
+        try {
+            return MfaSecretEncryptionUtil.decrypt(encryptedSecret, key, salt);
+        } catch (MfaSecretEncryptionUtil.MfaDecryptionException ex) {
+            LOGGER.error("[MFA] Failed to decrypt TOTP secret for tenant='{}': {}",
+                    tenantProperties.getTenantId(), ex.getMessage());
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to decrypt MFA secret", null));
+        }
+    }
+
+    private String resolveEncryptionKey(TenantProperties props) {
+        if (props.getMfaSecretEncryptionKey() != null && !props.getMfaSecretEncryptionKey().isBlank()) {
+            return props.getMfaSecretEncryptionKey();
+        }
+        return "ChangeMe-MfaKey!";
+    }
+
+    private String resolveEncryptionSalt(TenantProperties props) {
+        if (props.getMfaSecretEncryptionSalt() != null && !props.getMfaSecretEncryptionSalt().isBlank()) {
+            return props.getMfaSecretEncryptionSalt();
+        }
+        return "ChangeMe-MfaSalt";
+    }
+
+    /**
+     * Revoke MFA enrollment for a user (triggers re-enrollment on next login).
+     *
+     * @param username the user's username
+     */
+    public void revokeMfaEnrollment(String username) {
+        LOGGER.info("[MFA] Revoking enrollment for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_REVOKE);
+            currentWebClient.method(HttpMethod.DELETE).uri(uri, username)
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .retrieve().toBodilessEntity().block();
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error revoking enrollment for username='{}'", username, ex);
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to revoke MFA enrollment", null));
+        }
+    }
+
+    /**
+     * Send a one-time recovery key to the user's registered email address via user-management.
+     *
+     * @param username the user's username
+     */
+    public void sendMfaRecoveryKey(String username) {
+        LOGGER.info("[MFA] Sending recovery key for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_RECOVERY_SEND);
+            currentWebClient.method(HttpMethod.POST).uri(uri, username)
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .contentType(MediaType.APPLICATION_JSON).retrieve()
+                    .onStatus(HttpStatusCode::isError, clientResponse -> {
+                        LOGGER.error("[MFA] User-management returned status {} for recovery key send, user='{}'",
+                                clientResponse.statusCode(), username);
+                        return clientResponse.bodyToMono(String.class)
+                                .defaultIfEmpty("Unknown error from user-management")
+                                .flatMap(body -> {
+                                    LOGGER.error("[MFA] User-management error body: {}", body);
+                                    return reactor.core.publisher.Mono.error(new OAuth2AuthenticationException(
+                                            new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                                                    "Failed to send MFA recovery email: " + body, null)));
+                                });
+                    })
+                    .toBodilessEntity().block();
+        } catch (OAuth2AuthenticationException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error sending recovery key for username='{}': {}", username, ex.getMessage());
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to send MFA recovery key: " + ex.getMessage(), null));
+        }
+    }
+
+    /**
+     * Verify the user's recovery key and revoke enrollment if valid.
+     *
+     * @param username    the user's username
+     * @param recoveryKey the 6-character key entered by the user
+     * @return {@code true} if the key is valid and enrollment was revoked
+     */
+    public boolean verifyMfaRecoveryKey(String username, String recoveryKey) {
+        LOGGER.info("[MFA] Verifying recovery key for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_RECOVERY_VERIFY);
+            Map<String, String> body = Map.of(RECOVERY_KEY, recoveryKey);
+            Boolean result = currentWebClient.method(HttpMethod.POST)
+                    .uri(uri.replace("{username}", username))
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(Boolean.class).block();
+            return Boolean.TRUE.equals(result);
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error verifying recovery key for username='{}': {}", username, ex.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Generate (or regenerate) a set of MFA backup codes for a user via user-management.
+     *
+     * @param username the user's username
+     * @return {@link MfaBackupCodesResponseDto} with the freshly generated plain-text codes
+     */
+    public MfaBackupCodesResponseDto generateMfaBackupCodes(String username) {
+        LOGGER.info("[MFA] Generating backup codes for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_GENERATE);
+            return currentWebClient.method(HttpMethod.POST).uri(uri, username)
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .contentType(MediaType.APPLICATION_JSON).retrieve()
+                    .bodyToMono(MfaBackupCodesResponseDto.class).block();
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error generating backup codes for username='{}': {}", username, ex.getMessage());
+            throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                    "Failed to generate MFA backup codes", null));
+        }
+    }
+
+    /**
+     * Verify a single MFA backup code for a user via user-management. On success the code is
+     * consumed (single-use) in user-management.
+     *
+     * @param username   the user's username
+     * @param backupCode the plain-text backup code entered by the user
+     * @return {@link MfaBackupCodeVerifyResponseDto} with validity and remaining-code count;
+     *         an invalid result is returned on any error
+     */
+    public MfaBackupCodeVerifyResponseDto verifyMfaBackupCode(String username, String backupCode) {
+        LOGGER.info("[MFA] Verifying backup code for username='{}' via user-mgmt", username);
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls().get(TENANT_EXTERNAL_URLS_MFA_BACKUP_CODES_VERIFY);
+            Map<String, String> body = Map.of(BACKUP_CODE, backupCode);
+            return currentWebClient.method(HttpMethod.POST)
+                    .uri(uri.replace("{username}", username))
+                    .header(IgniteOauth2CoreConstants.CORRELATION_ID, UUID.randomUUID().toString())
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(MfaBackupCodeVerifyResponseDto.class).block();
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Error verifying backup code for username='{}': {}", username, ex.getMessage());
+            return new MfaBackupCodeVerifyResponseDto(false, 0, false);
+        }
+    }
+
     /**
      * Handles user fetch errors and creates appropriate OAuth2Error with metrics tracking.
      * Enhanced to support temporary lock information from the user management service.
@@ -545,7 +871,8 @@ public class UserManagementClient {
         if (errorMessage != null) {
             if (HttpStatus.NOT_FOUND.isSameCodeAs(statusCode)) {
                 errorCode = CustomOauth2TokenGenErrorCodes.USER_NOT_FOUND.name();
-                errorDesc = errorMessage;
+                // Used generic error message to prevent username enumeration attacks
+                errorDesc = ResponseMessages.INVALID_CREDENTIALS_ERROR;
                 metricsService.incrementMetricsForTenant(tenantId, MetricType.FAILURE_LOGIN_USER_NOT_FOUND);
             } else if (HttpStatus.FORBIDDEN.isSameCodeAs(statusCode)) {
                 // IMPORTANT: Check for temporary lock FIRST before checking message content

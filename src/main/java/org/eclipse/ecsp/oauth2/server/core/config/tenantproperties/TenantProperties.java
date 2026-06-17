@@ -19,7 +19,6 @@
 package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
 import jakarta.annotation.PostConstruct;
-import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -76,6 +75,28 @@ public class TenantProperties {
     
     private boolean internalLoginEnabled = true;
     private boolean signUpEnabled;
+
+    /** MFA issuer/app name displayed in authenticator apps. Default: UIDAM. Overridable per tenant. */
+    private String mfaAppName = "UIDAM";
+
+    /** Per-tenant MFA enforcement policy (mode, step-up scopes, skip-users). */
+    private MfaPolicyProperties mfa = new MfaPolicyProperties();
+
+    /**
+     * AES-256-GCM encryption key used to decrypt TOTP secrets received from user-management.
+     * Must match the value configured in the user-management service for the same tenant.
+     * Override in production via ConfigMap / environment variable
+     * {@code DEFAULT_MFA_SECRET_ENCRYPTION_KEY}.
+     */
+    private String mfaSecretEncryptionKey = "ChangeMe-MfaKey!";
+
+    /**
+     * Salt for PBKDF2 key derivation used to decrypt TOTP secrets.
+     * Must match the value configured in the user-management service for the same tenant.
+     * Override in production via ConfigMap / environment variable
+     * {@code DEFAULT_MFA_SECRET_ENCRYPTION_SALT}.
+     */
+    private String mfaSecretEncryptionSalt = "ChangeMe-MfaSalt";
 
     private static final String MAPPINGS_DELIMITER = ",";
     private static final String PAIR_DELIMITER = "#";
