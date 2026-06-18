@@ -178,8 +178,10 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
 
         String clientId = request.getParameter("client_id");
         if (policy.isClientSkipped(clientId)) {
-            LOGGER.info("[MFA-FILTER] client_id='{}' is in MFA skip-list for tenant='{}' – passing through",
-                    InputSanitizer.forLog(clientId), InputSanitizer.forLog(tenant));
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("[MFA-FILTER] client_id='{}' is in MFA skip-list for tenant='{}' – passing through",
+                        InputSanitizer.forLog(clientId), InputSanitizer.forLog(tenant));
+            }
             chain.doFilter(request, response);
             return;
         }
@@ -246,8 +248,10 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         Set<String> stepUpClients = policy.getStepUpClientSet();
         if (!stepUpClients.isEmpty() && clientId != null && !clientId.isBlank()) {
             boolean clientMatch = stepUpClients.stream().anyMatch(c -> c.equalsIgnoreCase(clientId));
-            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on client_id='{}' vs stepUpClients={} -> {}",
-                    InputSanitizer.forLog(clientId), stepUpClients, clientMatch);
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on client_id='{}' vs stepUpClients={} -> {}",
+                        InputSanitizer.forLog(clientId), stepUpClients, clientMatch);
+            }
             if (clientMatch) {
                 return true;
             }
@@ -274,9 +278,11 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         Set<String> requestedScopes = extractRequestedScopes(request);
         if (!requestedScopes.isEmpty()) {
             boolean match = requestedScopes.stream().anyMatch(stepUpScopes::contains);
-            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on requested scopes={} vs stepUp={} -> {}",
-                    requestedScopes.stream().map(InputSanitizer::forLog).collect(Collectors.toSet()),
-                    stepUpScopes, match);
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on requested scopes={} vs stepUp={} -> {}",
+                        requestedScopes.stream().map(InputSanitizer::forLog).collect(Collectors.toSet()),
+                        stepUpScopes, match);
+            }
             return match;
         }
 

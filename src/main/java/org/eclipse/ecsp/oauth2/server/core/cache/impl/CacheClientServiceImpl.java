@@ -77,7 +77,9 @@ public class CacheClientServiceImpl implements CacheClientService {
         if (clientCacheDetails == null) {
             return null;
         }
-        LOGGER.info("Putting client details in cache for client id: {}", InputSanitizer.forLog(clientId));
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info("Putting client details in cache for client id: {}", InputSanitizer.forLog(clientId));
+        }
         return clientCacheDetails;
     }
 
