@@ -7,6 +7,7 @@ import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyRespo
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -169,7 +170,8 @@ public class MfaController {
                 ? enrollData.manualKey() : totpService.formatManualKey(secret);
         final String qrBase64  = totpService.generateQrCodeBase64FromUri(enrollData.qrUri());
 
-        LOGGER.info("[MFA] Enrollment setup");
+        LOGGER.info("[MFA] Enrollment setup tenant='{}' user='{}'",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         model.addAttribute(ATTR_TENANT,     resolvedTenant);
         model.addAttribute(ATTR_USERNAME,   username);
@@ -208,7 +210,8 @@ public class MfaController {
             return VIEW_ERROR;
         }
 
-        LOGGER.info("[MFA] Enrollment verify tenant='{}' user='{}'", resolvedTenant, username);
+        LOGGER.info("[MFA] Enrollment verify tenant='{}' user='{}'",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         if (totpService.validateCode(username, secret, totpCode)) {
             mfaSecretService.activateEnrollment(username);
@@ -315,7 +318,8 @@ public class MfaController {
         String username = (String) pending.getPrincipal();
         String secret   = mfaSecretService.getSecret(username).orElse(null);
 
-        LOGGER.info("[MFA] Challenge attempt");
+        LOGGER.info("[MFA] Challenge attempt tenant='{}' user='{}'",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         if (secret != null && totpService.validateCode(username, secret, totpCode)) {
             mfaStateService.clearPending(request);
@@ -458,7 +462,8 @@ public class MfaController {
         String resolvedTenant = resolveTenant(tenantId, request);
         String username = (String) pending.getPrincipal();
 
-        LOGGER.info("[MFA] Recovery key verification");
+        LOGGER.info("[MFA] Recovery key verification attempt for user='{}' tenant='{}'",
+                InputSanitizer.forLog(username), InputSanitizer.forLog(resolvedTenant));
 
         boolean valid = mfaSecretService.verifyRecoveryKeyAndRevoke(username, recoveryKey);
         if (valid) {
@@ -542,7 +547,8 @@ public class MfaController {
             return redirectToRecovery(resolvedTenant);
         }
 
-        LOGGER.info("[MFA] Backup-code recovery attempt");
+        LOGGER.info("[MFA] Backup-code recovery attempt for user='{}' tenant='{}'",
+                InputSanitizer.forLog(username), InputSanitizer.forLog(resolvedTenant));
 
         MfaBackupCodeVerifyResponseDto result = mfaSecretService.verifyBackupCode(username, backupCode);
         if (result != null && result.valid()) {
@@ -636,7 +642,8 @@ public class MfaController {
         request.getSession(true).setAttribute(
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, ctx);
 
-        LOGGER.info("[MFA] Login completed");
+        LOGGER.info("[MFA] Login completed tenant='{}' user='{}' – resuming OAuth flow",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         // Mark MFA verified in DB so MfaChallengeFilter does not re-intercept the
         // upcoming /oauth2/authorize redirect and loop back to challenge.

@@ -27,6 +27,7 @@ import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantPropert
 import org.eclipse.ecsp.oauth2.server.core.interceptor.ClientAddCorrelationIdInterceptor;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -107,7 +108,7 @@ public class AuthManagementClient {
      * @return the client details as a RegisteredClientDetails object, or null if an error occurs.
      */
     public RegisteredClientDetails getClientDetails(String clientId) {
-        LOGGER.info("fetching client details from auth-mgmt");
+        LOGGER.info("fetching client details for clientId {} from auth-mgmt", InputSanitizer.forLog(clientId));
         
         try {
             // Get tenant properties for current tenant

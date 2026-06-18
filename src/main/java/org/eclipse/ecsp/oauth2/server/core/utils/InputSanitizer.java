@@ -63,4 +63,18 @@ public final class InputSanitizer {
         }
         return !DANGEROUS_PATTERN.matcher(input).find();
     }
+
+    /**
+     * Sanitizes a string for safe inclusion in log statements by removing
+     * CR and LF characters that could be used for log injection/forging.
+     *
+     * @param input the string to sanitize
+     * @return the sanitized string, or null if input is null
+     */
+    public static String forLog(String input) {
+        if (input == null) {
+            return null;
+        }
+        return input.replaceAll("[\r\n]", "_");
+    }
 }
