@@ -177,7 +177,8 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
 
         String clientId = request.getParameter("client_id");
         if (policy.isClientSkipped(clientId)) {
-            LOGGER.info("[MFA-FILTER] client_id='{}' is in MFA skip-list");
+            LOGGER.info("[MFA-FILTER] client_id='{}' is in MFA skip-list for tenant='{}' – passing through",
+                    clientId, tenant);
             chain.doFilter(request, response);
             return;
         }
@@ -272,7 +273,8 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         Set<String> requestedScopes = extractRequestedScopes(request);
         if (!requestedScopes.isEmpty()) {
             boolean match = requestedScopes.stream().anyMatch(stepUpScopes::contains);
-            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on requested");
+            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on requested scopes={} vs stepUp={} -> {}",
+                    requestedScopes, stepUpScopes, match);
             return match;
         }
 

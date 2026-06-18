@@ -169,7 +169,7 @@ public class MfaController {
                 ? enrollData.manualKey() : totpService.formatManualKey(secret);
         final String qrBase64  = totpService.generateQrCodeBase64FromUri(enrollData.qrUri());
 
-        LOGGER.info("[MFA] Enrollment setup");
+        LOGGER.info("[MFA] Enrollment setup tenant='{}' user='{}'", resolvedTenant, username);
 
         model.addAttribute(ATTR_TENANT,     resolvedTenant);
         model.addAttribute(ATTR_USERNAME,   username);
@@ -315,7 +315,7 @@ public class MfaController {
         String username = (String) pending.getPrincipal();
         String secret   = mfaSecretService.getSecret(username).orElse(null);
 
-        LOGGER.info("[MFA] Challenge attempt");
+        LOGGER.info("[MFA] Challenge attempt tenant='{}' user='{}'", resolvedTenant, username);
 
         if (secret != null && totpService.validateCode(username, secret, totpCode)) {
             mfaStateService.clearPending(request);
@@ -458,7 +458,8 @@ public class MfaController {
         String resolvedTenant = resolveTenant(tenantId, request);
         String username = (String) pending.getPrincipal();
 
-        LOGGER.info("[MFA] Recovery key verification");
+        LOGGER.info("[MFA] Recovery key verification attempt for user='{}' tenant='{}'",
+                username, resolvedTenant);
 
         boolean valid = mfaSecretService.verifyRecoveryKeyAndRevoke(username, recoveryKey);
         if (valid) {
@@ -542,7 +543,8 @@ public class MfaController {
             return redirectToRecovery(resolvedTenant);
         }
 
-        LOGGER.info("[MFA] Backup-code recovery attempt");
+        LOGGER.info("[MFA] Backup-code recovery attempt for user='{}' tenant='{}'",
+                username, resolvedTenant);
 
         MfaBackupCodeVerifyResponseDto result = mfaSecretService.verifyBackupCode(username, backupCode);
         if (result != null && result.valid()) {
@@ -636,7 +638,8 @@ public class MfaController {
         request.getSession(true).setAttribute(
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, ctx);
 
-        LOGGER.info("[MFA] Login completed");
+        LOGGER.info("[MFA] Login completed tenant='{}' user='{}' – resuming OAuth flow",
+                resolvedTenant, username);
 
         // Mark MFA verified in DB so MfaChallengeFilter does not re-intercept the
         // upcoming /oauth2/authorize redirect and loop back to challenge.
