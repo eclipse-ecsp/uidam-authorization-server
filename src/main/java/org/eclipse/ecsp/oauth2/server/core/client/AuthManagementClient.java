@@ -107,7 +107,7 @@ public class AuthManagementClient {
      * @return the client details as a RegisteredClientDetails object, or null if an error occurs.
      */
     public RegisteredClientDetails getClientDetails(String clientId) {
-        LOGGER.info("fetching client details for clientId {} from auth-mgmt", clientId);
+        LOGGER.info("fetching client details from auth-mgmt");
         
         try {
             // Get tenant properties for current tenant
