@@ -19,12 +19,12 @@
 package org.eclipse.ecsp.oauth2.server.core.cache.impl;
 
 import org.apache.commons.lang3.StringUtils;
-import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientService;
 import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
 import org.eclipse.ecsp.oauth2.server.core.client.AuthManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.service.RegisteredClientMapper;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

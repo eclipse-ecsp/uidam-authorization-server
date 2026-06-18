@@ -20,8 +20,8 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 
 import lombok.AllArgsConstructor;
 import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
-import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -100,7 +100,8 @@ public class ClientRegistrationManager implements RegisteredClientRepository {
             LOGGER.debug("## findByClientId {} - END", clientId);
             return clientDetails.getRegisteredClient();
         } else {
-            LOGGER.info("## issue while fetching client details for clientId {} - END", InputSanitizer.forLog(clientId));
+            LOGGER.info("## issue while fetching client details for clientId {} - END",
+                    InputSanitizer.forLog(clientId));
             return null;
         }
     }

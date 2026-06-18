@@ -170,7 +170,8 @@ public class MfaController {
                 ? enrollData.manualKey() : totpService.formatManualKey(secret);
         final String qrBase64  = totpService.generateQrCodeBase64FromUri(enrollData.qrUri());
 
-        LOGGER.info("[MFA] Enrollment setup tenant='{}' user='{}'", InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
+        LOGGER.info("[MFA] Enrollment setup tenant='{}' user='{}'",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         model.addAttribute(ATTR_TENANT,     resolvedTenant);
         model.addAttribute(ATTR_USERNAME,   username);
@@ -209,7 +210,8 @@ public class MfaController {
             return VIEW_ERROR;
         }
 
-        LOGGER.info("[MFA] Enrollment verify tenant='{}' user='{}'", InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
+        LOGGER.info("[MFA] Enrollment verify tenant='{}' user='{}'",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         if (totpService.validateCode(username, secret, totpCode)) {
             mfaSecretService.activateEnrollment(username);
@@ -316,7 +318,8 @@ public class MfaController {
         String username = (String) pending.getPrincipal();
         String secret   = mfaSecretService.getSecret(username).orElse(null);
 
-        LOGGER.info("[MFA] Challenge attempt tenant='{}' user='{}'", InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
+        LOGGER.info("[MFA] Challenge attempt tenant='{}' user='{}'",
+                InputSanitizer.forLog(resolvedTenant), InputSanitizer.forLog(username));
 
         if (secret != null && totpService.validateCode(username, secret, totpCode)) {
             mfaStateService.clearPending(request);

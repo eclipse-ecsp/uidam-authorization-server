@@ -65,7 +65,8 @@ public class AuthorizationController {
         required = true) String authorization, RevokeTokenRequest revokeTokenRequest) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
         LOGGER.info("Revoke token request for clientId: {} or username: {} ",
-                InputSanitizer.forLog(revokeTokenRequest.getClientId()), InputSanitizer.forLog(revokeTokenRequest.getUsername()));
+                InputSanitizer.forLog(revokeTokenRequest.getClientId()),
+                InputSanitizer.forLog(revokeTokenRequest.getUsername()));
         String response = authorizationService.revokeToken(revokeTokenRequest, authorization);
         return buildResponse(response, null, HttpStatus.OK, null);
     }

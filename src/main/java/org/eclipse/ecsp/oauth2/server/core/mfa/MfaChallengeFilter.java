@@ -275,7 +275,8 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         if (!requestedScopes.isEmpty()) {
             boolean match = requestedScopes.stream().anyMatch(stepUpScopes::contains);
             LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on requested scopes={} vs stepUp={} -> {}",
-                    requestedScopes.stream().map(InputSanitizer::forLog).collect(Collectors.toSet()), stepUpScopes, match);
+                    requestedScopes.stream().map(InputSanitizer::forLog).collect(Collectors.toSet()),
+                    stepUpScopes, match);
             return match;
         }
 
