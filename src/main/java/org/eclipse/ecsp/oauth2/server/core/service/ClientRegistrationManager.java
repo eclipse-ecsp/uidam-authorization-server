@@ -100,8 +100,10 @@ public class ClientRegistrationManager implements RegisteredClientRepository {
             LOGGER.debug("## findByClientId {} - END", clientId);
             return clientDetails.getRegisteredClient();
         } else {
-            LOGGER.info("## issue while fetching client details for clientId {} - END",
-                    InputSanitizer.forLog(clientId));
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("## issue while fetching client details for clientId {} - END",
+                        InputSanitizer.forLog(clientId));
+            }
             return null;
         }
     }
