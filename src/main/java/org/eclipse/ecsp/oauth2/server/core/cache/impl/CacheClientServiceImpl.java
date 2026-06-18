@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.cache.impl;
 
 import org.apache.commons.lang3.StringUtils;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientService;
 import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
 import org.eclipse.ecsp.oauth2.server.core.client.AuthManagementClient;
@@ -76,7 +77,7 @@ public class CacheClientServiceImpl implements CacheClientService {
         if (clientCacheDetails == null) {
             return null;
         }
-        LOGGER.info("Putting client details in cache for client id: {}", clientId);
+        LOGGER.info("Putting client details in cache for client id: {}", InputSanitizer.forLog(clientId));
         return clientCacheDetails;
     }
 

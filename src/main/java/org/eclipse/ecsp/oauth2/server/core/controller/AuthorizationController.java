@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.controller;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RevokeTokenRequest;
 import org.eclipse.ecsp.oauth2.server.core.response.BaseResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.AuthorizationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,7 +65,7 @@ public class AuthorizationController {
         required = true) String authorization, RevokeTokenRequest revokeTokenRequest) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
         LOGGER.info("Revoke token request for clientId: {} or username: {} ",
-                revokeTokenRequest.getClientId(), revokeTokenRequest.getUsername());
+                InputSanitizer.forLog(revokeTokenRequest.getClientId()), InputSanitizer.forLog(revokeTokenRequest.getUsername()));
         String response = authorizationService.revokeToken(revokeTokenRequest, authorization);
         return buildResponse(response, null, HttpStatus.OK, null);
     }
