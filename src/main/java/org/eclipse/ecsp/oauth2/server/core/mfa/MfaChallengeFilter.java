@@ -231,6 +231,10 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     private boolean requiresStepUp(HttpServletRequest request, Authentication auth,
             MfaPolicyProperties policy, String clientId, String accountName) {
 
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info("[MFA-FILTER] CONDITIONAL on client_id='{}'", InputSanitizer.forLog(clientId));
+            LOGGER.info("[MFA-FILTER] CONDITIONAL on account_id='{}'", InputSanitizer.forLog(accountName));
+        }
         // 0. Per-user MFA override: mfaRequired attribute from user-management (highest priority in CONDITIONAL)
         //    true  → always enforce MFA for this user
         //    false → always skip MFA for this user
@@ -248,10 +252,8 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         Set<String> stepUpClients = policy.getStepUpClientSet();
         if (!stepUpClients.isEmpty() && clientId != null && !clientId.isBlank()) {
             boolean clientMatch = stepUpClients.stream().anyMatch(c -> c.equalsIgnoreCase(clientId));
-            if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on client_id='{}' vs stepUpClients={} -> {}",
-                        InputSanitizer.forLog(clientId), stepUpClients, clientMatch);
-            }
+            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on stepUpClients={} -> {}",
+                stepUpClients, clientMatch);
             if (clientMatch) {
                 return true;
             }
@@ -261,8 +263,8 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         Set<String> stepUpAccounts = policy.getStepUpAccountSet();
         if (!stepUpAccounts.isEmpty() && accountName != null && !accountName.isBlank()) {
             boolean accountMatch = stepUpAccounts.stream().anyMatch(a -> a.equalsIgnoreCase(accountName));
-            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on accountId='{}' vs stepUpAccounts={} -> {}",
-                    accountName, stepUpAccounts, accountMatch);
+            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on stepUpAccounts={} -> {}",
+                    stepUpAccounts, accountMatch);
             if (accountMatch) {
                 return true;
             }
