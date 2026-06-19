@@ -24,6 +24,7 @@ import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
 import org.eclipse.ecsp.oauth2.server.core.client.AuthManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.service.RegisteredClientMapper;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,7 +77,9 @@ public class CacheClientServiceImpl implements CacheClientService {
         if (clientCacheDetails == null) {
             return null;
         }
-        LOGGER.info("Putting client details in cache for client id: {}", clientId);
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info("Putting client details in cache for client id: {}", InputSanitizer.forLog(clientId));
+        }
         return clientCacheDetails;
     }
 
