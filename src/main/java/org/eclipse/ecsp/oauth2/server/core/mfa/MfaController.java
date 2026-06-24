@@ -2,7 +2,14 @@ package org.eclipse.ecsp.oauth2.server.core.mfa;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
@@ -46,6 +53,7 @@ import java.util.Collections;
 public class MfaController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MfaController.class);
+    private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
     private static final String REDIRECT_PREFIX       = "redirect:";
     private static final String REDIRECT_LOGIN        = REDIRECT_PREFIX + "/login";
@@ -81,6 +89,8 @@ public class MfaController {
     private final MfaProperties mfaProperties;
     private final TenantConfigurationService tenantConfigurationService;
     private final MfaStateService mfaStateService;
+    private final AuditLogger auditLogger;
+    private final AuthorizationMetricsService metricsService;
 
     /**
      * Constructs an MfaController.
@@ -95,12 +105,16 @@ public class MfaController {
                          TotpService totpService,
                          MfaProperties mfaProperties,
                          TenantConfigurationService tenantConfigurationService,
-                         MfaStateService mfaStateService) {
-        this.mfaSecretService          = mfaSecretService;
-        this.totpService               = totpService;
-        this.mfaProperties             = mfaProperties;
+                         MfaStateService mfaStateService,
+                         AuditLogger auditLogger,
+                         AuthorizationMetricsService metricsService) {
+        this.mfaSecretService           = mfaSecretService;
+        this.totpService                = totpService;
+        this.mfaProperties              = mfaProperties;
         this.tenantConfigurationService = tenantConfigurationService;
-        this.mfaStateService           = mfaStateService;
+        this.mfaStateService            = mfaStateService;
+        this.auditLogger                = auditLogger;
+        this.metricsService             = metricsService;
     }
 
     // ──────────────────────── Model attribute ──────────────────────────────
@@ -220,6 +234,8 @@ public class MfaController {
         if (totpService.validateCode(username, secret, totpCode)) {
             mfaSecretService.activateEnrollment(username);
             LOGGER.info("[MFA] Enrollment VERIFIED for user='{}'", username);
+            recordAudit(AuditEventType.MFA_ENROLLMENT_COMPLETED, AuditEventResult.SUCCESS, username, request);
+            recordMetric(MetricType.MFA_ENROLLMENT_SUCCESS, resolvedTenant);
 
             model.addAttribute(ATTR_TENANT, resolvedTenant);
 
@@ -243,6 +259,8 @@ public class MfaController {
         }
 
         LOGGER.warn("[MFA] Enrollment verification FAILED for user='{}'", username);
+        recordAudit(AuditEventType.MFA_ENROLLMENT_VERIFY_FAILED, AuditEventResult.FAILURE, username, request);
+        recordMetric(MetricType.MFA_ENROLLMENT_FAILURE, resolvedTenant);
         model.addAttribute(ATTR_ERROR,      "Invalid code. Please check your authenticator app and try again.");
         model.addAttribute(ATTR_TENANT,     resolvedTenant);
         model.addAttribute(ATTR_USERNAME,   username);
@@ -328,11 +346,15 @@ public class MfaController {
         }
 
         if (secret != null && totpService.validateCode(username, secret, totpCode)) {
+            recordAudit(AuditEventType.MFA_CHALLENGE_SUCCESS, AuditEventResult.SUCCESS, username, request);
+            recordMetric(MetricType.MFA_CHALLENGE_SUCCESS, resolvedTenant);
             mfaStateService.clearPending(request);
             return completeLogin(username, resolvedTenant, request, response);
         }
 
         LOGGER.warn("[MFA] Challenge FAILED for user='{}'", username);
+        recordAudit(AuditEventType.MFA_CHALLENGE_FAILURE, AuditEventResult.FAILURE, username, request);
+        recordMetric(MetricType.MFA_CHALLENGE_FAILURE, resolvedTenant);
         model.addAttribute(ATTR_TENANT,   resolvedTenant);
         model.addAttribute(ATTR_USERNAME, username);
         model.addAttribute(ATTR_ERROR,    "Invalid code. Please try again.");
@@ -476,6 +498,8 @@ public class MfaController {
         boolean valid = mfaSecretService.verifyRecoveryKeyAndRevoke(username, recoveryKey);
         if (valid) {
             LOGGER.info("[MFA] Recovery key verified – enrollment revoked for user='{}'", username);
+            recordAudit(AuditEventType.MFA_RECOVERY_COMPLETED, AuditEventResult.SUCCESS, username, request);
+            recordMetric(MetricType.MFA_RECOVERY_SUCCESS, resolvedTenant);
 
             // Clear rate-limit state from DB
             mfaStateService.clearRecoveryState(username);
@@ -492,6 +516,8 @@ public class MfaController {
             return redirectToEnrollSetup(resolvedTenant);
         }
 
+        LOGGER.warn("[MFA] Recovery key verification FAILED for user='{}'", username);
+        recordAudit(AuditEventType.MFA_RECOVERY_FAILED, AuditEventResult.FAILURE, username, request);
         model.addAttribute(ATTR_TENANT,          resolvedTenant);
         model.addAttribute(ATTR_USERNAME,        username);
         model.addAttribute(ATTR_RESEND_COOLDOWN, mfaProperties.getRecovery().getResendCooldownSeconds());
@@ -564,6 +590,8 @@ public class MfaController {
         if (result != null && result.valid()) {
             LOGGER.info("[MFA] Backup-code verified for user='{}', remaining={}",
                     username, result.remainingBackupCodes());
+            recordAudit(AuditEventType.MFA_BACKUP_CODE_USED, AuditEventResult.SUCCESS, username, request);
+            recordMetric(MetricType.MFA_BACKUP_CODE_USED, resolvedTenant);
 
             mfaStateService.clearRecoveryState(username);    // clears email-verified flag in DB
             mfaSecretService.revoke(username);
@@ -735,5 +763,40 @@ public class MfaController {
             return REDIRECT_ROOT + resolvedTenant + "/mfa/recovery";
         }
         return "redirect:/mfa/recovery";
+    }
+
+    /**
+     * Records an MFA audit event. Never throws — failures are logged and swallowed so the
+     * main authentication flow is never disrupted by an audit subsystem error.
+     */
+    private void recordAudit(AuditEventType eventType, AuditEventResult result,
+                             String username, HttpServletRequest request) {
+        try {
+            UserActorContext actorContext = UserActorContext.builder()
+                    .username(username)
+                    .build();
+            HttpRequestContext requestContext = HttpRequestContext.from(request);
+            auditLogger.log(
+                    eventType.getType(),
+                    COMPONENT_NAME,
+                    result,
+                    eventType.getDescription(),
+                    actorContext,
+                    requestContext
+            );
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Failed to record audit event {}: {}", eventType, ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * Increments an MFA metric counter for the given tenant. Never throws.
+     */
+    private void recordMetric(MetricType metricType, String tenantId) {
+        try {
+            metricsService.incrementMetricsForTenant(tenantId, metricType);
+        } catch (Exception ex) {
+            LOGGER.error("[MFA] Failed to record metric {}: {}", metricType, ex.getMessage(), ex);
+        }
     }
 }
