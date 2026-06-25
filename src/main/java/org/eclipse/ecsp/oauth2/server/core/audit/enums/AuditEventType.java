@@ -65,8 +65,39 @@ public enum AuditEventType {
     TOKEN_REFRESHED("TOKEN_REFRESHED", "Access token refreshed using refresh token"),
     ACCESS_TOKEN_GENERATED("ACCESS_TOKEN_GENERATED", "Access token generated successfully"),
     
+    // ========== MFA Events ==========
+
+    MFA_ENROLLMENT_COMPLETED(
+        "MFA_ENROLLMENT_COMPLETED",
+        "MFA enrollment completed - TOTP verified and enrollment activated"
+    ),
+    MFA_ENROLLMENT_VERIFY_FAILED(
+        "MFA_ENROLLMENT_VERIFY_FAILED",
+        "MFA enrollment failed - invalid TOTP code during enrollment setup"
+    ),
+    MFA_CHALLENGE_SUCCESS(
+        "MFA_CHALLENGE_SUCCESS",
+        "MFA challenge verified - login completed successfully"
+    ),
+    MFA_CHALLENGE_FAILURE(
+        "MFA_CHALLENGE_FAILURE",
+        "MFA challenge failed - invalid TOTP code submitted"
+    ),
+    MFA_RECOVERY_COMPLETED(
+        "MFA_RECOVERY_COMPLETED",
+        "MFA recovery completed - recovery key verified and enrollment revoked"
+    ),
+    MFA_RECOVERY_FAILED(
+        "MFA_RECOVERY_FAILED",
+        "MFA recovery failed - invalid or expired recovery key"
+    ),
+    MFA_BACKUP_CODE_USED(
+        "MFA_BACKUP_CODE_USED",
+        "MFA backup code used successfully during account recovery"
+    ),
+
     // ========== Authorization Events ==========
-    
+
     AUTHZ_FAILURE_REVOKED_TOKEN("AUTHZ_FAILURE_REVOKED_TOKEN", "Authorization failed - token has been revoked");
     
     private final String type;

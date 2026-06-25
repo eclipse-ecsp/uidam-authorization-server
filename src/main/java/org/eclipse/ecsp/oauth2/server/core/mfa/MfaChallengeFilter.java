@@ -8,6 +8,8 @@ import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAu
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties.MfaMode;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
@@ -64,6 +66,7 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     private final MfaSecretService mfaSecretService;
     private final TenantConfigurationService tenantConfigurationService;
     private final MfaStateService mfaStateService;
+    private final AuthorizationMetricsService metricsService;
 
     /**
      * Constructs a MfaChallengeFilter.
@@ -74,10 +77,12 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
      */
     public MfaChallengeFilter(MfaSecretService mfaSecretService,
                               TenantConfigurationService tenantConfigurationService,
-                              MfaStateService mfaStateService) {
+                              MfaStateService mfaStateService,
+                              AuthorizationMetricsService metricsService) {
         this.mfaSecretService = mfaSecretService;
         this.tenantConfigurationService = tenantConfigurationService;
         this.mfaStateService = mfaStateService;
+        this.metricsService = metricsService;
     }
 
     @Override
@@ -346,6 +351,11 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
             Authentication auth, String username, String tenant) throws IOException {
         String target = mfaPath(tenant, "/mfa/enroll/setup");
         LOGGER.info("[MFA-FILTER] First-time MFA enroll for user='{}' – redirecting to: {}", username, target);
+        try {
+            metricsService.incrementMetricsForTenant(tenant, MetricType.MFA_ENROLLMENT_INITIATED);
+        } catch (Exception ex) {
+            LOGGER.error("[MFA-FILTER] Failed to record MFA_ENROLLMENT_INITIATED metric: {}", ex.getMessage(), ex);
+        }
         mfaStateService.savePending(request,
                 new MfaPendingAuthenticationToken(username, auth.getAuthorities()), tenant);
         SecurityContextHolder.clearContext();
