@@ -1,4 +1,3 @@
-#FROM artifactory-fr.harman.com:5067/ignite-core/ignite-api-base-java17-tomcat10-apr:1.1.0-4
 FROM azul/zulu-openjdk-alpine:25-latest
 WORKDIR /app
 
