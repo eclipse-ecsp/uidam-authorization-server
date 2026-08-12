@@ -20,7 +20,12 @@
 
 package org.eclipse.ecsp.oauth2.server.core.mfa;
 
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
+import org.eclipse.ecsp.audit.logger.AuditLogger;
+import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
@@ -54,6 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -86,6 +92,12 @@ class MfaControllerTest {
     @Mock
     private MfaStateService mfaStateService;
 
+    @Mock
+    private AuditLogger auditLogger;
+
+    @Mock
+    private AuthorizationMetricsService metricsService;
+
     private MfaProperties mfaProperties;
     private MfaController mfaController;
 
@@ -105,7 +117,7 @@ class MfaControllerTest {
         mfaProperties.setRecovery(recovery);
 
         mfaController = new MfaController(mfaSecretService, totpService, mfaProperties,
-                tenantConfigurationService, mfaStateService);
+                tenantConfigurationService, mfaStateService, auditLogger, metricsService);
         SecurityContextHolder.clearContext();
 
         TenantProperties tenantProperties = new TenantProperties();
@@ -967,6 +979,178 @@ class MfaControllerTest {
 
         // Should redirect to /custom-tenant/
         assertNotNull(view);
+    }
+
+    // ─────────────── Audit and Metrics verification ───────────────────────────
+
+    @Test
+    void enrollVerify_withValidCode_recordsAuditAndMetric() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
+        doNothing().when(mfaSecretService).activateEnrollment(USERNAME);
+        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
+
+        mfaController.enrollVerify(TENANT_ID, TOTP_CODE, request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_ENROLLMENT_COMPLETED.getType()),
+                anyString(),
+                eq(AuditEventResult.SUCCESS),
+                anyString(), any(), any());
+        verify(metricsService).incrementMetricsForTenant(eq(TENANT_ID),
+                eq(MetricType.MFA_ENROLLMENT_SUCCESS));
+    }
+
+    @Test
+    void enrollVerify_withInvalidCode_recordsAuditAndMetric() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(false);
+        when(totpService.formatManualKey(BASE32_SECRET)).thenReturn(MANUAL_KEY);
+        when(totpService.generateQrCodeBase64(USERNAME, BASE32_SECRET)).thenReturn("qrBase64");
+
+        mfaController.enrollVerify(TENANT_ID, TOTP_CODE, request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_ENROLLMENT_VERIFY_FAILED.getType()),
+                anyString(),
+                eq(AuditEventResult.FAILURE),
+                anyString(), any(), any());
+        verify(metricsService).incrementMetricsForTenant(eq(TENANT_ID),
+                eq(MetricType.MFA_ENROLLMENT_FAILURE));
+    }
+
+    @Test
+    void challengeSubmit_withValidCode_recordsAuditAndMetric() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
+
+        mfaController.challengeSubmit(TENANT_ID, TOTP_CODE, request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_CHALLENGE_SUCCESS.getType()),
+                anyString(),
+                eq(AuditEventResult.SUCCESS),
+                anyString(), any(), any());
+        verify(metricsService).incrementMetricsForTenant(eq(TENANT_ID),
+                eq(MetricType.MFA_CHALLENGE_SUCCESS));
+    }
+
+    @Test
+    void challengeSubmit_withInvalidCode_recordsAuditAndMetric() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(false);
+
+        mfaController.challengeSubmit(TENANT_ID, TOTP_CODE, request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_CHALLENGE_FAILURE.getType()),
+                anyString(),
+                eq(AuditEventResult.FAILURE),
+                anyString(), any(), any());
+        verify(metricsService).incrementMetricsForTenant(eq(TENANT_ID),
+                eq(MetricType.MFA_CHALLENGE_FAILURE));
+    }
+
+    @Test
+    void recoveryVerifyKey_withValidKey_recordsAuditAndMetric() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.verifyRecoveryKeyAndRevoke(USERNAME, "ABCDEF")).thenReturn(true);
+        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(false);
+
+        mfaController.recoveryVerifyKey(TENANT_ID, "ABCDEF", request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_RECOVERY_COMPLETED.getType()),
+                anyString(),
+                eq(AuditEventResult.SUCCESS),
+                anyString(), any(), any());
+        verify(metricsService).incrementMetricsForTenant(eq(TENANT_ID),
+                eq(MetricType.MFA_RECOVERY_SUCCESS));
+    }
+
+    @Test
+    void recoveryVerifyKey_withInvalidKey_recordsAuditOnly() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.verifyRecoveryKeyAndRevoke(USERNAME, "WRONG")).thenReturn(false);
+
+        mfaController.recoveryVerifyKey(TENANT_ID, "WRONG", request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_RECOVERY_FAILED.getType()),
+                anyString(),
+                eq(AuditEventResult.FAILURE),
+                anyString(), any(), any());
+        verify(metricsService, never()).incrementMetricsForTenant(anyString(), any());
+    }
+
+    @Test
+    void recoveryBackupSubmit_withValidCode_recordsAuditAndMetric() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaStateService.isRecoveryEmailVerified(USERNAME)).thenReturn(true);
+        when(mfaSecretService.isBackupCodesEnabled(USERNAME)).thenReturn(true);
+        MfaBackupCodeVerifyResponseDto result = new MfaBackupCodeVerifyResponseDto(true, 4, false);
+        when(mfaSecretService.verifyBackupCode(USERNAME, "BACKUP1")).thenReturn(result);
+        doNothing().when(mfaSecretService).revoke(USERNAME);
+
+        mfaController.recoveryBackupSubmit(TENANT_ID, "BACKUP1", request, new MockHttpServletResponse(),
+                new ExtendedModelMap());
+
+        verify(auditLogger).log(
+                eq(AuditEventType.MFA_BACKUP_CODE_USED.getType()),
+                anyString(),
+                eq(AuditEventResult.SUCCESS),
+                anyString(), any(), any());
+        verify(metricsService).incrementMetricsForTenant(eq(TENANT_ID),
+                eq(MetricType.MFA_BACKUP_CODE_USED));
+    }
+
+    @Test
+    void auditLogger_whenThrows_doesNotBreakMainFlow() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, Collections.emptyList());
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(false);
+        doThrow(new RuntimeException("audit subsystem down"))
+                .when(auditLogger).log(anyString(), anyString(), any(), anyString(), any(), any());
+
+        // Must not throw even when audit fails
+        String view = mfaController.challengeSubmit(TENANT_ID, TOTP_CODE, request,
+                new MockHttpServletResponse(), new ExtendedModelMap());
+
+        assertEquals("mfa/mfa-challenge", view);
     }
 
     // ─────────────── Helper methods ───────────────────────────────────────────
