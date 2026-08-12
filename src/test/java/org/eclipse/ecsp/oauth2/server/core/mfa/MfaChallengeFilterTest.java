@@ -25,6 +25,8 @@ import jakarta.servlet.ServletException;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.junit.jupiter.api.AfterEach;
@@ -56,6 +58,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -79,6 +82,9 @@ class MfaChallengeFilterTest {
     private MfaStateService mfaStateService;
 
     @Mock
+    private AuthorizationMetricsService metricsService;
+
+    @Mock
     private FilterChain filterChain;
 
     private MfaChallengeFilter filter;
@@ -96,7 +102,8 @@ class MfaChallengeFilterTest {
         defaultTenantField.setAccessible(true);
         defaultTenantField.set(tenantUtils, "ecsp");
 
-        filter = new MfaChallengeFilter(mfaSecretService, tenantConfigurationService, mfaStateService);
+        filter = new MfaChallengeFilter(mfaSecretService, tenantConfigurationService, mfaStateService,
+                metricsService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         SecurityContextHolder.clearContext();
@@ -580,6 +587,68 @@ class MfaChallengeFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
+    }
+
+    // ─────────────── MFA_ENROLLMENT_INITIATED metric ─────────────────────────
+
+    @Test
+    void doFilterInternal_unenrolledUser_recordsEnrollmentInitiatedMetric()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.REQUIRED);
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(metricsService).incrementMetricsForTenant(anyString(),
+                eq(MetricType.MFA_ENROLLMENT_INITIATED));
+        verify(filterChain, never()).doFilter(request, response);
+    }
+
+    @Test
+    void doFilterInternal_enrolledUser_doesNotRecordEnrollmentInitiatedMetric()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.REQUIRED);
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(metricsService, never()).incrementMetricsForTenant(anyString(), any());
+    }
+
+    @Test
+    void doFilterInternal_metricsServiceThrows_doesNotBreakFilterFlow()
+            throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        setAuthenticatedUser(USERNAME);
+
+        TenantProperties props = new TenantProperties();
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.REQUIRED);
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(false);
+        org.mockito.Mockito.doThrow(new RuntimeException("metrics down"))
+                .when(metricsService).incrementMetricsForTenant(anyString(), any());
+
+        // Must not throw — filter must redirect normally despite metrics failure
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertNotNull(response.getRedirectedUrl());
+        verify(filterChain, never()).doFilter(request, response);
     }
 
     // ─────────────── Helper ──────────────────────────────────────────────────
