@@ -302,4 +302,46 @@ class TenantAwareAuthenticationFilterTest {
             verify(filterChain).doFilter(request, response);
         }
     }
+
+    /**
+     * Regression test for a malformed redirect URL bug: {@code ERROR_REDIRECT_PATH} already contains
+     * {@code "?error=true"}, so the additional {@code error} param appended in
+     * {@code redirectToAlternativeAuth} must use {@code '&'}, not {@code '?'}, or the URL becomes
+     * invalid (e.g. {@code "?error=true?error=no_auth_methods_available"}).
+     */
+    @Test
+    void doFilterInternal_shouldProduceValidAmpersandJoinedUrl_whenNoAuthMethodsAvailable()
+            throws ServletException, IOException {
+        when(request.getRequestURI()).thenReturn("/login");
+        when(tenantConfigurationService.getTenantProperties()).thenThrow(new RuntimeException("Test exception"));
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            filter.doFilterInternal(request, response, filterChain);
+
+            verify(response).sendRedirect("/login?error=true&error=no_auth_methods_available");
+        }
+    }
+
+    /**
+     * Regression test for the equivalent malformed-URL bug in the top-level
+     * {@code catch (RuntimeException e)} branch of {@code doFilterInternal} (the
+     * {@code tenant_security_error} redirect).
+     */
+    @Test
+    void doFilterInternal_shouldProduceValidAmpersandJoinedUrl_whenRuntimeExceptionDuringFilterChain()
+            throws ServletException, IOException {
+        when(request.getRequestURI()).thenReturn("/api/data");
+        org.mockito.Mockito.doThrow(new RuntimeException("boom"))
+            .when(filterChain).doFilter(request, response);
+
+        try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
+            resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
+
+            filter.doFilterInternal(request, response, filterChain);
+
+            verify(response).sendRedirect("/login?error=true&error=tenant_security_error");
+        }
+    }
 }

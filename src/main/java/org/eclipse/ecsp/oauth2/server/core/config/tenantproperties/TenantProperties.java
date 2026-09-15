@@ -22,9 +22,12 @@ import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -54,6 +57,49 @@ public class TenantProperties {
     
     // Legacy External IDP List (for backward compatibility and direct property binding)
     private List<ExternalIdpRegisteredClient> externalIdpRegisteredClientList;
+
+    /**
+     * Signup-level feature flags (e.g. master on/off switch for additional attributes).
+     * Bound from {@code tenant.props.*.signup.*}.
+     */
+    private SignupProperties signup = new SignupProperties();
+
+    /**
+     * Per-client signup overrides. Keyed by OAuth2 client ID.
+     * Bound from {@code tenant.props.*.signup-config-list[n].*}.
+     */
+    private List<SignupClientConfig> signupConfigList = new ArrayList<>();
+
+    /**
+     * O(1) lookup of {@link #signupConfigList} by lower-cased client ID, kept in sync
+     * whenever {@link #setSignupConfigList} is called (including by property binding).
+     */
+    private final Map<String, SignupClientConfig> signupConfigLookup = new HashMap<>();
+
+    /**
+     * Sets the per-client signup config list and rebuilds the client-id lookup map.
+     *
+     * @param signupConfigList the per-client signup overrides
+     */
+    public void setSignupConfigList(List<SignupClientConfig> signupConfigList) {
+        this.signupConfigList = signupConfigList != null ? signupConfigList : new ArrayList<>();
+        signupConfigLookup.clear();
+        this.signupConfigList.forEach(cfg -> {
+            if (cfg != null && cfg.getClientId() != null) {
+                signupConfigLookup.put(cfg.getClientId().toLowerCase(Locale.ROOT), cfg);
+            }
+        });
+    }
+
+    /**
+     * O(1) lookup of the signup config for a given OAuth2 client ID (case-insensitive).
+     *
+     * @param clientId the OAuth2 client ID
+     * @return the matching {@link SignupClientConfig}, or {@code null} if none configured
+     */
+    public SignupClientConfig getSignupClientConfig(String clientId) {
+        return clientId == null ? null : signupConfigLookup.get(clientId.toLowerCase(Locale.ROOT));
+    }
 
     /**
      * Returns only the enabled external IDP registered clients.

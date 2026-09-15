@@ -29,28 +29,43 @@ import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
 import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.CustomOauth2TokenGenErrorCodes;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.ClientProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.ExternalIdpRegisteredClient;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.IdTokenProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.SignupClientConfig;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UserProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.FederatedUserDto;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.ClaimMappingService;
+import org.eclipse.ecsp.oauth2.server.core.service.ScopeRoleClaimMappingService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils;
+import org.eclipse.ecsp.oauth2.server.core.utils.OidcTokenHashingUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
+import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import org.springframework.security.oauth2.core.oidc.StandardClaimNames;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.oauth2.jose.jws.JwsAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenClaimsContext;
@@ -60,9 +75,10 @@ import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -70,12 +86,11 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_ACCOUNT_ID;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_ACCOUNT_NAME;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_ACCOUNT_TYPE;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_FIRST_NAME;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_EXTERNAL_IDP_ID_TOKEN;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_HEADER_ID_TOKEN_TYPE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_HEADER_JWT_ACCESS_TOKEN_TYPE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_HEADER_TYPE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_LAST_LOGON;
-import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_LAST_NAME;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_SCOPES;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_TENANT_ID;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CLAIM_USERNAME;
@@ -100,6 +115,15 @@ public class ClaimsConfigManager {
     private static final int TENANT_PREFIX_PARTS = 2;
     private static final String COMPONENT_NAME = "UIDAM_AUTHORIZATION_SERVER";
 
+    /**
+     * Prefix used in {@code custom-attributes-for-claims} to force lookup of a key in the
+     * user's dynamic/custom {@code additionalAttributes} map (from {@code user_attribute_values}),
+     * even if the key would otherwise match a mandatory {@link UserDetailsResponse} field name.
+     * Keys without this prefix are resolved directly against the mandatory fields instead
+     * (see {@link #resolveMandatoryFieldClaim}).
+     */
+    private static final String CUSTOM_ATTRIBUTE_CLAIM_PREFIX = "ATTR_";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ClaimsConfigManager.class);
 
     private final TenantConfigurationService tenantConfigurationService;
@@ -107,6 +131,7 @@ public class ClaimsConfigManager {
     private final ClaimMappingService claimMappingService;
     private final AuthorizationMetricsService authorizationMetricsService;
     private final AuditLogger auditLogger;
+    private final ScopeRoleClaimMappingService scopeRoleClaimMappingService;
 
     /**
      * Constructor for ClaimsConfigManager. It initializes the tenant configuration service
@@ -117,18 +142,20 @@ public class ClaimsConfigManager {
      * @param userManagementClient the client for user management operations
      * @param authorizationMetricsService the service for authorization metrics
      * @param auditLogger the audit logger
+     * @param scopeRoleClaimMappingService the service for dynamic external-role → internal-scope mapping
      */
-    @Autowired
     public ClaimsConfigManager(TenantConfigurationService tenantConfigurationService,
             ClaimMappingService claimMappingService,
             UserManagementClient userManagementClient,
             AuthorizationMetricsService authorizationMetricsService,
-            AuditLogger auditLogger) {
+            AuditLogger auditLogger,
+            ScopeRoleClaimMappingService scopeRoleClaimMappingService) {
         this.tenantConfigurationService = tenantConfigurationService;
         this.claimMappingService = claimMappingService;
         this.userManagementClient = userManagementClient;
         this.authorizationMetricsService = authorizationMetricsService;
         this.auditLogger = auditLogger;
+        this.scopeRoleClaimMappingService = scopeRoleClaimMappingService;
     }
 
     
@@ -161,15 +188,22 @@ public class ClaimsConfigManager {
     @Primary
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(CacheClientUtils cacheClientUtils) {
         return context -> {
-            UserDetailsResponse userDetailsResponse = retrieveUserDetails(context);
-            
             JwtClaimsSet.Builder claimsBuilder = context.getClaims();
             Set<String> scopeSet = claimsBuilder.build().getClaim(OAuth2ParameterNames.SCOPE);
-            
+
+            UserDetailsResponse userDetailsResponse = retrieveUserDetails(context, scopeSet);
+
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+                LOGGER.debug("jwtTokenCustomizer: building ACCESS_TOKEN claims for grantType={}, clientId={}",
+                        context.getAuthorizationGrantType().getValue(), context.getRegisteredClient().getClientId());
                 processAccessToken(context, cacheClientUtils, userDetailsResponse, claimsBuilder, scopeSet);
             } else if (context.getTokenType().getValue().equals(OidcParameterNames.ID_TOKEN)) {
+                LOGGER.debug("jwtTokenCustomizer: building ID_TOKEN claims for grantType={}, clientId={}",
+                        context.getAuthorizationGrantType().getValue(), context.getRegisteredClient().getClientId());
                 addClaimsForIdToken(context, userDetailsResponse, claimsBuilder);
+            } else {
+                LOGGER.debug("jwtTokenCustomizer: unhandled token type '{}' - no claims added",
+                        context.getTokenType().getValue());
             }
         };
     }
@@ -179,9 +213,11 @@ public class ClaimsConfigManager {
      * Supports both internal password authentication and federated authentication.
      *
      * @param context The JWT encoding context
+     * @param requestedScope the Requested Scope (client's requested {@code scope} claim); used to
+     *         drive dynamic scope-role mapping (Rule 2) for federated logins
      * @return UserDetailsResponse or null if not applicable
      */
-    private UserDetailsResponse retrieveUserDetails(JwtEncodingContext context) {
+    private UserDetailsResponse retrieveUserDetails(JwtEncodingContext context, Set<String> requestedScope) {
         String grantType = context.getAuthorizationGrantType().getValue();
         
         if (!AUTHORIZATION_CODE_GRANT_TYPE.equals(grantType) 
@@ -201,7 +237,7 @@ public class ClaimsConfigManager {
         
         if (context.getPrincipal() instanceof OAuth2AuthenticationToken oauth2AuthenticationToken) {
             LOGGER.debug("Federated user authentication");
-            return getUserDetailsForFederatedUser(oauth2AuthenticationToken);
+            return getUserDetailsForFederatedUser(oauth2AuthenticationToken, requestedScope);
         }
         
         return null;
@@ -239,9 +275,12 @@ public class ClaimsConfigManager {
      *
      * @param oauth2AuthenticationToken OAuth2AuthenticationToken representing the
      *                                  authenticated federated user.
+     * @param requestedScope the Requested Scope (client's requested {@code scope} claim); used to
+     *         drive dynamic scope-role mapping (Rule 2)
      * @return UserDetailsResponse containing the details of the federated user.
      */
-    private UserDetailsResponse getUserDetailsForFederatedUser(OAuth2AuthenticationToken oauth2AuthenticationToken) {
+    private UserDetailsResponse getUserDetailsForFederatedUser(OAuth2AuthenticationToken oauth2AuthenticationToken,
+            Set<String> requestedScope) {
         String tenantPrefixedRegistrationId = oauth2AuthenticationToken.getAuthorizedClientRegistrationId();
         String tenantId = getCurrentTenantProperties().getTenantId();
         authorizationMetricsService.incrementMetricsForTenant(
@@ -285,7 +324,12 @@ public class ClaimsConfigManager {
                                                                         federatedUserName,
                                                                         idpClient,
                                                                         claims);
-        
+
+        // Apply dynamic external-role -> internal-scope mapping on every federated login
+        LOGGER.debug("[EXTERNAL_IDP_TOKEN] Registration: " + tenantPrefixedRegistrationId 
+            + " | Claims from external IDP: " + claims);
+        scopeRoleClaimMappingService.applyScopeRoleMapping(idpClient, claims, requestedScope, userDetailsResponse);
+
         // Log successful external IDP authentication
         logIdpAuthenticationSuccess(userDetailsResponse, oauth2AuthenticationToken);
         
@@ -474,24 +518,28 @@ public class ClaimsConfigManager {
             UserDetailsResponse userDetailsResponse, JwtClaimsSet.Builder claimsBuilder, Set<String> scopeSet) {
         context.getJwsHeader().header(CLAIM_HEADER_TYPE, CLAIM_HEADER_JWT_ACCESS_TOKEN_TYPE);
         setStandardClaims(claimsBuilder);
+        String clientId = (clientDetails != null && clientDetails.getRegisteredClient() != null)
+                ? clientDetails.getRegisteredClient().getClientId() : null;
+        boolean isFederatedUser = isFederatedUser(context.getPrincipal());
         if (AUTHORIZATION_CODE_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
-            setUserCustomClaims(claimsBuilder, userDetailsResponse);
-            scopeSet = populateUserScopes(userDetailsResponse, scopeSet);
-            addScopeAndScopes(clientDetails, userDetailsResponse, claimsBuilder, scopeSet, false);
+            setUserCustomClaims(claimsBuilder, userDetailsResponse, clientId);
+            scopeSet = populateUserScopes(userDetailsResponse, scopeSet, isFederatedUser);
+            addScopeAndScopes(clientDetails, userDetailsResponse, claimsBuilder, scopeSet, false,
+                    isFederatedUser);
             LOGGER.debug("Claims added to JWT Access token for grant type - authorization_code");
         } else if (CLIENT_CREDENTIALS_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
             setClientCustomClaims(clientDetails, claimsBuilder);
-            addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, true);
+            addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, true, isFederatedUser);
             LOGGER.debug("Claims added to JWT Access token for grant type - client_credentials");
         } else if (REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
             if (userDetailsResponse != null) {
-                setUserCustomClaims(claimsBuilder, userDetailsResponse);
-                scopeSet = populateUserScopes(userDetailsResponse, scopeSet);
+                setUserCustomClaims(claimsBuilder, userDetailsResponse, clientId);
+                scopeSet = populateUserScopes(userDetailsResponse, scopeSet, isFederatedUser);
             } else {
                 LOGGER.warn("userDetailsResponse is null during refresh_token grant "
                         + "(PKCE/public client flow) - skipping user claims, using existing scope");
             }
-            addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, false);
+            addScopeAndScopes(clientDetails, null, claimsBuilder, scopeSet, false, isFederatedUser);
             LOGGER.debug("Claims added to JWT Access token for grant type - refresh_token");
         }
     }
@@ -501,33 +549,304 @@ public class ClaimsConfigManager {
      * about the user that are included in the ID token. The claims are customized
      * based on the context and user details response.
      *
+     * <p>Additional claims are selected by {@link IdTokenProperties} and resolved only from the UIDAM
+     * {@link UserDetailsResponse}. Standard ID-token claims cannot be overwritten through configuration.
+     *
      * @param context             JwtEncodingContext containing the OAuth 2.0 JWT
      *                            Token attributes.
      * @param userDetailsResponse UserDetailsResponse containing the details of the
-     *                            user.
+     *                            user. May be {@code null} when the federated IdP is configured
+     *                            with a {@code token-info-source} other than
+     *                            {@code FETCH_INTERNAL_USER}; user-derived claims are skipped in
+     *                            that case.
      */
     private void addClaimsForIdToken(JwtEncodingContext context, UserDetailsResponse userDetailsResponse,
             JwtClaimsSet.Builder claimsBuilder) {
 
         context.getJwsHeader().header(CLAIM_HEADER_TYPE, CLAIM_HEADER_ID_TOKEN_TYPE);
 
-        claimsBuilder.claim(JwtClaimNames.JTI, UUID.randomUUID().toString())
-                .claim(CLAIM_USER_ID, userDetailsResponse.getId())
-                .claim(CLAIM_USERNAME, userDetailsResponse.getUserName());
-        Map<String, Object> additionalAttributes = userDetailsResponse.getAdditionalAttributes();
-        if (!CollectionUtils.isEmpty(additionalAttributes)) {
-            LOGGER.debug("Adding claims from additional attributes");
-            for (Map.Entry<String, Object> entry : additionalAttributes.entrySet()) {
-                if (additionalAttributes.containsKey(CLAIM_FIRST_NAME) && !ObjectUtils.isEmpty(entry.getValue())) {
-                    claimsBuilder.claim(CLAIM_FIRST_NAME, entry.getValue());
-                }
-                if (additionalAttributes.containsKey(CLAIM_LAST_NAME) && !ObjectUtils.isEmpty(entry.getValue())) {
-                    claimsBuilder.claim(CLAIM_LAST_NAME, entry.getValue());
-                }
+        claimsBuilder.claim(JwtClaimNames.JTI, UUID.randomUUID().toString());
+        if (userDetailsResponse == null) {
+            LOGGER.warn("userDetailsResponse is null while building ID token - skipping user-derived claims");
+        } else {
+            addUidamSubjectForFederatedUser(context, claimsBuilder, userDetailsResponse);
+            addConfiguredClaimsForIdToken(claimsBuilder, userDetailsResponse);
+            addOidcScopeClaims(context, claimsBuilder, userDetailsResponse);
+        }
+        addProtocolTokenHashClaims(context, claimsBuilder);
+        addExternalIdpIdToken(context, claimsBuilder);
+
+        LOGGER.debug("Claims added to ID token");
+    }
+
+    /**
+     * Uses the UIDAM user identifier as the ID-token subject for federated users.
+     * Spring Authorization Server initially derives {@code sub} from the external
+     * IdP principal, so it must be replaced after the federated user is resolved
+     * in UIDAM. Internal users retain the subject established by the authorization
+     * server.
+     *
+     * @param context ID-token encoding context
+     * @param claimsBuilder ID-token claims builder
+     * @param userDetailsResponse resolved UIDAM user details
+     */
+    private void addUidamSubjectForFederatedUser(JwtEncodingContext context,
+            JwtClaimsSet.Builder claimsBuilder, UserDetailsResponse userDetailsResponse) {
+        if (!(context.getPrincipal() instanceof OAuth2AuthenticationToken)) {
+            return;
+        }
+        if (!StringUtils.hasText(userDetailsResponse.getId())) {
+            LOGGER.warn("UIDAM user ID is unavailable while building a federated ID token; retaining existing sub");
+            return;
+        }
+        claimsBuilder.subject(userDetailsResponse.getId());
+    }
+
+    /**
+     * Adds standard OpenID Connect claims selected by the authorized {@code profile},
+     * {@code email}, {@code address}, and {@code phone} scopes. UIDAM field names are
+     * translated to their standard OIDC claim names.
+     *
+     * @param context ID-token encoding context
+     * @param claimsBuilder ID-token claims builder
+     * @param userDetailsResponse UIDAM user details
+     */
+    private void addOidcScopeClaims(JwtEncodingContext context, JwtClaimsSet.Builder claimsBuilder,
+            UserDetailsResponse userDetailsResponse) {
+        Set<String> authorizedScopes = context.getAuthorizedScopes();
+        if (CollectionUtils.isEmpty(authorizedScopes)) {
+            return;
+        }
+
+        if (authorizedScopes.contains(OidcScopes.PROFILE)) {
+            addProfileScopeClaims(claimsBuilder, userDetailsResponse);
+        }
+        if (authorizedScopes.contains(OidcScopes.EMAIL)) {
+            addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.EMAIL, "email");
+            addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.EMAIL_VERIFIED,
+                    "email_verified", "emailVerified");
+        }
+        if (authorizedScopes.contains(OidcScopes.ADDRESS)) {
+            Object address = resolveAddressClaim(userDetailsResponse);
+            if (!ObjectUtils.isEmpty(address)) {
+                claimsBuilder.claim(StandardClaimNames.ADDRESS, address);
             }
         }
-        LOGGER.debug("Added claims from additional attributes");
-        LOGGER.debug("Claims added to ID token");
+        if (authorizedScopes.contains(OidcScopes.PHONE)) {
+            addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.PHONE_NUMBER,
+                    "phone_number", "phoneNumber");
+            addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.PHONE_NUMBER_VERIFIED,
+                    "phone_number_verified", "phoneNumberVerified");
+        }
+    }
+
+    private void addProfileScopeClaims(JwtClaimsSet.Builder claimsBuilder,
+            UserDetailsResponse userDetailsResponse) {
+        Object name = resolveUserDetailValue(userDetailsResponse, "name", "fullName");
+        if (ObjectUtils.isEmpty(name)) {
+            name = buildFullName(userDetailsResponse);
+        }
+        if (!ObjectUtils.isEmpty(name)) {
+            claimsBuilder.claim(StandardClaimNames.NAME, name);
+        }
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.GIVEN_NAME,
+                "given_name", "givenName", "firstName");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.FAMILY_NAME,
+                "family_name", "familyName", "lastName");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.MIDDLE_NAME,
+                "middle_name", "middleName");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.NICKNAME,
+                "nickname", "nickName");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.PREFERRED_USERNAME,
+                "preferred_username", "preferredUsername", "userName");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.PROFILE, "profile");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.PICTURE, "picture");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.WEBSITE, "website");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.GENDER, "gender");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.BIRTHDATE,
+                "birthdate", "birthDate");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.ZONEINFO,
+                "zoneinfo", "timeZone", "timezone");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.LOCALE, "locale");
+        addClaimIfPresent(claimsBuilder, userDetailsResponse, StandardClaimNames.UPDATED_AT,
+                "updated_at", "updatedAt");
+    }
+
+    private void addClaimIfPresent(JwtClaimsSet.Builder claimsBuilder, UserDetailsResponse userDetailsResponse,
+            String claimName, String... sourceKeys) {
+        Object value = resolveUserDetailValue(userDetailsResponse, sourceKeys);
+        if (!ObjectUtils.isEmpty(value)) {
+            claimsBuilder.claim(claimName, value);
+        }
+    }
+
+    private Object resolveUserDetailValue(UserDetailsResponse userDetailsResponse, String... sourceKeys) {
+        Map<String, Object> additionalAttributes = userDetailsResponse.getAdditionalAttributes();
+        for (String sourceKey : sourceKeys) {
+            Object value = resolveMandatoryFieldClaim(userDetailsResponse, sourceKey);
+            if (ObjectUtils.isEmpty(value) && !CollectionUtils.isEmpty(additionalAttributes)) {
+                value = additionalAttributes.get(sourceKey);
+            }
+            if (!ObjectUtils.isEmpty(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Object buildFullName(UserDetailsResponse userDetailsResponse) {
+        Object givenName = resolveUserDetailValue(userDetailsResponse, "given_name", "givenName", "firstName");
+        Object familyName = resolveUserDetailValue(userDetailsResponse, "family_name", "familyName", "lastName");
+        String fullName = ((ObjectUtils.isEmpty(givenName) ? "" : givenName.toString()) + " "
+                + (ObjectUtils.isEmpty(familyName) ? "" : familyName.toString())).trim();
+        return StringUtils.hasText(fullName) ? fullName : null;
+    }
+
+    private Object resolveAddressClaim(UserDetailsResponse userDetailsResponse) {
+        Object existingAddress = resolveUserDetailValue(userDetailsResponse, StandardClaimNames.ADDRESS);
+        if (existingAddress instanceof Map<?, ?> && !ObjectUtils.isEmpty(existingAddress)) {
+            return existingAddress;
+        }
+
+        Map<String, Object> address = new LinkedHashMap<>();
+        Object formattedAddress = resolveUserDetailValue(userDetailsResponse, "formatted");
+        if (ObjectUtils.isEmpty(formattedAddress) && existingAddress instanceof String) {
+            formattedAddress = existingAddress;
+        }
+        putIfPresent(address, "formatted", formattedAddress);
+
+        Object streetAddress = resolveUserDetailValue(userDetailsResponse, "street_address", "streetAddress");
+        if (ObjectUtils.isEmpty(streetAddress)) {
+            streetAddress = buildStreetAddress(userDetailsResponse);
+        }
+        putIfPresent(address, "street_address", streetAddress);
+        putIfPresent(address, "locality", resolveUserDetailValue(userDetailsResponse, "locality", "city"));
+        putIfPresent(address, "region", resolveUserDetailValue(userDetailsResponse, "region", "state"));
+        putIfPresent(address, "postal_code",
+                resolveUserDetailValue(userDetailsResponse, "postal_code", "postalCode"));
+        putIfPresent(address, "country", resolveUserDetailValue(userDetailsResponse, "country"));
+        return address.isEmpty() ? null : address;
+    }
+
+    private Object buildStreetAddress(UserDetailsResponse userDetailsResponse) {
+        Object address1 = resolveUserDetailValue(userDetailsResponse, "address1");
+        Object address2 = resolveUserDetailValue(userDetailsResponse, "address2");
+        String streetAddress = ((ObjectUtils.isEmpty(address1) ? "" : address1.toString()) + "\n"
+                + (ObjectUtils.isEmpty(address2) ? "" : address2.toString())).trim();
+        return StringUtils.hasText(streetAddress) ? streetAddress : null;
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (!ObjectUtils.isEmpty(value)) {
+            target.put(key, value);
+        }
+    }
+
+    /**
+     * Adds the OpenID Connect hashes for the access token and authorization code used
+     * in the initial authorization-code exchange. These values are derived from the
+     * protocol artifacts and must never be sourced from configured user attributes.
+     *
+     * @param context ID-token encoding context
+     * @param claimsBuilder ID-token claims builder
+     */
+    private void addProtocolTokenHashClaims(JwtEncodingContext context, JwtClaimsSet.Builder claimsBuilder) {
+        if (!AuthorizationGrantType.AUTHORIZATION_CODE.equals(context.getAuthorizationGrantType())) {
+            return;
+        }
+
+        OAuth2Authorization authorization = context.getAuthorization();
+        if (authorization == null) {
+            LOGGER.warn("Authorization is unavailable while building ID-token hash claims");
+            return;
+        }
+
+        JwsAlgorithm signingAlgorithm = context.getJwsHeader().build().getAlgorithm();
+        OAuth2Authorization.Token<OAuth2AccessToken> accessToken = authorization.getAccessToken();
+        if (accessToken != null && StringUtils.hasText(accessToken.getToken().getTokenValue())) {
+            claimsBuilder.claim(IdTokenClaimNames.AT_HASH,
+                    OidcTokenHashingUtil.createTokenHash(accessToken.getToken().getTokenValue(), signingAlgorithm));
+        }
+
+        OAuth2Authorization.Token<OAuth2AuthorizationCode> authorizationCode =
+                authorization.getToken(OAuth2AuthorizationCode.class);
+        if (authorizationCode != null && StringUtils.hasText(authorizationCode.getToken().getTokenValue())) {
+            claimsBuilder.claim(IdTokenClaimNames.C_HASH,
+                    OidcTokenHashingUtil.createTokenHash(
+                            authorizationCode.getToken().getTokenValue(), signingAlgorithm));
+        }
+    }
+
+    /**
+     * Adds configured claims from UIDAM mandatory fields or dynamic additional attributes.
+     * Missing values and standard ID-token claim names are skipped.
+     *
+     * @param claimsBuilder ID-token claims builder
+     * @param userDetailsResponse UIDAM user details
+     */
+    private void addConfiguredClaimsForIdToken(JwtClaimsSet.Builder claimsBuilder,
+            UserDetailsResponse userDetailsResponse) {
+        ClientProperties clientProperties = getCurrentTenantProperties().getClient();
+        if (clientProperties == null) {
+            return;
+        }
+        IdTokenProperties idTokenProperties = clientProperties.getIdTokenProperties();
+        if (idTokenProperties == null) {
+            return;
+        }
+        List<String> configuredClaims = idTokenProperties.getAdditionalClaimNames();
+        if (CollectionUtils.isEmpty(configuredClaims)) {
+            return;
+        }
+        Map<String, Object> additionalAttributes = userDetailsResponse.getAdditionalAttributes();
+        for (String claimName : configuredClaims) {
+            if (idTokenProperties.isMandatoryClaim(claimName)) {
+                LOGGER.warn("Ignoring configured standard ID-token claim '{}'", claimName);
+                continue;
+            }
+            Object claimValue = resolveMandatoryFieldClaim(userDetailsResponse, claimName);
+            if (ObjectUtils.isEmpty(claimValue) && !CollectionUtils.isEmpty(additionalAttributes)) {
+                claimValue = additionalAttributes.get(claimName);
+            }
+            if (ObjectUtils.isEmpty(claimValue)) {
+                LOGGER.warn("Configured ID-token claim '{}' was not found in UIDAM user details", claimName);
+                continue;
+            }
+            claimsBuilder.claim(claimName, claimValue);
+        }
+    }
+
+    /**
+     * Adds the external provider's raw ID token to the UIDAM ID token when enabled
+     * for the authenticated provider.
+     *
+     * <p>If the provider uses OAuth 2.0 without OIDC, no upstream ID token exists
+     * and the claim is safely omitted.
+     *
+     * @param context JWT encoding context containing the federated principal
+     * @param claimsBuilder UIDAM ID-token claims builder
+     */
+    private void addExternalIdpIdToken(JwtEncodingContext context, JwtClaimsSet.Builder claimsBuilder) {
+        if (!(context.getPrincipal() instanceof OAuth2AuthenticationToken oauth2Token)) {
+            return;
+        }
+
+        ExternalIdpRegisteredClient idpClient =
+                findExternalIdpClient(oauth2Token.getAuthorizedClientRegistrationId());
+        if (idpClient == null || !idpClient.isIncludeIdpIdToken()) {
+            return;
+        }
+
+        if (!(oauth2Token.getPrincipal() instanceof OidcUser oidcUser)
+                || oidcUser.getIdToken() == null
+                || !StringUtils.hasText(oidcUser.getIdToken().getTokenValue())) {
+            LOGGER.warn("External IdP '{}' is configured to include its ID token, but no OIDC ID token is available",
+                    idpClient.getRegistrationId());
+            return;
+        }
+
+        claimsBuilder.claim(CLAIM_EXTERNAL_IDP_ID_TOKEN, oidcUser.getIdToken().getTokenValue());
+        LOGGER.debug("Added external IdP ID token for provider '{}'", idpClient.getRegistrationId());
     }
 
     /**
@@ -566,9 +885,9 @@ public class ClaimsConfigManager {
      * @param userDetailsResponse UserDetailsResponse containing the details of the
      *                            user.
      */
-    private void setUserCustomClaims(JwtClaimsSet.Builder claimsBuilder, UserDetailsResponse userDetailsResponse) {
+    private void setUserCustomClaims(JwtClaimsSet.Builder claimsBuilder, UserDetailsResponse userDetailsResponse,
+            String clientId) {
         LOGGER.debug("## setUserCustomClaims - START");
-
         claimsBuilder.claim(CLAIM_USER_ID, userDetailsResponse.getId());
         if (StringUtils.hasText(userDetailsResponse.getLastSuccessfulLoginTime())) {
             claimsBuilder.claim(CLAIM_LAST_LOGON, userDetailsResponse.getLastSuccessfulLoginTime());
@@ -580,24 +899,170 @@ public class ClaimsConfigManager {
             claimsBuilder.claim(CLAIM_USERNAME, userDetailsResponse.getUserName());
         }
         Map<String, Object> additionalAttributes = userDetailsResponse.getAdditionalAttributes();
+        TenantProperties tenantProperties = getCurrentTenantProperties();
         if (!CollectionUtils.isEmpty(additionalAttributes)) {
             LOGGER.info("Adding claims from additional attributes");
-            List<String> additionalClaimsAttributesList;
-            TenantProperties tenantProperties = getCurrentTenantProperties();
-            for (Map.Entry<String, Object> entry : additionalAttributes.entrySet()) {
-                if (Objects.nonNull(tenantProperties) && Objects.nonNull(tenantProperties.getUser())
-                        && Objects.nonNull(tenantProperties.getUser().getJwtAdditionalClaimAttributes())) {
-                    additionalClaimsAttributesList = Arrays.asList(tenantProperties.getUser()
-                            .getJwtAdditionalClaimAttributes().replaceAll("\\s", "").split(COMMA_DELIMITER));
-                    if (additionalClaimsAttributesList.contains(entry.getKey())) {
-                        claimsBuilder.claim(entry.getKey(), entry.getValue());
-                        LOGGER.debug("Added claims from additional attributes");
-                    }
-                }
+            addTenantLevelAdditionalClaims(claimsBuilder, additionalAttributes, tenantProperties);
+        }
+        // Client-specific claims may reference mandatory fields too, so this must run
+        // even when additionalAttributes is empty (unlike the tenant-level claims above).
+        addClientSpecificClaims(claimsBuilder, userDetailsResponse, tenantProperties, clientId);
+        LOGGER.debug("## setUserCustomClaims - END");
+    }
+
+    /**
+     * Adds tenant-level additional claim attributes to the JWT based on the
+     * {@code tenant.props.*.user.jwt-additional-claim-attributes} allow-list.
+     *
+     * @param claimsBuilder        the JWT claims builder
+     * @param additionalAttributes the user's additional attributes map
+     * @param tenantProperties     the current tenant properties
+     */
+    private void addTenantLevelAdditionalClaims(JwtClaimsSet.Builder claimsBuilder,
+            Map<String, Object> additionalAttributes, TenantProperties tenantProperties) {
+        UserProperties userProps = tenantProperties.getUser();
+        if (userProps == null || !StringUtils.hasText(userProps.getJwtAdditionalClaimAttributes())) {
+            return;
+        }
+        List<String> allowList = Arrays.asList(
+                userProps.getJwtAdditionalClaimAttributes().replaceAll("\\s", "").split(COMMA_DELIMITER));
+        for (Map.Entry<String, Object> entry : additionalAttributes.entrySet()) {
+            if (allowList.contains(entry.getKey())) {
+                claimsBuilder.claim(entry.getKey(), entry.getValue());
+                LOGGER.debug("Added tenant-level additional claim: {}", entry.getKey());
             }
         }
+    }
 
-        LOGGER.debug("## setUserCustomClaims - END");
+    /**
+     * Adds client-specific additional claim attributes to the JWT based on the matching
+     * {@code signup-config-list} entry's {@code custom-attributes-for-claims} property.
+     * If the property is absent or blank, no per-client custom claims are added.
+     *
+     * @param claimsBuilder        the JWT claims builder
+     * @param userDetailsResponse  the user's details (source of both mandatory fields and
+     *                             the dynamic {@code additionalAttributes} map)
+     * @param tenantProperties     the current tenant properties
+     * @param clientId             the OAuth2 client ID of the current request (may be null)
+     */
+    private void addClientSpecificClaims(JwtClaimsSet.Builder claimsBuilder,
+            UserDetailsResponse userDetailsResponse, TenantProperties tenantProperties, String clientId) {
+        if (!StringUtils.hasText(clientId)) {
+            return;
+        }
+        SignupClientConfig config = tenantProperties.getSignupClientConfig(clientId);
+        if (config != null) {
+            applyClientConfig(claimsBuilder, userDetailsResponse, config, clientId);
+        }
+    }
+
+    /**
+     * Applies a resolved {@link SignupClientConfig} to write client-specific claims.
+     * Uses the explicit {@code custom-attributes-for-claims} allow-list: if blank or
+     * null, no custom attributes are added. Each listed key is resolved one of two ways:
+     * <ul>
+     *   <li>Prefixed with {@value #CUSTOM_ATTRIBUTE_CLAIM_PREFIX} — looked up (after stripping
+     *       the prefix) in the user's dynamic {@code additionalAttributes} map, i.e. a custom
+     *       signup attribute from {@code user_attribute_values}.</li>
+     *   <li>No prefix — resolved directly from the mandatory, fixed {@link UserDetailsResponse}
+     *       fields (e.g. {@code userName}, {@code email}) via {@link #resolveMandatoryFieldClaim}.</li>
+     * </ul>
+     * Missing or empty values are logged and skipped rather than failing the token issuance.
+     *
+     * @param claimsBuilder       the JWT claims builder
+     * @param userDetailsResponse the user's details
+     * @param config              the matched signup client config entry
+     * @param clientId            the OAuth2 client ID (used for logging)
+     */
+    private void applyClientConfig(JwtClaimsSet.Builder claimsBuilder,
+            UserDetailsResponse userDetailsResponse,
+            SignupClientConfig config,
+            String clientId) {
+        if (!StringUtils.hasText(config.getCustomAttributesForClaims())) {
+            LOGGER.debug("Client '{}': customAttributesForClaims not configured, skipping custom claims",
+                    clientId);
+            return;
+        }
+        Map<String, Object> additionalAttributes = userDetailsResponse.getAdditionalAttributes();
+        List<String> claimKeys = Arrays.stream(config.getCustomAttributesForClaims().split(COMMA_DELIMITER))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toList();
+        for (String key : claimKeys) {
+            try {
+                boolean isCustomAttribute = key.startsWith(CUSTOM_ATTRIBUTE_CLAIM_PREFIX);
+                String resolvedKey = isCustomAttribute
+                        ? key.substring(CUSTOM_ATTRIBUTE_CLAIM_PREFIX.length())
+                        : key;
+                Object value = isCustomAttribute
+                        ? resolveCustomAttributeClaim(additionalAttributes, resolvedKey)
+                        : resolveMandatoryFieldClaim(userDetailsResponse, resolvedKey);
+                if (ObjectUtils.isEmpty(value)) {
+                    logMissingClaimValue(clientId, key, isCustomAttribute);
+                    continue;
+                }
+                claimsBuilder.claim(resolvedKey, value);
+                LOGGER.debug("Added {} claim '{}' for client '{}'",
+                        isCustomAttribute ? "custom attribute" : "mandatory field", resolvedKey, clientId);
+            } catch (Exception ex) {
+                LOGGER.error("Client '{}': error adding custom claim '{}'", clientId, key, ex);
+            }
+        }
+    }
+
+    /**
+     * Logs a warning for a claim key that resolved to no value. Unprefixed keys only match the
+     * fixed set in {@link #resolveMandatoryFieldClaim} (e.g. NOT {@code firstName}/{@code lastName},
+     * which live in {@code additionalAttributes}), so the message hints at the {@code ATTR_} prefix.
+     *
+     * @param clientId         the OAuth2 client ID (used for logging)
+     * @param key              the original, unresolved claim key (including any prefix)
+     * @param isCustomAttribute whether the key was resolved as a custom/dynamic attribute
+     */
+    private void logMissingClaimValue(String clientId, String key, boolean isCustomAttribute) {
+        if (isCustomAttribute) {
+            LOGGER.warn("Client '{}': custom attribute claim key '{}' not found or empty", clientId, key);
+        } else {
+            LOGGER.warn("Client '{}': mandatory field claim key '{}' not recognised or empty. "
+                            + "If this is a dynamic/custom attribute, prefix it with {} (e.g. {}{})",
+                    clientId, key, CUSTOM_ATTRIBUTE_CLAIM_PREFIX, CUSTOM_ATTRIBUTE_CLAIM_PREFIX, key);
+        }
+    }
+
+    /**
+     * Looks up a custom/dynamic signup attribute value by name.
+     *
+     * @param additionalAttributes the user's dynamic attribute map (may be null or empty)
+     * @param key                  the attribute name (already stripped of the {@code ATTR_} prefix)
+     * @return the attribute value, or {@code null} if absent
+     */
+    private Object resolveCustomAttributeClaim(Map<String, Object> additionalAttributes, String key) {
+        return CollectionUtils.isEmpty(additionalAttributes) ? null : additionalAttributes.get(key);
+    }
+
+    /**
+     * Resolves a mandatory/core {@link UserDetailsResponse} field by name (case-insensitive).
+     * The supported field names are hardcoded here since the full set of mandatory user fields
+     * eligible for claims is fixed and small (id, userName, email, accountId, status, tenantId,
+     * lastSuccessfulLoginTime, mfaRequired); an unrecognised name simply resolves to {@code null}
+     * and is logged by the caller.
+     *
+     * @param userDetailsResponse the user's details
+     * @param key                 the mandatory field name (e.g. {@code userName}, {@code email})
+     * @return the field value, or {@code null} if the name is not a recognised mandatory field
+     */
+    private Object resolveMandatoryFieldClaim(UserDetailsResponse userDetailsResponse, String key) {
+        return switch (key.toLowerCase(Locale.ROOT)) {
+            case "id" -> userDetailsResponse.getId();
+            case "username" -> userDetailsResponse.getUserName();
+            case "email" -> userDetailsResponse.getEmail();
+            case "accountid" -> userDetailsResponse.getAccountId();
+            case "status" -> userDetailsResponse.getStatus();
+            case "tenantid" -> userDetailsResponse.getTenantId();
+            case "lastsuccessfullogintime" -> userDetailsResponse.getLastSuccessfulLoginTime();
+            case "mfarequired" -> userDetailsResponse.getMfaRequired();
+            default -> null;
+        };
     }
 
     /**
@@ -628,8 +1093,20 @@ public class ClaimsConfigManager {
      * @return The (possibly enriched) scope set to use for claim population.
      */
     private Set<String> populateUserScopes(UserDetailsResponse userDetailsResponse,
-                                           Set<String> scopeSet) {
+                                           Set<String> scopeSet,
+                                           boolean isFederatedUser) {
         LOGGER.debug("## populateUserScopes - START");
+        if (isFederatedUser && userDetailsResponse != null
+                && !CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            // ScopeRoleClaimMappingService already resolved the final scope onto
+            // userDetailsResponse - it may deliberately differ from the raw client request
+            // (e.g. EXTERNAL/BOTH), so it always wins here, blank request or not.
+            scopeSet = new java.util.HashSet<>(userDetailsResponse.getScopes());
+            LOGGER.debug("populateUserScopes: scope-role-mapping resolved scopeSet={}", scopeSet);
+            LOGGER.debug("## populateUserScopes - END");
+            return scopeSet;
+        }
+
         TenantProperties tenantProperties = getCurrentTenantProperties();
         Boolean portalScopelessUserScopes = tenantProperties.getClient().getAuthCodeScopelessUserScopes();
         if (Boolean.TRUE.equals(portalScopelessUserScopes)
@@ -663,12 +1140,16 @@ public class ClaimsConfigManager {
      * 
      * @param isClientCredentialsGrantType boolean indicating if the grant type is
      *                                     client credentials.
+     * @param isFederatedUser boolean indicating if the principal authenticated via
+     *                                     an external IDP (federated login) 
+     *                                     {@link #addScopeAndScopesForNotClientCredsGrantType}.
      */
     private void addScopeAndScopes(ClientCacheDetails clientDetails,
                                    UserDetailsResponse userDetailsResponse,
                                    JwtClaimsSet.Builder claimsBuilder,
                                    Set<String> scopeSet,
-                                   boolean isClientCredentialsGrantType) {
+                                   boolean isClientCredentialsGrantType,
+                                   boolean isFederatedUser) {
         LOGGER.debug("## addScopeAndScopes - START");
         TenantProperties tenantProperties = getCurrentTenantProperties();
         if (CommonMethodsUtils.isUserScopeValidationRequired(
@@ -682,7 +1163,7 @@ public class ClaimsConfigManager {
             LOGGER.debug("Scope and Scopes bifurcation required - Multi Role Client"
                     + " or tenant.client.oauth-scope-customization = true");
             addScopeAndScopesForMultiRoleClient(clientDetails, userDetailsResponse, claimsBuilder,
-                    scopeSet, isClientCredentialsGrantType);
+                    scopeSet, isClientCredentialsGrantType, isFederatedUser);
         } else {
             LOGGER.warn("ClientDetails is null, skipping scope and scopes bifurcation for multi-role client");
         }
@@ -717,12 +1198,15 @@ public class ClaimsConfigManager {
      * @param claimsBuilder JwtClaimsSet.Builder used to build the JWT claims set.
      * @param scopeSet Set of scopes associated with the token.
      * @param isClientCredentialsGrantType boolean indicating if the grant type is client credentials.
+     * @param isFederatedUser boolean indicating if the principal authenticated via an
+     *         external IDP (federated login).
      */
     private void addScopeAndScopesForMultiRoleClient(ClientCacheDetails clientDetails,
                                                      UserDetailsResponse userDetailsResponse,
                                                      JwtClaimsSet.Builder claimsBuilder,
                                                      Set<String> scopeSet,
-                                                     boolean isClientCredentialsGrantType) {
+                                                     boolean isClientCredentialsGrantType,
+                                                     boolean isFederatedUser) {
         LOGGER.debug("## addScopeAndScopesForMultiRoleClient - START");
         if (isClientCredentialsGrantType) {
             LOGGER.debug("Grant Type: Client Credentials");
@@ -750,7 +1234,8 @@ public class ClaimsConfigManager {
                 }
             }
         } else {
-            addScopeAndScopesForNotClientCredsGrantType(clientDetails, userDetailsResponse, claimsBuilder, scopeSet);
+            addScopeAndScopesForNotClientCredsGrantType(clientDetails, userDetailsResponse, claimsBuilder, scopeSet,
+                    isFederatedUser);
         }
         LOGGER.debug("## addScopeAndScopesForMultiRoleClient - END");
     }
@@ -765,32 +1250,85 @@ public class ClaimsConfigManager {
      * @param userDetailsResponse UserDetailsResponse containing the details of the user.
      * @param claimsBuilder JwtClaimsSet.Builder used to build the JWT claims set.
      * @param scopeSet Set of scopes associated with the token.
+     * @param isFederatedUserWithScopeRoleMapping boolean indicating if the principal authenticated via an
+     *         external IDP (federated login) with scope-role mapping.
+     *         When {@code true} and the requested scope is empty, falls back to the user's
+     *         resolved scopes (Rule 2 output on {@code userDetailsResponse}) instead of the
+     *         client's full registered scope list.
      */
     private void addScopeAndScopesForNotClientCredsGrantType(ClientCacheDetails clientDetails,
                                                              UserDetailsResponse userDetailsResponse,
-                                                             JwtClaimsSet.Builder claimsBuilder, Set<String> scopeSet) {
+                                                             JwtClaimsSet.Builder claimsBuilder, Set<String> scopeSet,
+                                                             boolean isFederatedUserWithScopeRoleMapping) {
         LOGGER.debug("Grant Type: Not Client Credentials");
         if (CollectionUtils.isEmpty(clientDetails.getRegisteredClient().getScopes())) {
-            if (CollectionUtils.isEmpty(scopeSet)) {
-                LOGGER.info("Requested Scopes and client scopes are empty");
-            } else {
-                LOGGER.debug("Requested Scopes are not empty and Client Scopes are empty");
-                // handled at line 139 igniteSecurityConfig
-            }
+            logEmptyClientScopes(scopeSet);
+            return;
+        }
+        Set<String> effectiveScopeSet = resolveNotClientCredsScopeSet(clientDetails, userDetailsResponse, scopeSet,
+                isFederatedUserWithScopeRoleMapping);
+        applyNotClientCredsScopeClaims(claimsBuilder, userDetailsResponse, effectiveScopeSet);
+    }
+
+    /**
+     * Logs the outcome when the client has no registered scopes at all.
+     *
+     * @param scopeSet Set of scopes requested for the token.
+     */
+    private void logEmptyClientScopes(Set<String> scopeSet) {
+        if (CollectionUtils.isEmpty(scopeSet)) {
+            LOGGER.info("Requested Scopes and client scopes are empty");
         } else {
-            if (CollectionUtils.isEmpty(scopeSet)) {
-                LOGGER.debug("Requested scopes are empty and Client Scopes are not empty");
-                scopeSet = clientDetails.getRegisteredClient().getScopes();
-            }
-            if (userDetailsResponse == null || CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
-                LOGGER.info("User Scopes are empty");
-                claimsBuilder
-                        .claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet));
-            } else {
-                LOGGER.debug("User Scopes are not empty");
-                claimsBuilder.claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet)).claim(CLAIM_SCOPES,
-                        userDetailsResponse.getScopes());
-            }
+            LOGGER.debug("Requested Scopes are not empty and Client Scopes are empty");
+            // handled at line 139 igniteSecurityConfig
+        }
+    }
+
+    /**
+     * Resolves the scope set to use when the requested scope is empty but the client has
+     * registered scopes: falls back to the user's resolved scopes (Rule 2) for federated users
+     * with scope-role mapping, otherwise the client's full registered scope list.
+     *
+     * @param clientDetails ClientCacheDetails containing the details of the registered client.
+     * @param userDetailsResponse UserDetailsResponse containing the details of the user.
+     * @param scopeSet Set of scopes requested for the token.
+     * @param isFederatedUserWithScopeRoleMapping boolean indicating if the principal authenticated via an
+     *         external IDP (federated login) with scope-role mapping.
+     * @return the scope set to use for building the claims.
+     */
+    private Set<String> resolveNotClientCredsScopeSet(ClientCacheDetails clientDetails,
+            UserDetailsResponse userDetailsResponse, Set<String> scopeSet,
+            boolean isFederatedUserWithScopeRoleMapping) {
+        if (!CollectionUtils.isEmpty(scopeSet)) {
+            return scopeSet;
+        }
+        if (isFederatedUserWithScopeRoleMapping && userDetailsResponse != null
+                && !CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            LOGGER.debug("Requested scopes are empty (federated login) - using resolved user scopes "
+                    + "(Rule 2) as scope claim instead of full client scope list");
+            return userDetailsResponse.getScopes();
+        }
+        LOGGER.debug("Requested scopes are empty and Client Scopes are not empty");
+        return clientDetails.getRegisteredClient().getScopes();
+    }
+
+    /**
+     * Adds the {@code scope} claim, and the {@code scp} claim when the user has resolved scopes.
+     *
+     * @param claimsBuilder JwtClaimsSet.Builder used to build the JWT claims set.
+     * @param userDetailsResponse UserDetailsResponse containing the details of the user.
+     * @param scopeSet Set of scopes to add as the {@code scope} claim.
+     */
+    private void applyNotClientCredsScopeClaims(JwtClaimsSet.Builder claimsBuilder,
+            UserDetailsResponse userDetailsResponse, Set<String> scopeSet) {
+        if (userDetailsResponse == null || CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            LOGGER.info("User Scopes are empty");
+            claimsBuilder
+                    .claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet));
+        } else {
+            LOGGER.debug("User Scopes are not empty");
+            claimsBuilder.claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet)).claim(CLAIM_SCOPES,
+                    userDetailsResponse.getScopes());
         }
     }
 
@@ -1039,5 +1577,22 @@ public class ClaimsConfigManager {
             }
         };
     }
-}
 
+    /**
+     * This method checks if the authenticated principal is a federated user (authenticated via an external IdP)
+     * and if scope-role mapping is enabled for that IdP. It returns true if both conditions are met, otherwise false.
+     *
+     * @param principal the authenticated principal to check; may be any {@link Authentication} implementation,
+     *                  not just federated logins (e.g. username/password logins use a different implementation)
+     * @return true if the principal is a federated user with scope-role mapping enabled, false otherwise
+     */
+    private boolean isFederatedUser(Authentication principal) {
+        LOGGER.debug("## isFederatedUser - START");
+        if (!(principal instanceof OAuth2AuthenticationToken oauth2Token)) {
+            LOGGER.debug("isFederatedUser: principal is not federated "
+                    + "(not an OAuth2AuthenticationToken), returning false");
+            return false;
+        }
+        return true;
+    }
+}

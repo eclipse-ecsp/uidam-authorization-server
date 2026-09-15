@@ -8,6 +8,8 @@ import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAu
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties.MfaMode;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
@@ -16,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -64,6 +67,7 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     private final MfaSecretService mfaSecretService;
     private final TenantConfigurationService tenantConfigurationService;
     private final MfaStateService mfaStateService;
+    private final AuthorizationMetricsService metricsService;
 
     /**
      * Constructs a MfaChallengeFilter.
@@ -74,10 +78,12 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
      */
     public MfaChallengeFilter(MfaSecretService mfaSecretService,
                               TenantConfigurationService tenantConfigurationService,
-                              MfaStateService mfaStateService) {
+                              MfaStateService mfaStateService,
+                              AuthorizationMetricsService metricsService) {
         this.mfaSecretService = mfaSecretService;
         this.tenantConfigurationService = tenantConfigurationService;
         this.mfaStateService = mfaStateService;
+        this.metricsService = metricsService;
     }
 
     @Override
@@ -156,6 +162,18 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     private void handleAuthenticatedUser(HttpServletRequest request, HttpServletResponse response,
             FilterChain chain, Authentication auth) throws ServletException, IOException {
         String username = auth.getName();
+
+        // Federated (external IDP) logins never go through MFA enrollment/challenge here — MFA
+        // (TOTP) is a UIDAM-internal-login concept only. External IDPs are expected to enforce
+        // their own MFA policy upstream, so we always pass federated users through regardless
+        // of the tenant's MfaMode.
+        if (auth instanceof OAuth2AuthenticationToken) {
+            LOGGER.info("[MFA-FILTER] Federated (external IDP) login for user='{}' – MFA not applicable, "
+                    + "passing through", username);
+            chain.doFilter(request, response);
+            return;
+        }
+
         String tenant = resolveTenantFromRequest(request);
         LOGGER.info("[MFA-FILTER] Resolved tenant='{}' for user='{}'", tenant, username);
 
@@ -239,13 +257,11 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
         //    true  → always enforce MFA for this user
         //    false → always skip MFA for this user
         //    null  → no per-user override, continue to normal step-up rules
-        if (auth instanceof CustomUserPwdAuthenticationToken customToken) {
-            Boolean perUserMfa = customToken.getMfaRequired();
-            if (perUserMfa != null) {
-                LOGGER.info("[MFA-FILTER] CONDITIONAL per-user mfaRequired='{}' for user='{}' – overrides step-up",
-                        perUserMfa, auth.getName());
-                return perUserMfa;
-            }
+        Boolean perUserMfa = resolvePerUserMfaOverride(auth);
+        if (perUserMfa != null) {
+            LOGGER.info("[MFA-FILTER] CONDITIONAL per-user mfaRequired='{}' for user='{}' – overrides step-up",
+                    perUserMfa, auth.getName());
+            return perUserMfa;
         }
 
         // 1. Step-up client check: if the requesting client_id is in the step-up list → enforce MFA
@@ -299,6 +315,17 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     }
 
     /**
+     * Returns the per-user {@code mfaRequired} override from {@link CustomUserPwdAuthenticationToken},
+     * or {@code false} if the token type does not carry a per-user override.
+     */
+    private Boolean resolvePerUserMfaOverride(Authentication auth) {
+        if (auth instanceof CustomUserPwdAuthenticationToken customToken) {
+            return customToken.getMfaRequired();
+        }
+        return Boolean.FALSE;
+    }
+
+    /**
      * Extract the account ID from the {@link Authentication} token.
      * Returns the account ID sourced from the user-management service record
      * (populated in {@code CustomUserPwdAuthenticationToken} from
@@ -346,6 +373,11 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
             Authentication auth, String username, String tenant) throws IOException {
         String target = mfaPath(tenant, "/mfa/enroll/setup");
         LOGGER.info("[MFA-FILTER] First-time MFA enroll for user='{}' – redirecting to: {}", username, target);
+        try {
+            metricsService.incrementMetricsForTenant(tenant, MetricType.MFA_ENROLLMENT_INITIATED);
+        } catch (Exception ex) {
+            LOGGER.error("[MFA-FILTER] Failed to record MFA_ENROLLMENT_INITIATED metric: {}", ex.getMessage(), ex);
+        }
         mfaStateService.savePending(request,
                 new MfaPendingAuthenticationToken(username, auth.getAuthorities()), tenant);
         SecurityContextHolder.clearContext();

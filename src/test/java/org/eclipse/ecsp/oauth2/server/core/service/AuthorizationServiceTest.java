@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 import org.eclipse.ecsp.audit.enums.AuditEventResult;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetails;
+import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.entities.Authorization;
 import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationException;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
@@ -34,6 +35,10 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2DeviceCode;
@@ -42,14 +47,20 @@ import org.springframework.security.oauth2.core.OAuth2UserCode;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
+import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.lang.reflect.Method;
+import java.security.Principal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -2234,5 +2245,140 @@ class AuthorizationServiceTest {
         assertThat(metadata).contains("unknown");
     }
 
+    // ── ensureAuthenticationFactorAuthority / repairAuthenticationFactorAuthority ───────────────
+
+    /**
+     * Invokes the private {@code ensureAuthenticationFactorAuthority(OAuth2Authorization)} method via
+     * reflection. This targets the repair logic directly (in-memory), independent of the JSON
+     * persistence/deserialization details of {@code toObject}.
+     */
+    private OAuth2Authorization invokeEnsureAuthenticationFactorAuthority(OAuth2Authorization authorization)
+            throws Exception {
+        Method method = AuthorizationService.class.getDeclaredMethod(
+                "ensureAuthenticationFactorAuthority", OAuth2Authorization.class);
+        method.setAccessible(true);
+        return (OAuth2Authorization) method.invoke(authorizationService, authorization);
+    }
+
+    @Test
+    void ensureAuthenticationFactorAuthority_CustomUserPwdToken_MissingFactorAuthority_AddsPasswordAuthority()
+            throws Exception {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator, auditLogger);
+
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority("SelfManage"));
+        CustomUserPwdAuthenticationToken principal =
+                CustomUserPwdAuthenticationToken.authenticated("user1", "pwd", "acc1", authorities);
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id(ID)
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute(Principal.class.getName(), principal)
+                .build();
+
+        OAuth2Authorization repaired = invokeEnsureAuthenticationFactorAuthority(authorization);
+
+        Authentication repairedPrincipal = repaired.getAttribute(Principal.class.getName());
+        assertThat(repairedPrincipal).isInstanceOf(CustomUserPwdAuthenticationToken.class);
+        boolean hasPasswordAuthority = repairedPrincipal.getAuthorities().stream()
+                .filter(FactorGrantedAuthority.class::isInstance)
+                .map(FactorGrantedAuthority.class::cast)
+                .anyMatch(a -> FactorGrantedAuthority.PASSWORD_AUTHORITY.equals(a.getAuthority()));
+        assertThat(hasPasswordAuthority).isTrue();
+        // Original non-factor authority preserved
+        assertThat(repairedPrincipal.getAuthorities()).anyMatch(a -> "SelfManage".equals(a.getAuthority()));
+    }
+
+    @Test
+    void ensureAuthenticationFactorAuthority_Oauth2Token_MissingFactorAuthority_AddsAuthCodeAuthority()
+            throws Exception {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator, auditLogger);
+
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("sub", "federated-user");
+        OAuth2User oauth2User = new DefaultOAuth2User(List.of(new SimpleGrantedAuthority("ROLE_USER")), attributes,
+                "sub");
+        OAuth2AuthenticationToken principal =
+                new OAuth2AuthenticationToken(oauth2User, oauth2User.getAuthorities(), "google");
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id(ID)
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute(Principal.class.getName(), principal)
+                .build();
+
+        OAuth2Authorization repaired = invokeEnsureAuthenticationFactorAuthority(authorization);
+
+        Authentication repairedPrincipal = repaired.getAttribute(Principal.class.getName());
+        assertThat(repairedPrincipal).isInstanceOf(OAuth2AuthenticationToken.class);
+        boolean hasAuthCodeAuthority = repairedPrincipal.getAuthorities().stream()
+                .filter(FactorGrantedAuthority.class::isInstance)
+                .map(FactorGrantedAuthority.class::cast)
+                .anyMatch(a -> FactorGrantedAuthority.AUTHORIZATION_CODE_AUTHORITY.equals(a.getAuthority()));
+        assertThat(hasAuthCodeAuthority).isTrue();
+        assertThat(((OAuth2AuthenticationToken) repairedPrincipal).getAuthorizedClientRegistrationId())
+                .isEqualTo("google");
+    }
+
+    @Test
+    void ensureAuthenticationFactorAuthority_AlreadyHasFactorAuthority_ReturnsSameAuthorization() throws Exception {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator, auditLogger);
+
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY).build());
+        CustomUserPwdAuthenticationToken principal =
+                CustomUserPwdAuthenticationToken.authenticated("user1", "pwd", "acc1", authorities);
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id(ID)
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute(Principal.class.getName(), principal)
+                .build();
+
+        OAuth2Authorization result = invokeEnsureAuthenticationFactorAuthority(authorization);
+
+        assertThat(result).isSameAs(authorization);
+    }
+
+    @Test
+    void ensureAuthenticationFactorAuthority_UnsupportedPrincipalType_ReturnsSameAuthorization() throws Exception {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator, auditLogger);
+
+        UsernamePasswordAuthenticationToken principal = new UsernamePasswordAuthenticationToken(PRINCIPAL_NAME, null);
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id(ID)
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute(Principal.class.getName(), principal)
+                .build();
+
+        OAuth2Authorization result = invokeEnsureAuthenticationFactorAuthority(authorization);
+
+        assertThat(result).isSameAs(authorization);
+    }
+
+    @Test
+    void ensureAuthenticationFactorAuthority_NoPrincipalAttribute_ReturnsSameAuthorization() throws Exception {
+        authorizationService = new AuthorizationService(
+                authorizationRepository, clientManger, jwtTokenValidator, auditLogger);
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(REGISTERED_CLIENT)
+                .id(ID)
+                .principalName(PRINCIPAL_NAME)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .build();
+
+        OAuth2Authorization result = invokeEnsureAuthenticationFactorAuthority(authorization);
+
+        assertThat(result).isSameAs(authorization);
+    }
 
 }

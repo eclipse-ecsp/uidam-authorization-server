@@ -212,6 +212,39 @@ body {
   color: #000000;
 }
 
+/* Always-visible label for date, time, datetime-local, and checkbox dynamic attributes */
+.attr-label {
+  display: block;
+  font-weight: bold;
+  font-family: sans-serif;
+  font-size: 14px;
+  color: #999999;
+  margin-bottom: 4px;
+}
+
+/* Underline style for number, date, time, datetime-local dynamic attribute inputs */
+.container-auth-input input[type="number"],
+.container-auth-input input[type="date"],
+.container-auth-input input[type="datetime-local"],
+.container-auth-input input[type="time"] {
+    border: none;
+    border-bottom: 2px solid #00a6e3;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    outline: none;
+    font-size: medium;
+    background: transparent;
+}
+
+.container-auth-input input[type="number"]:focus,
+.container-auth-input input[type="date"]:focus,
+.container-auth-input input[type="datetime-local"]:focus,
+.container-auth-input input[type="time"]:focus {
+    border-color: #000000;
+}
+
 .form-control {
   height: 40px;
 }

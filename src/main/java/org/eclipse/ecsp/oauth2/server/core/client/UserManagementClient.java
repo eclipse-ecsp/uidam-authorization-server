@@ -46,6 +46,7 @@ import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDt
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaStatusResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.response.dto.UserAttributeDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
@@ -67,8 +68,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_PASSWORD;
@@ -86,6 +89,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.Authorization
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_MFA_STATUS;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_PASSWORD_POLICY_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_SELF_CREATE_USER;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_USER_ATTRIBUTES_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_USER_BY_USERNAME_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_USER_MANAGEMENT_ENV;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.TENANT_EXTERNAL_URLS_USER_RECOVERY_NOTIF_ENDPOINT;
@@ -412,21 +416,65 @@ public class UserManagementClient {
         return userDto;
     }
 
+    private boolean isEmptyUserErrorResponse(UserErrorResponse userErrorResponse) {
+        return !StringUtils.hasText(userErrorResponse.getStatus())
+                && !StringUtils.hasText(userErrorResponse.getCode())
+                && !StringUtils.hasText(userErrorResponse.getMessage());
+    }
+
+    private String extractFieldValidationErrors(WebClientResponseException ex) {
+        try {
+            String body = ex.getResponseBodyAsString();
+            if (StringUtils.hasText(body)) {
+                Map<String, Object> fieldErrors = objectMapper.readValue(
+                    body, new TypeReference<Map<String, Object>>() {});
+                if (fieldErrors != null && !fieldErrors.isEmpty()) {
+                    StringBuilder sb = new StringBuilder("Validation failed: ");
+                    for (Object value : fieldErrors.values()) {
+                        sb.append(value).append("; ");
+                    }
+                    return sb.substring(0, sb.length() - 2);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Could not parse field validation errors: {}", e.getMessage());
+        }
+        return INVALID_INPUT_ERROR;
+    }
+
     private String extractMessage(String input) {
         if (!StringUtils.hasText(input)) {
             return null;
         }
 
-        String startToken = " Error ='{ Error ='";
+        // Matches ApplicationRuntimeException's message format: "{ Error ='<key>', parameters=[...] }"
+        String startToken = "{ Error ='";
         String endToken = "', parameters=";
 
-        int startIndex = input.indexOf(startToken) + startToken.length();
+        int startTokenIndex = input.indexOf(startToken);
         int endIndex = input.indexOf(endToken);
-
-        if (startIndex >= 0 && endIndex > startIndex) {
-            return input.substring(startIndex, endIndex);
+        if (startTokenIndex < 0 || endIndex < 0) {
+            return null;
         }
-        return null;
+
+        int startIndex = startTokenIndex + startToken.length();
+        return endIndex > startIndex ? input.substring(startIndex, endIndex) : null;
+    }
+
+    /**
+     * Formats the field/value names carried in {@code UserErrorResponse.parameters} (e.g.
+     * {@code ["[accountBalance]"]} from a Set#toString()) into a clean, comma-separated list
+     * suitable for display, e.g. {@code "accountBalance"}.
+     */
+    private String formatInvalidFields(List<String> parameters) {
+        if (CollectionUtils.isEmpty(parameters)) {
+            return null;
+        }
+        String joined = parameters.stream()
+                .map(param -> param.replace("[", "").replace("]", "").trim())
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining(", "));
+        return StringUtils.hasText(joined) ? joined : null;
     }
 
     private void addRequiredParameters(UserDto userDto) {
@@ -454,7 +502,11 @@ public class UserManagementClient {
         String errorCode;
         String errorDesc = UNEXPECTED_ERROR;
 
-        if (userErrorResponse != null) {
+        if (HttpStatus.BAD_REQUEST == ex.getStatusCode()) {
+            errorCode = CustomOauth2TokenGenErrorCodes.BAD_REQUEST.name();
+            errorDesc = resolveBadRequestErrorDescription(ex, userErrorResponse);
+        } else if (userErrorResponse != null) {
+            // For non-400 statuses, the response is classified by status code alone.
             if (HttpStatus.NOT_FOUND == ex.getStatusCode()) {
                 errorCode = CustomOauth2TokenGenErrorCodes.RESOURCE_NOT_FOUND.name();
             } else if (HttpStatus.METHOD_NOT_ALLOWED == ex.getStatusCode()) {
@@ -462,29 +514,49 @@ public class UserManagementClient {
             } else if (HttpStatus.CONFLICT == ex.getStatusCode()) {
                 errorCode = CustomOauth2TokenGenErrorCodes.RECORD_ALREADY_EXISTS.name();
                 errorDesc = USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN;
-            } else if (HttpStatus.BAD_REQUEST == ex.getStatusCode()) {
-                errorCode = CustomOauth2TokenGenErrorCodes.BAD_REQUEST.name();
-                String extractedMessage = this.extractMessage(userErrorResponse.getMessage());
-                if (StringUtils.hasText(extractedMessage)
-                        && extractedMessage.contains(PASSWORD)) {
-                    errorDesc = INVALID_PASSWORD;
-                } else if (StringUtils.hasText(extractedMessage)) {
-                    errorDesc = INVALID_INPUT_ERROR;
-                } else {
-                    // extractMessage returned null, use UNEXPECTED_ERROR
-                    errorDesc = UNEXPECTED_ERROR;
-                }
             } else {
                 errorCode = OAuth2ErrorCodes.SERVER_ERROR;
             }
         } else {
-            // Cannot parse response body, treat as server error even if BAD_REQUEST status
+            // Cannot parse response body, treat as server error
             errorCode = OAuth2ErrorCodes.SERVER_ERROR;
         }
 
         OAuth2Error error = new OAuth2Error(errorCode, errorDesc, null);
         LOGGER.debug("## handleWebClientResponseException - END");
         throw new OAuth2AuthenticationException(error);
+    }
+
+    /**
+     * Resolves the user-facing error description for a 400 response. {@code userErrorResponse}
+     * may deserialize to a non-null-but-empty object when the body is actually a bean-validation
+     * field-error map (e.g. {@code {"phoneNumber": "invalid.phone.number"}}) rather than a
+     * {@link UserErrorResponse} — lenient JSON parsing ignores the unrecognised field names — so
+     * an empty result falls back to parsing the raw body as a field-error map instead of masking
+     * it as an unexpected error. When the response carries the actual invalid field name(s) (e.g.
+     * a custom sign-up attribute that failed its configured regex), those are surfaced directly
+     * instead of a generic message, so the user knows exactly which field to correct. When
+     * {@code userErrorResponse} does carry real content but its message is in an unrecognised
+     * format (e.g. a raw DB/internal exception message), it is never surfaced verbatim to the UI,
+     * to avoid leaking internal details.
+     */
+    private String resolveBadRequestErrorDescription(WebClientResponseException ex,
+            UserErrorResponse userErrorResponse) {
+        if (userErrorResponse == null || isEmptyUserErrorResponse(userErrorResponse)) {
+            return extractFieldValidationErrors(ex);
+        }
+        String extractedMessage = this.extractMessage(userErrorResponse.getMessage());
+        if (StringUtils.hasText(extractedMessage) && extractedMessage.contains(PASSWORD)) {
+            return INVALID_PASSWORD;
+        }
+        String invalidFields = formatInvalidFields(userErrorResponse.getParameters());
+        if (StringUtils.hasText(invalidFields)) {
+            return "Invalid value for: " + invalidFields + ". Please correct and try again.";
+        }
+        if (StringUtils.hasText(extractedMessage)) {
+            return INVALID_INPUT_ERROR;
+        }
+        return UNEXPECTED_ERROR;
     }
 
     /**
@@ -517,6 +589,65 @@ public class UserManagementClient {
             LOGGER.error("Error while fetching password policy", ex);
         }
         LOGGER.debug("## getPasswordPolicy - END");
+        return null;
+    }
+
+    /**
+     * Fetches the list of user attribute definitions from the User Management Service.
+     * This method requests only the additional (non-core) attributes by using the
+     * `dynamicAttribute=false` filter supported by user-management.
+     *
+     * @return list of {@link org.eclipse.ecsp.oauth2.server.core.response.dto.UserAttributeDto},
+     *         or {@code null} on error
+     */
+    public List<UserAttributeDto> getUserAttributes() {
+        LOGGER.debug("## getUserAttributes - START");
+        return fetchUserAttributes(true, "getUserAttributes");
+    }
+
+    /**
+     * Fetches ALL user attribute definitions from user-management (no dynamicAttribute filter).
+     * Used to validate that keys listed in {@code custom-attribute-list-map} actually exist
+     * in the {@code user_attributes} table.
+     *
+     * @return list of all {@link UserAttributeDto}, or {@code null} on error
+     */
+    public List<UserAttributeDto> getAllUserAttributes() {
+        LOGGER.debug("## getAllUserAttributes - START");
+        return fetchUserAttributes(false, "getAllUserAttributes");
+    }
+
+    private List<UserAttributeDto> fetchUserAttributes(boolean dynamicAttribute, String logPrefix) {
+        try {
+            TenantProperties tenantProperties = getCurrentTenantProperties();
+            WebClient currentWebClient = getWebClientForCurrentTenant();
+            String uri = tenantProperties.getExternalUrls()
+                    .get(TENANT_EXTERNAL_URLS_USER_ATTRIBUTES_ENDPOINT);
+            if (uri == null) {
+                LOGGER.warn("user-attributes-endpoint not configured for tenant '{}'",
+                        tenantProperties.getTenantId());
+                return null;
+            }
+            String requestUri = dynamicAttribute ? uri + "?dynamicAttribute=false" : uri;
+            String json = currentWebClient.method(HttpMethod.GET)
+                .uri(requestUri)
+                    .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
+                    .accept(MediaType.APPLICATION_JSON).retrieve()
+                    .bodyToMono(String.class).block();
+            if (json == null) {
+                return null;
+            }
+            List<UserAttributeDto> result = objectMapper.readValue(json,
+                new com.fasterxml.jackson.core.type.TypeReference<List<UserAttributeDto>>() { });
+            LOGGER.debug("{}: received {} attribute(s) from user-management", logPrefix, result.size());
+            return result;
+        } catch (WebClientResponseException ex) {
+            LOGGER.error("{}: HTTP {} {} from user-management", logPrefix,
+                ex.getStatusCode().value(), ex.getResponseBodyAsString(), ex);
+        } catch (Exception ex) {
+            LOGGER.error("{}: error fetching user attributes", logPrefix, ex);
+        }
+        LOGGER.warn("## {} - returning null due to error", logPrefix);
         return null;
     }
 

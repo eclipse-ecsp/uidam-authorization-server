@@ -93,7 +93,51 @@ public enum MetricType {
      * Tracks failed login attempts due to account being locked per tenant.
      */
     FAILURE_LOGIN_ACCOUNT_LOCKED("failure.login.attempts.account.locked",
-                                  "Total number of failed login attempts due to account being locked");
+                                  "Total number of failed login attempts due to account being locked"),
+
+    // ========== MFA Metrics ==========
+
+    /**
+     * Tracks first-time MFA enrollment initiations (unenrolled user intercepted by MFA filter).
+     */
+    MFA_ENROLLMENT_INITIATED("mfa.enrollment.initiated",
+                              "Total number of first-time MFA enrollment initiations"),
+
+    /**
+     * Tracks successful MFA enrollments (TOTP verified and enrollment activated).
+     */
+    MFA_ENROLLMENT_SUCCESS("mfa.enrollment.success",
+                            "Total number of successful MFA enrollments"),
+
+    /**
+     * Tracks failed TOTP verifications during enrollment.
+     */
+    MFA_ENROLLMENT_FAILURE("mfa.enrollment.failure",
+                            "Total number of failed TOTP verifications during enrollment"),
+
+    /**
+     * Tracks successful MFA challenge completions during login.
+     */
+    MFA_CHALLENGE_SUCCESS("mfa.challenge.success",
+                           "Total number of successful MFA challenge completions"),
+
+    /**
+     * Tracks failed MFA challenge attempts during login.
+     */
+    MFA_CHALLENGE_FAILURE("mfa.challenge.failure",
+                           "Total number of failed MFA challenge attempts"),
+
+    /**
+     * Tracks successful MFA account recoveries via recovery key.
+     */
+    MFA_RECOVERY_SUCCESS("mfa.recovery.success",
+                          "Total number of successful MFA account recoveries via recovery key"),
+
+    /**
+     * Tracks backup codes consumed during account recovery.
+     */
+    MFA_BACKUP_CODE_USED("mfa.backup.code.used",
+                          "Total number of backup codes consumed during account recovery");
 
     private final String metricName;
     private final String description;
