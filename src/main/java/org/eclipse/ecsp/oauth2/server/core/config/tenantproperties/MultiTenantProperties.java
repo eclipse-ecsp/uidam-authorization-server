@@ -18,6 +18,7 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import lombok.Getter;
 import lombok.Setter;
@@ -103,5 +104,22 @@ public class MultiTenantProperties {
      */
     public java.util.Set<String> getAvailableTenants() {
         return profile.keySet();
+    }
+    
+
+    /**
+     * Parses the claim/scope-role mappings for every configured tenant's
+     * {@link TenantProperties} once all tenant properties have been bound.
+     *
+     * <p>{@link TenantProperties} is a nested value within {@link #profile} rather than
+     * its own {@code @ConfigurationProperties} bean, so its {@code @PostConstruct} on
+     * {@link TenantProperties#parseMappings()} is never invoked by Spring directly;
+     * this method triggers it manually for each tenant instead.
+     */
+    @PostConstruct
+    public void tenantConfig() {
+        if (profile != null && !profile.isEmpty()) {
+            profile.values().forEach(TenantProperties::parseMappings);
+        }
     }
 }

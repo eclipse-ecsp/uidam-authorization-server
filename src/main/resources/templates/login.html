@@ -78,7 +78,8 @@
                         Don't have an account yet?
                     </div>
                     <div class="sign-up-link">
-                        <a id="sign-up" th:href="@{|/${issuer}/sign-up|}">Sign Up Here</a>
+                        <a id="sign-up"
+                           th:href="${client_id != null and !#strings.isEmpty(client_id)} ? @{|/${issuer}/sign-up?client_id=${client_id}|} : @{|/${issuer}/sign-up|}">Sign Up Here</a>
                     </div>
                 </div>
                 <input type="hidden" name="client_id" th:value="${client_id}" />

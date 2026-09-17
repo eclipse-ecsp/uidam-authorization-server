@@ -181,16 +181,19 @@ class ClaimsToUserMapperTest {
     }
 
     @Test
-    void setFieldValue_WithInvalidFieldName_ShouldThrowIllegalArgumentException() {
+    void setFieldValue_WithInvalidFieldName_StoresAsDynamicAttribute() {
         // Given
         Map<String, String> invalidMappings = new HashMap<>();
         invalidMappings.put("INVALID_FIELD", "some_claim");
         idpConfig.setMappings(invalidMappings);
         claims.put("some_claim", "test_value");
 
-        // When & Then
-        assertThrows(IllegalArgumentException.class, 
-            () -> claimsToUserMapper.mapClaimsToUserRequest(claims, idpConfig));
+        // When
+        FederatedUserDto result = claimsToUserMapper.mapClaimsToUserRequest(claims, idpConfig);
+
+        // Then - unknown field names are routed to additionalAttributes instead of throwing
+        assertNotNull(result);
+        assertEquals("test_value", result.getAdditionalAttributes().get("INVALID_FIELD"));
     }
 
     @Test
