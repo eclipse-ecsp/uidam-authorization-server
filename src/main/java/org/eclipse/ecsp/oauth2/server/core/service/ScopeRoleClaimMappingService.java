@@ -145,9 +145,10 @@ public class ScopeRoleClaimMappingService {
         Set<String> uidamClientRequestedAppScope = excludeOidcScopes(uidamClientRequestedScope);
         Set<String> uidamUserScope = resolveNonEmptyUserScope(userDetailsResponse);
         ScopePreference scopePreference = extIdpRegClient.getScopePreference();
+        String registrationId = extIdpRegClient.getRegistrationId();
         LOGGER.debug("applyScopeRoleMapping: registrationId='{}', scopePreference={}, "
                 + "uidamClientRequestedAppScope={}, uidamUserScope={}",
-                extIdpRegClient != null ? extIdpRegClient.getRegistrationId() : null,
+                registrationId,
                 scopePreference, uidamClientRequestedAppScope, uidamUserScope);
         if (ScopePreference.INTERNAL.equals(scopePreference)) {
             resolvedUidamScope = resolveScopeForInternalScopePreference(uidamClientRequestedAppScope, uidamUserScope);
@@ -158,7 +159,6 @@ public class ScopeRoleClaimMappingService {
             resolvedUidamScope = resolveScopeForBothScopePreference(extIdpRegClient, externalIdpTokenClaims,
                     uidamClientRequestedAppScope, uidamUserScope);
         }
-        String registrationId = extIdpRegClient != null ? extIdpRegClient.getRegistrationId() : null;
         LOGGER.debug("applyScopeRoleMapping: registrationId='{}', scopePreference={}, "
                 + "resolvedUidamScope={}", registrationId, scopePreference, resolvedUidamScope);
         if (CollectionUtils.isEmpty(resolvedUidamScope)) {
