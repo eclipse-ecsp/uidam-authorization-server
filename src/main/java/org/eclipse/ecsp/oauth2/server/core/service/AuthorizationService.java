@@ -42,8 +42,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.jackson2.SecurityJackson2Modules;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2DeviceCode;
@@ -66,7 +69,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.security.Principal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -436,8 +441,90 @@ public class AuthorizationService implements OAuth2AuthorizationService {
         }
         OAuth2Authorization.Builder builder =
             getOauth2AuthorizationBuilder(entity, registeredClient);
+        OAuth2Authorization authorization = ensureAuthenticationFactorAuthority(builder.build());
         LOGGER.debug("## toObject - END");
-        return builder.build();
+        return authorization;
+    }
+
+    /**
+     * Ensures the persisted resource-owner {@link Authentication} (stored under the
+     * {@code Principal.class.getName()}-keyed attribute) carries at least one
+     * {@link FactorGrantedAuthority}.
+     *
+     * <p>Spring Security 7's {@code JwtGenerator} requires this to compute the OIDC
+     * {@code auth_time} claim when an id_token is requested (i.e. the client requested the
+     * {@code openid} scope). The authority is added at login time (see
+     * {@code CustomUserPwdAuthenticationProvider} and {@code IgniteSecurityConfig}'s
+     * {@code userAuthoritiesMapper}), but this custom Jackson-based persistence layer has no
+     * registered (de)serializer for {@link FactorGrantedAuthority} (a new Spring Security 7 type
+     * with only a private constructor), so it does not round-trip through the database and is
+     * lost when the authorization is reloaded for token exchange. This method repairs that
+     * in-memory after every load, so the fix holds regardless of the JSON persistence details.
+     *
+     *
+     * @param authorization the freshly-deserialized OAuth2Authorization
+     * @return the same authorization if no repair was needed, or a copy with the resource-owner's
+     *         authorities patched to include a {@link FactorGrantedAuthority}
+     */
+    private OAuth2Authorization ensureAuthenticationFactorAuthority(OAuth2Authorization authorization) {
+        Object principalAttr = authorization.getAttribute(Principal.class.getName());
+        if (!(principalAttr instanceof Authentication authentication)) {
+            return authorization;
+        }
+        boolean hasFactorAuthority = authentication.getAuthorities().stream()
+                .anyMatch(FactorGrantedAuthority.class::isInstance);
+        if (hasFactorAuthority) {
+            return authorization;
+        }
+
+        Authentication repaired = repairAuthenticationFactorAuthority(authentication);
+        if (repaired == authentication) {
+            // Unknown/unsupported principal type - leave as-is.
+            return authorization;
+        }
+        LOGGER.debug("Repaired missing FactorGrantedAuthority on reloaded authorization principal of type {}",
+                authentication.getClass().getSimpleName());
+        return OAuth2Authorization.from(authorization)
+                .attribute(Principal.class.getName(), repaired)
+                .build();
+    }
+
+    /**
+     * Rebuilds {@code authentication} with an additional {@link FactorGrantedAuthority} matching
+     * the authentication method used, for the two principal types this authorization server
+     * produces (internal username/password login and federated external-IdP login). Returns the
+     * same instance, unchanged, for any other principal type.
+     *
+     * @param authentication the reloaded resource-owner authentication, missing a factor authority
+     * @return a repaired authentication carrying a {@link FactorGrantedAuthority}, or the same
+     *         instance if the principal type is not recognized
+     */
+    private Authentication repairAuthenticationFactorAuthority(Authentication authentication) {
+        List<GrantedAuthority> augmentedAuthorities = new ArrayList<>(authentication.getAuthorities());
+        if (authentication instanceof CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken) {
+            augmentedAuthorities.add(
+                    FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY).build());
+            CustomUserPwdAuthenticationToken repaired = CustomUserPwdAuthenticationToken.authenticated(
+                    customUserPwdAuthenticationToken.getPrincipal(),
+                    customUserPwdAuthenticationToken.getCredentials(),
+                    customUserPwdAuthenticationToken.getAccountName(),
+                    customUserPwdAuthenticationToken.getAccountId(),
+                    customUserPwdAuthenticationToken.getMfaRequired(),
+                    augmentedAuthorities);
+            repaired.setDetails(customUserPwdAuthenticationToken.getDetails());
+            return repaired;
+        }
+        if (authentication instanceof OAuth2AuthenticationToken oauth2AuthenticationToken) {
+            augmentedAuthorities.add(FactorGrantedAuthority
+                    .withAuthority(FactorGrantedAuthority.AUTHORIZATION_CODE_AUTHORITY)
+                    .build());
+            OAuth2AuthenticationToken repaired = new OAuth2AuthenticationToken(
+                    oauth2AuthenticationToken.getPrincipal(), augmentedAuthorities,
+                    oauth2AuthenticationToken.getAuthorizedClientRegistrationId());
+            repaired.setDetails(oauth2AuthenticationToken.getDetails());
+            return repaired;
+        }
+        return authentication;
     }
 
     /**

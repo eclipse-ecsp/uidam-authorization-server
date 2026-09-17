@@ -60,6 +60,16 @@ public class CustomScopeValidator implements Consumer<OAuth2AuthorizationCodeReq
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CustomScopeValidator.class);
 
+    /**
+     * Standard OIDC/id_token-related scopes. These control id_token issuance/content (e.g.
+     * requesting an id_token via {@code openid}, or which standard claims get added to it via
+     * {@code profile}/{@code email}/{@code address}/{@code phone}) and are not application-level
+     * UIDAM authorization scopes, so a client should not need them pre-registered in
+     * {@link RegisteredClient#getScopes()} to request them.
+     */
+    private static final Set<String> OIDC_SCOPES = Set.of(
+            OidcScopes.OPENID, OidcScopes.PROFILE, OidcScopes.EMAIL, OidcScopes.ADDRESS, OidcScopes.PHONE);
+
     private TenantConfigurationService tenantConfigurationService;
     
     CacheClientUtils cacheClientUtils;
@@ -92,7 +102,7 @@ public class CustomScopeValidator implements Consumer<OAuth2AuthorizationCodeReq
         Set<String> requestedScopes = authorizationCodeRequestAuthentication.getScopes();
         Set<String> allowedScopes = registeredClient.getScopes();
         Set<String> requestScopesWithoutOidcScopes = requestedScopes.stream()
-            .filter(s -> !s.equals(OidcScopes.OPENID)).collect(Collectors.toSet());
+            .filter(s -> !OIDC_SCOPES.contains(s)).collect(Collectors.toSet());
         if (!requestScopesWithoutOidcScopes.isEmpty()
             && !allowedScopes.containsAll(requestScopesWithoutOidcScopes)) {
             OAuth2Error error = new OAuth2Error(OAuth2ErrorCodes.INVALID_SCOPE, "OAuth 2.0 Parameter: "

@@ -49,6 +49,7 @@ public class IgniteOauth2CoreConstants {
     public static final String CLAIM_USER_ROLES = "roles";
 
     public static final String CLAIM_TENANT_ID = "tenantId";
+    public static final String CLAIM_EXTERNAL_IDP_ID_TOKEN = "externalIdpIdToken";
 
     public static final String CLAIM_ORIGINAL_USER_ID = "originalUserId";
     public static final String CLAIM_HEADER_TYPE = "typ";

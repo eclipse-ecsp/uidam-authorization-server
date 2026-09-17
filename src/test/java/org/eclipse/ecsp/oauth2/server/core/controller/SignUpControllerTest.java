@@ -19,26 +19,34 @@
 package org.eclipse.ecsp.oauth2.server.core.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
+import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
+import org.eclipse.ecsp.oauth2.server.core.client.AuthManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.CaptchaProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
+import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.UserDto;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.PasswordPolicyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.service.PasswordPolicyService;
+import org.eclipse.ecsp.oauth2.server.core.service.SignupAttributeService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.service.impl.CaptchaServiceImpl;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.MutablePropertyValues;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.ui.ExtendedModelMap;
 import org.springframework.ui.Model;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
@@ -46,8 +54,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.DEFAULT_MAX_LENGTH;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.DEFAULT_MIN_LENGTH;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_SOURCE_IDENTIFIER;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.REDIRECT_LITERAL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SELF_SIGN_UP;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.UNEXPECTED_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.USER_CREATED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ALLOWED_SPECIALCHARS;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
@@ -65,9 +75,11 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.MSG_LITERAL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.PWD_NOTE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,20 +101,27 @@ class SignUpControllerTest {
     private PasswordPolicyService passwordPolicyService;
 
     @Mock
+    private SignupAttributeService signupAttributeService;
+
+    @Mock
     private TenantProperties tenantProperties;
 
     @Mock
     private UiAttributeUtils uiAttributeUtils;
 
+    @Mock
+    private AuthManagementClient authManagementClient;
 
+    @Mock
+    private CacheClientUtils cacheClientUtils;
+
+    @InjectMocks
     private SignUpController signUpController;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
         when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
-        signUpController = new SignUpController(userManagementClient, tenantConfigurationService,
-                passwordPolicyService, uiAttributeUtils);
     }
 
     private CaptchaProperties defaultCaptchaProperties() {
@@ -116,7 +135,7 @@ class SignUpControllerTest {
     void selfSignUpInit_Success() {
         Model model = new ExtendedModelMap();
         when(tenantProperties.isSignUpEnabled()).thenReturn(false);
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
         assertTrue(model.containsAttribute(MSG_LITERAL));
@@ -135,7 +154,7 @@ class SignUpControllerTest {
         UserDto userDto = createValidUserDto();
         BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
         MockHttpServletRequest request = createSignUpRequest();
-        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        final RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
         when(tenantProperties.isSignUpEnabled()).thenReturn(true);
         when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
                 .thenReturn(getUserDetailsResponse());
@@ -238,7 +257,7 @@ class SignUpControllerTest {
             return null;
         }).when(passwordPolicyService).setupPasswordPolicy(any(Model.class), any(Boolean.class));
         Model model = new ExtendedModelMap();
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
         assertTrue(model.containsAttribute(CAPTCHA_FIELD_ENABLED));
@@ -256,6 +275,31 @@ class SignUpControllerTest {
         assertTrue(model.containsAttribute(MIN_LOWERCASE));
         assertTrue(model.containsAttribute(MIN_DIGITS));
 
+    }
+
+    @Test
+    void selfSignUpInit_ResolvesClientIdBeforeRenderingSignupAttributes() {
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(tenantProperties.getCaptcha()).thenReturn(defaultCaptchaProperties());
+        when(userManagementClient.getPasswordPolicy()).thenReturn(getPasswordPolicyDto());
+        RegisteredClientDetails registeredClientDetails = new RegisteredClientDetails();
+        registeredClientDetails.setClientId("portal-client");
+        when(authManagementClient.getClientDetails("portal-client")).thenReturn(registeredClientDetails);
+        when(cacheClientUtils.getClientDetails("portal-client")).thenReturn(new ClientCacheDetails());
+        doAnswer(invocation -> {
+            Model model = invocation.getArgument(0);
+            model.addAttribute(PWD_NOTE, "note");
+            model.addAttribute(MIN_LENGTH, DEFAULT_MIN_LENGTH);
+            model.addAttribute(MAX_LENGTH, DEFAULT_MAX_LENGTH);
+            return null;
+        }).when(passwordPolicyService).setupPasswordPolicy(any(Model.class), any(Boolean.class));
+
+        Model model = new ExtendedModelMap();
+        String viewName = signUpController.selfSignUpInit("ecsp", "portal-client", model);
+
+        assertEquals(SELF_SIGN_UP, viewName);
+        assertEquals("portal-client", model.getAttribute("clientId"));
+        verify(signupAttributeService).setupSignupAttributes(model, "portal-client");
     }
 
     @Test
@@ -279,7 +323,7 @@ class SignUpControllerTest {
         }).when(passwordPolicyService).setupPasswordPolicy(any(Model.class), any(Boolean.class));
         Model model = new ExtendedModelMap();
         model.addAttribute(ERROR_LITERAL, "error");
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
@@ -313,7 +357,7 @@ class SignUpControllerTest {
         }).when(passwordPolicyService).setupPasswordPolicy(any(Model.class), any(Boolean.class));
         Model model = new ExtendedModelMap();
         model.addAttribute(ERROR_LITERAL, "error");
-        signUpController.selfSignUpInit("ecsp", model);
+        signUpController.selfSignUpInit("ecsp", null, model);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
         assertTrue(model.containsAttribute(CAPTCHA_FIELD_ENABLED));
         assertTrue(model.containsAttribute(CAPTCHA_SITE));
@@ -337,7 +381,7 @@ class SignUpControllerTest {
         when(tenantProperties.isSignUpEnabled()).thenReturn(false);
 
         Model model = new ExtendedModelMap();
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
@@ -365,7 +409,7 @@ class SignUpControllerTest {
             return null;
         }).when(passwordPolicyService).setupPasswordPolicy(any(Model.class), any(Boolean.class));
         Model model = new ExtendedModelMap();
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
         assertTrue(model.containsAttribute(CAPTCHA_FIELD_ENABLED));
@@ -416,7 +460,7 @@ class SignUpControllerTest {
         when(tenantProperties.getCaptcha()).thenReturn(defaultCaptchaProperties());
         Model model = new ExtendedModelMap();
 
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
@@ -433,7 +477,7 @@ class SignUpControllerTest {
         when(tenantProperties.isSignUpEnabled()).thenReturn(false);
         Model model = new ExtendedModelMap();
 
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute(IS_SIGN_UP_ENABLED));
@@ -455,7 +499,7 @@ class SignUpControllerTest {
         
         Model model = new ExtendedModelMap();
 
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute("termsPrivacyPolicy"));
@@ -475,7 +519,7 @@ class SignUpControllerTest {
         
         Model model = new ExtendedModelMap();
 
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute("termsPrivacyPolicy"));
@@ -494,7 +538,7 @@ class SignUpControllerTest {
         
         Model model = new ExtendedModelMap();
 
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute("termsPrivacyPolicy"));
@@ -670,16 +714,22 @@ class SignUpControllerTest {
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setParameter("g-recaptcha-response", "valid-recaptcha-token");
+        request.setParameter("client_id", "test-portal");
 
-        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        final RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
         when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        RegisteredClientDetails registeredClientDetails = new RegisteredClientDetails();
+        registeredClientDetails.setClientId("test-portal");
+        when(authManagementClient.getClientDetails("test-portal")).thenReturn(registeredClientDetails);
+        when(cacheClientUtils.getClientDetails("test-portal")).thenReturn(new ClientCacheDetails());
         when(userManagementClient.selfCreateUser(any(UserDto.class), any(HttpServletRequest.class)))
                 .thenThrow(new RuntimeException("User creation failed"));
         BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
         ModelAndView modelAndView = signUpController.addSelfUser(
                 "ecsp", userDto, bindingResult, request, redirectAttributes);
 
-        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, modelAndView.getViewName());
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP + "?client_id=test-portal",
+            modelAndView.getViewName());
         assertTrue(redirectAttributes.getFlashAttributes().containsKey(ERROR_LITERAL));
         // Controller returns UNEXPECTED_ERROR for generic exceptions, not the exception message
         assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR,
@@ -800,10 +850,96 @@ class SignUpControllerTest {
         when(tenantProperties.getCaptcha()).thenReturn(defaultCaptchaProperties());
 
         Model model = new ExtendedModelMap();
-        String viewName = signUpController.selfSignUpInit("ecsp", model);
+        String viewName = signUpController.selfSignUpInit("ecsp", null, model);
 
         assertEquals(SELF_SIGN_UP, viewName);
         assertTrue(model.containsAttribute("termsPrivacyPolicy"));
         assertEquals("", model.getAttribute("termsPrivacyPolicy"));
+    }
+
+    @Test
+    void initBinder_emptyStringFieldBecomesNull() {
+        UserDto userDto = new UserDto();
+        WebDataBinder binder = new WebDataBinder(userDto, "userDto");
+        signUpController.initBinder(binder);
+
+        MutablePropertyValues pvs = new MutablePropertyValues();
+        pvs.add("firstName", "");        // empty → should become null
+        pvs.add("email", "test@example.com"); // non-empty → preserved
+        binder.bind(pvs);
+
+        assertNull(userDto.getFirstName());
+        assertEquals("test@example.com", userDto.getEmail());
+    }
+
+    @Test
+    void initBinder_whitespaceOnlyFieldBecomesNull() {
+        UserDto userDto = new UserDto();
+        WebDataBinder binder = new WebDataBinder(userDto, "userDto");
+        signUpController.initBinder(binder);
+
+        MutablePropertyValues pvs = new MutablePropertyValues();
+        pvs.add("firstName", "   "); // whitespace-only → trimmed then null
+        binder.bind(pvs);
+
+        assertNull(userDto.getFirstName());
+    }
+
+    @Test
+    void selfSignUpInit_InvalidClientId_BlocksPageLoad() {
+        // authManagementClient returns null → client_id is unrecognized
+        when(authManagementClient.getClientDetails("unknown-client")).thenReturn(null);
+
+        Model model = new ExtendedModelMap();
+        String viewName = signUpController.selfSignUpInit("ecsp", "unknown-client", model);
+
+        assertEquals(SELF_SIGN_UP, viewName);
+        assertEquals(false, model.getAttribute(IS_SIGN_UP_ENABLED));
+        assertEquals(INVALID_SOURCE_IDENTIFIER, model.getAttribute(ERROR_LITERAL));
+        // setupSignupAttributes must NOT be called when client_id is invalid
+        verify(signupAttributeService, times(0)).setupSignupAttributes(any(), any());
+    }
+
+    @Test
+    void selfSignUpInit_DeletedClient_SetupAttributesThrows_ShowsError() {
+        when(tenantProperties.isSignUpEnabled()).thenReturn(true);
+        when(tenantProperties.getCaptcha()).thenReturn(defaultCaptchaProperties());
+        RegisteredClientDetails registeredClientDetails = new RegisteredClientDetails();
+        registeredClientDetails.setClientId("deleted-client");
+        when(authManagementClient.getClientDetails("deleted-client")).thenReturn(registeredClientDetails);
+        when(cacheClientUtils.getClientDetails("deleted-client")).thenReturn(new ClientCacheDetails());
+        doAnswer(invocation -> {
+            Model m = invocation.getArgument(0);
+            m.addAttribute(org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.PWD_NOTE,
+                    "note");
+            return null;
+        }).when(passwordPolicyService).setupPasswordPolicy(any(Model.class), any(Boolean.class));
+        doThrow(new RuntimeException("ClientRegistrationException: client not found"))
+            .when(signupAttributeService).setupSignupAttributes(any(Model.class), any());
+
+        Model model = new ExtendedModelMap();
+        String viewName = signUpController.selfSignUpInit("ecsp", "deleted-client", model);
+
+        assertEquals(SELF_SIGN_UP, viewName);
+        assertEquals(false, model.getAttribute(IS_SIGN_UP_ENABLED));
+        assertEquals(UNEXPECTED_ERROR, model.getAttribute(ERROR_LITERAL));
+    }
+
+    @Test
+    void addSelfUser_InvalidClientId_BlocksPost() {
+        UserDto userDto = createValidUserDto();
+        MockHttpServletRequest request = createSignUpRequest();
+        request.setParameter("client_id", "bad-client");
+        when(authManagementClient.getClientDetails("bad-client")).thenReturn(null);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+        BindingResult bindingResult = new BeanPropertyBindingResult(userDto, "userDto");
+        ModelAndView result = signUpController.addSelfUser(
+                "ecsp", userDto, bindingResult, request, redirectAttributes);
+
+        assertEquals(REDIRECT_LITERAL + "ecsp/" + SELF_SIGN_UP, result.getViewName());
+        assertEquals(INVALID_SOURCE_IDENTIFIER, redirectAttributes.getFlashAttributes().get(ERROR_LITERAL));
+        // User creation must NOT be attempted
+        verify(userManagementClient, times(0)).selfCreateUser(any(), any());
     }
 }
