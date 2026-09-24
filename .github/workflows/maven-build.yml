@@ -28,6 +28,7 @@ jobs:
     secrets:
       token: ${{ secrets.SONAR_TOKEN }}
   dependencies_update:
+    if: ${{ github.repository == 'eclipse-ecsp/uidam-authorization-server' && github.event_name != 'pull_request' }}
     needs: sonar_analysis
     uses: eclipse-ecsp/.github/.github/workflows/workflow-dependencies-update.yml@main
     secrets: inherit

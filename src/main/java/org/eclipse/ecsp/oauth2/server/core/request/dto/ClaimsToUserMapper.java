@@ -46,6 +46,24 @@ public class ClaimsToUserMapper {
             this.fieldName = fieldName;
             this.fieldType = fieldType;
         }
+
+        /**
+         * Resolves a claimMappings key to a known {@link UserField}, case-insensitively, without
+         * throwing when there is no match. Callers use an empty result to decide the value should
+         * be routed to {@link BaseUserDto#getAdditionalAttributes()} as a dynamic attribute
+         * instead of a fixed field.
+         *
+         * @param fieldName the claimMappings target-field key
+         * @return the matching {@link UserField}, or empty if none of the fixed fields match
+         */
+        public static Optional<UserField> tryParse(String fieldName) {
+            for (UserField field : values()) {
+                if (field.name().equalsIgnoreCase(fieldName)) {
+                    return Optional.of(field);
+                }
+            }
+            return Optional.empty();
+        }
     }
 
     /**
@@ -143,31 +161,32 @@ public class ClaimsToUserMapper {
 
     /**
      * Sets a specific field value on the user DTO after applying appropriate
-     * transformations.
+     * transformations. If {@code fieldName} does not match one of the fixed
+     * {@link UserField} values, it is treated as a dynamic attribute and stored in
+     * {@link BaseUserDto#getAdditionalAttributes()} instead, to be persisted downstream as a
+     * user_attribute_values entry by user-management.
      *
      * @param userDto     The target user DTO
      * @param fieldName   The name of the field to set
      * @param value       The value to set
      * @param transformer The transformer to apply to the value
-     * @throws IllegalArgumentException if the field name is invalid or unsupported
-     * @throws IllegalStateException    if the field value cannot be set
-     * @throws NullPointerException     if any parameter is null
+     * @throws IllegalStateException if the field value cannot be set
+     * @throws NullPointerException  if any parameter is null
      */
     private void setFieldValue(@NonNull FederatedUserDto userDto, @NonNull String fieldName, @NonNull Object value,
             @NonNull IdpTransformer transformer) {
+        Optional<UserField> userFieldOpt = UserField.tryParse(fieldName);
+        if (userFieldOpt.isEmpty()) {
+            LOGGER.debug("'{}' is not a known user field; storing as dynamic attribute", fieldName);
+            userDto.getAdditionalAttributes().put(fieldName, value);
+            return;
+        }
+        UserField userField = userFieldOpt.get();
         try {
-            UserField userField = UserField.valueOf(fieldName.toUpperCase());
             BiConsumer<FederatedUserDto, Object> setter = FIELD_SETTERS.get(userField);
-            if (setter == null) {
-                LOGGER.error("No setter found for field: {}", fieldName);
-                throw new IllegalArgumentException("Unsupported field: " + fieldName);
-            }
             Object transformedValue = transformField(transformer, userField, value);
             setter.accept(userDto, transformedValue);
             LOGGER.trace("Successfully set field {} with transformed value", fieldName);
-        } catch (IllegalArgumentException e) {
-            LOGGER.error("Invalid field name: {}", fieldName, e);
-            throw new IllegalArgumentException("Unsupported field: " + fieldName);
         } catch (Exception e) {
             LOGGER.error("Error setting field {} for user transformation: {}", fieldName, e.getMessage(), e);
             throw new IllegalStateException(

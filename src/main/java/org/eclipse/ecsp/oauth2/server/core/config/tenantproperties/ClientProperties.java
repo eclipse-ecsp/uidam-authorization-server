@@ -30,6 +30,7 @@ import lombok.Setter;
 public class ClientProperties {
     private Integer accessTokenTtl;
     private Integer idTokenTtl;
+    private IdTokenProperties idTokenProperties = new IdTokenProperties();
     private Integer refreshTokenTtl;
     private Integer authCodeTtl;
     private Boolean oauthScopeCustomization; //if its true then customize scopes to be present

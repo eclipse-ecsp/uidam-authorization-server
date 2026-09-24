@@ -135,5 +135,39 @@ class MultiTenantPropertiesTest {
         
         assertEquals(newTenants, properties.getProfile());
     }
+
+    @Test
+    void testIsAndSetMultitenantEnabled() {
+        assertTrue(multiTenantProperties.isMultitenantEnabled());
+
+        multiTenantProperties.setMultitenantEnabled(false);
+        assertFalse(multiTenantProperties.isMultitenantEnabled());
+
+        multiTenantProperties.setMultitenantEnabled(true);
+        assertTrue(multiTenantProperties.isMultitenantEnabled());
+    }
+
+    @Test
+    void testTenantConfigWithPopulatedProfile() {
+        multiTenantProperties.tenantConfig();
+        // parseMappings on each tenant must run without error when profile is populated.
+        assertNotNull(multiTenantProperties.getProfile());
+    }
+
+    @Test
+    void testTenantConfigWithEmptyProfile() {
+        MultiTenantProperties properties = new MultiTenantProperties();
+        properties.setProfile(new HashMap<>());
+        properties.tenantConfig();
+        assertTrue(properties.getProfile().isEmpty());
+    }
+
+    @Test
+    void testTenantConfigWithNullProfile() {
+        MultiTenantProperties properties = new MultiTenantProperties();
+        properties.setProfile(null);
+        properties.tenantConfig();
+        assertNull(properties.getProfile());
+    }
 }
 // CHECKSTYLE.ON: MatchXpath

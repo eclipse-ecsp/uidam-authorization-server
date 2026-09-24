@@ -46,6 +46,7 @@ public final class AuthorizationServerConstants {
     public static final String TENANT_EXTERNAL_URLS_SELF_CREATE_USER = "self-create-user-endpoint";
     public static final String TENANT_EXTERNAL_URLS_CREATE_FEDRATED_USER = "create-fedrated-user-endpoint";
     public static final String TENANT_EXTERNAL_URLS_PASSWORD_POLICY_ENDPOINT = "password-policy-endpoint";
+    public static final String TENANT_EXTERNAL_URLS_USER_ATTRIBUTES_ENDPOINT = "user-attributes-endpoint";
 
     // MFA endpoint keys (tenant external-urls)
     public static final String TENANT_EXTERNAL_URLS_MFA_ENROLL_INITIATE = "mfa-enroll-initiate-endpoint";
@@ -83,6 +84,8 @@ public final class AuthorizationServerConstants {
             + "with a different email.";
     public static final String UNEXPECTED_ERROR = "An unexpected error occurred. Please try again later.";
     public static final String INVALID_INPUT_ERROR = "Invalid input. Please check your entries and try again.";
+    public static final String INVALID_SOURCE_IDENTIFIER =
+            "Invalid source identifier. Please use a valid application link to sign up.";
     public static final String INVALID_CHARACTERS_ERROR = "Invalid characters in input";
     public static final String ADD_REQ_PAR = "Please add all required fields.";
     public static final String INVALID_PASSWORD = "Your password does not meet the security requirements. "

@@ -109,8 +109,12 @@ public class IgniteSecurityConfig {
     // Security matcher patterns
     private static final String OAUTH2_PATTERN = "/oauth2/**";
     private static final String TENANT_OAUTH2_PATTERN = "/*/oauth2/**";
-    private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server/";
-    private static final String WELL_KNOWN_OAUTH_SERVER_TENANT = "/.well-known/oauth-authorization-server/*/";
+    // No trailing slash: Spring's metadata/discovery endpoints are requested without one
+    // (e.g. ".../oauth-authorization-server/ecsp"), so a trailing-slash pattern never matches.
+    private static final String WELL_KNOWN_OAUTH_SERVER = "/.well-known/oauth-authorization-server";
+    private static final String WELL_KNOWN_OAUTH_SERVER_TENANT = "/.well-known/oauth-authorization-server/*";
+    private static final String WELL_KNOWN_OPENID_CONFIG = "/.well-known/openid-configuration";
+    private static final String WELL_KNOWN_OPENID_CONFIG_TENANT = "/.well-known/openid-configuration/*";
     private static final String OAUTH2_CALLBACK_PATTERN = "/*/login/oauth2/code/**";
     private static final String OAUTH2_AUTHORIZATION_PATTERN = "/*/oauth2/authorization/**";
     private static final String OAUTH2_LOGOUT_ENDPOINT = "/oauth2/logout";
@@ -272,7 +276,7 @@ public class IgniteSecurityConfig {
         // code is issued.  UsernamePasswordAuthenticationFilter is earlier in the chain, so
         // placing the filter before it guarantees it runs before any OAuth2 endpoint filter.
         MfaChallengeFilter mfaChallengeFilter = new MfaChallengeFilter(mfaSecretService,
-                this.tenantConfigurationService, mfaStateService);
+                this.tenantConfigurationService, mfaStateService, this.authorizationMetricsService);
         http.addFilterBefore(mfaChallengeFilter, UsernamePasswordAuthenticationFilter.class);
 
         // This filter ensures only tenant-allowed authentication methods are executed
@@ -379,7 +383,8 @@ public class IgniteSecurityConfig {
                 USER_CREATED_MATCHER_PATTERN,
                 LOGOUT_MATCHER_PATTERN,
                 "/mfa/**",
-                "/*/mfa/**"))
+                "/*/mfa/**",
+                WELL_KNOWN_OPENID_CONFIG, WELL_KNOWN_OPENID_CONFIG_TENANT))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(DEFAULT_LOGIN_MATCHER_PATTERN, LOGIN_MATCHER_PATTERN,
                                 DEFAULT_SIGN_UP_MATCHER_PATTERN, SIGN_UP_MATCHER_PATTERN,
@@ -389,7 +394,8 @@ public class IgniteSecurityConfig {
                         .requestMatchers(LOGOUT_MATCHER_PATTERN).permitAll()
                         .requestMatchers("/mfa/**", "/*/mfa/**").permitAll() // MFA pages (filter controls access)
                         .requestMatchers(OAUTH2_AUTHORIZATION_PATTERN, OAUTH2_CALLBACK_PATTERN).permitAll()
-                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT).permitAll()
+                        .requestMatchers(WELL_KNOWN_OAUTH_SERVER, WELL_KNOWN_OAUTH_SERVER_TENANT,
+                                WELL_KNOWN_OPENID_CONFIG, WELL_KNOWN_OPENID_CONFIG_TENANT).permitAll()
                         .anyRequest().authenticated())
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         // SonarQube S4502: CSRF protection is intentionally disabled for OAuth2 logout endpoints

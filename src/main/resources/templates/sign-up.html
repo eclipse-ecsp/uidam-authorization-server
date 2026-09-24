@@ -195,8 +195,12 @@
 
 		
         var passwordConfirm = function() {
-            if (document.getElementById("password").value ==
-                document.getElementById("confirmPassword").value) {
+            var confirmPwd = document.getElementById("confirmPassword").value;
+            if (confirmPwd === '') {
+                document.getElementById("confirmPassworMessage").innerHTML = '';
+                return;
+            }
+            if (document.getElementById("password").value == confirmPwd) {
                 document.getElementById("confirmPassworMessage").style.color = "Green";
                 document.getElementById("confirmPassworMessage").innerHTML = "Passwords match!"
             } else {
@@ -228,7 +232,7 @@
         <p class="text-warning">[[${message}]]</p>
     </div>
     <div th:if="${isSignUpEnabled}">
-        <form th:action="@{'/'+ ${issuer} + '/sign-up'}" method="post">
+		<form class="sign-up-form" th:action="@{|/${issuer}/sign-up|(client_id=${clientId != null and !#strings.isEmpty(clientId) ? clientId : null})}" method="post">
 		
 		    <div class="container-auth-input">
                 <label for="email" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Email*</label>
@@ -270,7 +274,48 @@
 				<span id="confirmPassworMessage" style="margin-top: -4px; font-size: 12px; font-weight: bold;"></span>
             
             </div>
-			
+
+			<!-- Dynamic additional attributes from user_attributes table -->
+			<th:block th:if="${signupAdditionalAttributesEnabled}">
+				<div class="container-auth-input"
+				     th:each="attr : ${signupAdditionalAttributes}"
+				     th:id="'container-' + ${attr.name}">
+					<label th:for="${attr.name}"
+					       th:class="${attr.needsFloatingLabel() ? 'hidden' : 'attr-label'}"
+					       style="font-size: 14px; font-weight: bold; font-family: sans-serif;"
+					       th:text="${attr.attributeLabel != null and attr.attributeLabel != '' ? attr.attributeLabel : attr.name}
+					               + (${attr.mandatory} ? '*' : '')"></label>
+					<textarea th:if="${attr.isTextArea()}"
+					          th:id="${attr.name}"
+					          th:name="${attr.name}"
+					          th:placeholder="${attr.attributeLabel != null and attr.attributeLabel != '' ? attr.attributeLabel : attr.name}
+					                        + (${attr.mandatory} ? '*' : '')"
+					          rows="3" th:required="${attr.mandatory}"></textarea>
+					<input th:unless="${attr.isTextArea() or attr.isCheckbox()}"
+					       th:type="${attr.htmlInputType}"
+					       th:id="${attr.name}"
+					       th:name="${attr.name}"
+					       th:placeholder="${attr.attributeLabel != null and attr.attributeLabel != '' ? attr.attributeLabel : attr.name}
+					                      + (${attr.mandatory} ? '*' : '')"
+					       th:pattern="${attr.regex != null and attr.regex != '' and attr.regex != '.*' ? attr.regex : null}"
+					       th:step="${attr.htmlStep}"
+					       th:required="${attr.mandatory}" />
+					<input th:if="${attr.isCheckbox()}"
+					       type="checkbox"
+					       th:id="${attr.name}"
+					       th:name="${attr.name}" th:required="${attr.mandatory}" />
+					<div class="error-message"
+					     th:if="${attr.mandatory}"
+					     style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
+					<div class="format-error"
+					     th:if="${attr.regex != null and attr.regex != '' and attr.regex != '.*'}"
+					     style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">Invalid format - value does not match the expected pattern</div>
+					<div class="danger-error"
+					     th:unless="${attr.isCheckbox()}"
+					     style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">Invalid input - dangerous content detected</div>
+				</div>
+			</th:block>
+
 			<div class="container-auth-input" th:if="${termsPrivacyPolicy != null and termsPrivacyPolicy != ''}">
 			    <div class="policy" style="margin-bottom: 5px;">
 					Please read and accept the policy before continuing.
@@ -290,7 +335,7 @@
 			<span id="captchaError" class="alert alert-danger col-sm-4"	style="display:none"></span>	
 						
             <div class="sign-in-custom">
-				<button id="submit" type="submit" value="Sign Up" >
+				<button id="submit" type="submit" value="Sign Up" disabled>
 					Submit
 				</button>
 			</div>
@@ -308,57 +353,94 @@
     </div>
 	
 	<script th:inline="javascript">
-		$(document).ready(function() {
-    		function handleInputFields() {
-				var email = $('#email').val().trim();
-				var firstName = $('#firstName').val().trim();
-				var lastName = $('#lastName').val().trim();
-				var password = $('#password').val().trim();
-				var confirmPassword = $('#confirmPassword').val().trim();
-				
-				// Check for terms acceptance - only if checkbox exists
-				var termsAccepted = true; // Default to true when no checkbox exists
-				if ($('#termsCheckbox').length > 0) {
-					termsAccepted = $('#termsCheckbox').is(':checked');
-				}
-				
-				var recaptchaResponse = $('#g-recaptcha-response').val();
-				var isCaptchaFieldEnabled = $('#g-recaptcha').length > 0;
+		function handleInputFields() {
+			var email = $('#email').val().trim();
+			var firstName = $('#firstName').val().trim();
+			var lastName = $('#lastName').val().trim();
+			var password = $('#password').val().trim();
+			var confirmPassword = $('#confirmPassword').val().trim();
 
-				var areFieldsFilled = email !== '' && firstName !== '' && password !== '' && confirmPassword !== '';
+			// Check for terms acceptance - only if checkbox exists
+			var termsAccepted = true; // Default to true when no checkbox exists
+			if ($('#termsCheckbox').length > 0) {
+				termsAccepted = $('#termsCheckbox').is(':checked');
+			}
 
-				if (isCaptchaFieldEnabled) {
-					areFieldsFilled = areFieldsFilled && recaptchaResponse !== '';
-				}
+			var recaptchaResponse = $('#g-recaptcha-response').val();
+			var isCaptchaFieldEnabled = $('#g-recaptcha').length > 0;
 
-				// Check all input fields for dangerous content (scripts, SQL injection, etc.)
-				var inputsSafe = InputValidator.isSafe(email) && InputValidator.isSafe(firstName) && InputValidator.isSafe(lastName);
+			var areFieldsFilled = email !== '' && firstName !== '' && password !== '' && confirmPassword !== '';
 
-				if (areFieldsFilled && password === confirmPassword && termsAccepted && inputsSafe) {
-					$('#submit').prop('disabled', false).addClass('enabled');
-				} else {
-					$('#submit').prop('disabled', true).removeClass('enabled');
-				}
+			if (isCaptchaFieldEnabled) {
+				// !!recaptchaResponse handles undefined (widget not yet rendered) and '' (not yet verified)
+				areFieldsFilled = areFieldsFilled && !!recaptchaResponse;
+			}
 
-				$('.container-auth-input input').each(function () {
-					var inputField = $(this);
-					var errorMessage = inputField.siblings('.error-message');
-					var label = inputField.siblings('label');
-
-					if (inputField.val().trim() === '' && (inputField.is(':focus') || inputField.attr('data-dirty') === 'true')) {
-						errorMessage.show();
-					} else {
-						errorMessage.hide();
+			// Check all input fields for dangerous content (scripts, SQL injection, etc.)
+			var inputsSafe = InputValidator.isSafe(email) && InputValidator.isSafe(firstName) && InputValidator.isSafe(lastName);
+			// Check all custom attribute text/textarea inputs for dangerous content
+			var customAttrsSafe = true;
+			$('.container-auth-input input[type="text"], .container-auth-input input[type="email"], .container-auth-input input[type="number"], .container-auth-input textarea')
+				.not('#email, #firstName, #lastName, #password, #confirmPassword')
+				.each(function () {
+					if (!InputValidator.isSafe($(this).val())) {
+						customAttrsSafe = false;
 					}
+				});
+			inputsSafe = inputsSafe && customAttrsSafe;
+			// Check for pattern validation errors in custom attribute fields
+			var hasPatternErrors = false;
+			$('.container-auth-input input[pattern]').each(function () {
+				if (this.validity && this.validity.patternMismatch) {
+					hasPatternErrors = true;
+				}
+			});
+			// Also treat bad numeric input (e.g. "12-12" in a number field) as a pattern error
+			$('.container-auth-input input[type="number"]').each(function () {
+				if (this.validity && this.validity.badInput) {
+					hasPatternErrors = true;
+				}
+			});
 
+			if (areFieldsFilled && password === confirmPassword && termsAccepted && inputsSafe && !hasPatternErrors) {
+				$('#submit').prop('disabled', false).addClass('enabled');
+			} else {
+				$('#submit').prop('disabled', true).removeClass('enabled');
+			}
+
+			$('.container-auth-input input').each(function () {
+				var inputField = $(this);
+				var errorMessage = inputField.siblings('.error-message');
+				var formatError = inputField.siblings('.format-error');
+				var label = inputField.siblings('label');
+				// badInput is true when the user has typed something that cannot be
+				// parsed as a number (e.g. "12-12" in a type=number field).
+				var isBadInput = this.validity && this.validity.badInput;
+
+				if (isBadInput) {
+					// Show format error instead of required error for invalid numeric content
+					formatError.show();
+					errorMessage.hide();
+				} else if (inputField.val().trim() === '' && (inputField.is(':focus') || inputField.attr('data-dirty') === 'true')) {
+					errorMessage.show();
+				} else {
+					errorMessage.hide();
+					if (!this.validity || !this.validity.patternMismatch) {
+						formatError.hide();
+					}
+				}
+
+				if (!label.hasClass('attr-label')) {
 					if (inputField.val().trim() !== '') {
 						label.removeClass('hidden');
 					} else {
 						label.addClass('hidden');
 					}
-				});
-			}
+				}
+			});
+		}
 
+		$(document).ready(function() {
 			$('input[type="text"], input[type="password"], input[type="email"]').on('keyup', function() {
 				handleInputFields();
 			});
@@ -374,6 +456,29 @@
 				handleInputFields();
 			});
 
+			// Event listeners for number dynamic attribute inputs (floating label toggle)
+			$('input[type="number"]').on('input keyup', function() {
+				handleInputFields();
+			});
+			$('input[type="number"]').on('blur', function() {
+				$(this).attr('data-dirty', 'true');
+				// Show format-error immediately on blur when the typed value is not a
+				// valid number (badInput), so the user sees "Invalid format" rather than
+				// the generic "This is required" message.
+				var formatError = $(this).siblings('.format-error');
+				if (this.validity && this.validity.badInput) {
+					formatError.show();
+				} else {
+					formatError.hide();
+				}
+				handleInputFields();
+			});
+
+			// Event listeners for date/time dynamic attribute inputs (error message toggle)
+			$('input[type="date"], input[type="time"], input[type="datetime-local"]').on('change', function() {
+				handleInputFields();
+			});
+
 			// Add event listener for terms checkbox if it exists
 			$('#termsCheckbox').on('change', function() {
 				handleInputFields();
@@ -381,8 +486,36 @@
 
 			handleInputFields();
 
-			// Attach real-time dangerous input validation
+			// Attach real-time dangerous input validation for core fields
 			InputValidator.attachValidation(['email', 'firstName', 'lastName']);
+
+			// Validate pattern on blur/input for custom attribute fields
+			$('.container-auth-input input[pattern]').on('input blur', function () {
+				var input = $(this);
+				var formatError = input.siblings('.format-error');
+				if (input.val().trim() !== '' && this.validity && this.validity.patternMismatch) {
+					formatError.show();
+					this.setCustomValidity('Invalid format');
+				} else {
+					formatError.hide();
+					this.setCustomValidity('');
+				}
+				handleInputFields();
+			});
+
+			// Validate dangerous content on blur/input for custom attribute text/textarea inputs
+			$('.container-auth-input input[type="text"], .container-auth-input input[type="email"], .container-auth-input input[type="number"], .container-auth-input textarea')
+				.not('#email, #firstName, #lastName, #password, #confirmPassword')
+				.on('input blur', function () {
+					var input = $(this);
+					var dangerError = input.siblings('.danger-error');
+					if (input.val().trim() !== '' && !InputValidator.isSafe(input.val())) {
+						dangerError.show();
+					} else {
+						dangerError.hide();
+					}
+					handleInputFields();
+				});
 
 			$('form').on('submit', function(event) {
 				// Validate all input fields for dangerous content before submission
@@ -390,10 +523,44 @@
 					event.preventDefault();
 					return false;
 				}
+				// Validate pattern for custom attribute fields on submit
+				var preventSubmit = false;
+				$('.container-auth-input input[pattern]').each(function () {
+					var formatError = $(this).siblings('.format-error');
+					if ($(this).val().trim() !== '' && this.validity && this.validity.patternMismatch) {
+						formatError.show();
+						this.setCustomValidity('Invalid format');
+						preventSubmit = true;
+					} else {
+						formatError.hide();
+						this.setCustomValidity('');
+					}
+				});
+				if (preventSubmit) {
+					event.preventDefault();
+					return false;
+				}
+				// Validate dangerous content in all custom attribute inputs on submit
+				$('.container-auth-input input[type="text"], .container-auth-input input[type="email"], .container-auth-input input[type="number"], .container-auth-input textarea')
+					.not('#email, #firstName, #lastName, #password, #confirmPassword')
+					.each(function () {
+						var input = $(this);
+						var dangerError = input.siblings('.danger-error');
+						if (input.val().trim() !== '' && !InputValidator.isSafe(input.val())) {
+							dangerError.show();
+							preventSubmit = true;
+						} else {
+							dangerError.hide();
+						}
+					});
+				if (preventSubmit) {
+					event.preventDefault();
+					return false;
+				}
 			});
 
 			$('.sign-up-form').on('submit', function(event) {
-				$('.container-auth-input input').each(function() {
+				$('.container-auth-input input[required]').each(function() {
 					var errorMessage = $(this).siblings('.error-message');
 					if ($(this).val().trim() === '') {
 						errorMessage.show();
@@ -402,7 +569,7 @@
 					}
 				});
 
-				if ($('.container-auth-input input').filter(function() {
+				if ($('.container-auth-input input[required]').filter(function() {
 					return $(this).val().trim() === '';
 				}).length > 0) {
 					event.preventDefault();
@@ -413,7 +580,7 @@
 		});
 	</script>
 	<script th:inline="javascript"
-		th:if="(true == ${isCaptchaFieldEnabled})">
+			th:if="(true == ${isCaptchaFieldEnabled})">
 
 		window.addEventListener('load', () => {
 			const $recaptcha = document.querySelector('#g-recaptcha-response');
@@ -426,7 +593,7 @@
 
 </div>
 <div class="rights" th:fragment="footer">
-    �<script>document.write(new Date().getFullYear());</script> HARMAN International. All Rights Reserved.
+    &#169;<script>document.write(new Date().getFullYear());</script> HARMAN International. All Rights Reserved.
 </div>
 </body>
 </html>

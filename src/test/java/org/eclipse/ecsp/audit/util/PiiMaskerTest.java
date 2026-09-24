@@ -79,7 +79,8 @@ class PiiMaskerTest {
     @Test
     void maskJsonShouldMaskTokenFields() {
         // Given
-        String json = "{\"accessToken\":\"abc123\",\"refreshToken\":\"xyz789\"}";
+        String json = "{\"accessToken\":\"abc123\",\"refreshToken\":\"xyz789\""
+                + ",\"externalIdpIdToken\":\"idp456\"}";
 
         // When
         String masked = PiiMasker.maskJson(json);
@@ -88,6 +89,7 @@ class PiiMaskerTest {
         assertThat(masked).contains(MASKED);
         assertThat(masked).doesNotContain("abc123");
         assertThat(masked).doesNotContain("xyz789");
+        assertThat(masked).doesNotContain("idp456");
     }
 
     @Test

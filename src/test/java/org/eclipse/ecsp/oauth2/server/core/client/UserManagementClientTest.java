@@ -72,9 +72,11 @@ import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.USER_MGMT_B
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.USER_RECOVERY_NOTIF_ENDPOINT;
 import static org.eclipse.ecsp.oauth2.server.core.test.TestConstants.USER_RESET_PASSWORD_ENDPOINT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
@@ -594,13 +596,14 @@ class UserManagementClientTest {
         WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
         when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
         when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+        when(wcException.getResponseBodyAsString()).thenReturn(null);
         Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
                 .thenReturn(Mono.error(wcException));
 
         OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
-        assertEquals("server_error", thrown.getError().getErrorCode());
-        assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.INVALID_INPUT_ERROR, thrown.getError().getDescription());
     }
 
     @Test
@@ -1660,6 +1663,40 @@ class UserManagementClientTest {
     }
 
     @Test
+    void selfCreateUser_Conflict_EmptyUserErrorResponse_ShouldStillThrowRecordAlreadyExists() {
+        // Reproduces the real-world "user already exists" response: user-management returns a
+        // BaseRepresentation body (e.g. {"messages": [...]}) whose field names don't overlap with
+        // UserErrorResponse, so lenient JSON parsing yields a non-null but all-blank
+        // UserErrorResponse. The CONFLICT classification only depends on the status code, so it
+        // must not be masked as an unexpected/server error just because the body content is empty.
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse emptyErrorResponse = new UserErrorResponse();
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.CONFLICT);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(emptyErrorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("RECORD_ALREADY_EXISTS", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.USER_ALREADY_EXISTS_PLEASE_TRY_AGAIN,
+                thrown.getError().getDescription());
+    }
+
+    @Test
     void selfCreateUser_BadRequestWithPasswordError_ShouldReturnInvalidPassword() {
         UserDto userDto = new UserDto();
         userDto.setUserName("testUser");
@@ -1688,6 +1725,43 @@ class UserManagementClientTest {
 
         assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
         assertEquals(AuthorizationServerConstants.INVALID_PASSWORD, thrown.getError().getDescription());
+    }
+
+    @Test
+    void selfCreateUser_BadRequest_CustomAttributeRegexFailure_ShouldNameInvalidField() {
+        // Reproduces user-management's ApplicationRuntimeException(FIELD_DATA_IS_INVALID, ...) for a
+        // custom sign-up attribute (e.g. accountBalance) that failed its configured regex. The
+        // message is "{ Error ='field.data.is.invalid', parameters=[[accountBalance]] }" and the
+        // JSON "parameters" field carries the actual invalid attribute name(s).
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setStatus("BAD_REQUEST");
+        errorResponse.setCode("BAD_REQUEST");
+        errorResponse.setMessage("{ Error ='field.data.is.invalid', parameters=[[accountBalance]] }");
+        errorResponse.setParameters(java.util.List.of("[accountBalance]"));
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals("Invalid value for: accountBalance. Please correct and try again.",
+                thrown.getError().getDescription());
     }
 
     @Test
@@ -1747,13 +1821,14 @@ class UserManagementClientTest {
     }
 
     @Test
-    void selfCreateUser_WebClientResponseException_NullBody_ShouldReturnServerError() {
+    void selfCreateUser_WebClientResponseException_NullBody_BadRequest_ShouldReturnBadRequest() {
         UserDto userDto = new UserDto();
         userDto.setUserName("testUser");
 
         WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
         when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
         when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+        when(wcException.getResponseBodyAsString()).thenReturn(null);
 
         Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
         Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
@@ -1768,11 +1843,12 @@ class UserManagementClientTest {
         OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
 
-        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.INVALID_INPUT_ERROR, thrown.getError().getDescription());
     }
 
     @Test
-    void selfCreateUser_WebClientResponseException_IllegalStateParsingBody_ShouldReturnServerError() {
+    void selfCreateUser_WebClientResponseException_IllegalStateParsingBody_BadRequest_ShouldReturnBadRequest() {
         UserDto userDto = new UserDto();
         userDto.setUserName("testUser");
 
@@ -1780,6 +1856,7 @@ class UserManagementClientTest {
         when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
         when(wcException.getResponseBodyAs(UserErrorResponse.class))
                 .thenThrow(new IllegalStateException("Could not decode"));
+        when(wcException.getResponseBodyAsString()).thenReturn(null);
 
         Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
         Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
@@ -1794,16 +1871,19 @@ class UserManagementClientTest {
         OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
                 () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
 
-        assertEquals("server_error", thrown.getError().getErrorCode());
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.INVALID_INPUT_ERROR, thrown.getError().getDescription());
     }
 
     @Test
-    void extractMessage_withNoPatternMatch_shouldReturnNull() {
+    void extractMessage_withNoPatternMatch_shouldReturnUnexpectedError() {
         UserDto userDto = new UserDto();
         userDto.setUserName("testUser");
 
         UserErrorResponse errorResponse = new UserErrorResponse();
-        // Message does not match the extractMessage pattern
+        // Message does not match the extractMessage pattern, but the response is a genuine,
+        // populated UserErrorResponse (not an artifact of a mis-parsed field-error map), so the
+        // raw message must never be surfaced verbatim to the UI (it could contain internal detail).
         errorResponse.setMessage("simple error message without pattern");
 
         WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
@@ -1824,7 +1904,168 @@ class UserManagementClientTest {
                 () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
 
         assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
-        // extractMessage returns null, so INVALID_PASSWORD is NOT returned, falls back to UNEXPECTED_ERROR
         assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+    }
+
+    @Test
+    void selfCreateUser_BadRequest_NonEmptyUserErrorResponseWithBlankMessage_ShouldFallBackToFieldValidation() {
+        // UserErrorResponse has some structured content (status/code) but a blank message - still
+        // treated as empty since none of its identifying fields carry a usable message, so the
+        // raw body is parsed as a field-error map.
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        String fieldErrorJson = "{\"phoneNumber\":\"invalid.phone.number\"}";
+        UserErrorResponse emptyErrorResponse = new UserErrorResponse();
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(emptyErrorResponse);
+        when(wcException.getResponseBodyAsString()).thenReturn(fieldErrorJson);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertTrue(thrown.getError().getDescription().startsWith("Validation failed:"));
+    }
+
+    @Test
+    void selfCreateUser_BadRequest_DataIntegrityStyleMessage_ShouldNotLeakRawMessage() {
+        // Simulates a genuine ErrorDetails-shaped 400 body (e.g. from a DataIntegrityViolationException
+        // handler) whose message is a raw, potentially sensitive internal/DB message. Since status/code
+        // are populated, this must NOT be treated as an empty/mis-parsed response, and the raw message
+        // must never be surfaced verbatim to the UI.
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        UserErrorResponse errorResponse = new UserErrorResponse();
+        errorResponse.setStatus("ERROR");
+        errorResponse.setCode("ERROR_INVALID_DATA");
+        errorResponse.setMessage("duplicate key value violates unique constraint \"uk_email\" on table \"users\"");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(errorResponse);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertEquals(AuthorizationServerConstants.UNEXPECTED_ERROR, thrown.getError().getDescription());
+        assertFalse(thrown.getError().getDescription().contains("uk_email"));
+        assertFalse(thrown.getError().getDescription().contains("constraint"));
+    }
+
+    @Test
+    void selfCreateUser_BadRequest_EmptyUserErrorResponse_FieldValidationBody_ShouldReturnActualFieldError() {
+        // Reproduces the real-world bug: user-management returns a bean-validation field-error map
+        // (e.g. {"phoneNumber": "invalid.phone.number"}), but because the WebClient's Jackson stack
+        // ignores unknown properties, ex.getResponseBodyAs(UserErrorResponse.class) does NOT throw -
+        // it returns a non-null UserErrorResponse with every field left null/default. The fix must
+        // still surface the actual field-validation message instead of a generic unexpected error.
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        String fieldErrorJson = "{\"phoneNumber\":\"invalid.phone.number\"}";
+        UserErrorResponse emptyErrorResponse = new UserErrorResponse();
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(emptyErrorResponse);
+        when(wcException.getResponseBodyAsString()).thenReturn(fieldErrorJson);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertTrue(thrown.getError().getDescription().startsWith("Validation failed:"));
+        assertTrue(thrown.getError().getDescription().contains("invalid.phone.number"));
+    }
+
+    @Test
+    void selfCreateUser_NullBody_NonBadRequestStatus_ShouldReturnServerError() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("server_error", thrown.getError().getErrorCode());
+    }
+
+    @Test
+    void selfCreateUser_BadRequest_FieldValidationMapBody_ShouldReturnValidationFailedMessage() {
+        UserDto userDto = new UserDto();
+        userDto.setUserName("testUser");
+
+        // Response body is a Spring MVC validation error map: {"phoneNumber": "invalid.phone.number"}
+        String fieldErrorJson = "{\"phoneNumber\":\"invalid.phone.number\"}";
+
+        WebClientResponseException wcException = Mockito.mock(WebClientResponseException.class);
+        when(wcException.getStatusCode()).thenReturn(org.springframework.http.HttpStatus.BAD_REQUEST);
+        when(wcException.getResponseBodyAs(UserErrorResponse.class)).thenReturn(null);
+        when(wcException.getResponseBodyAsString()).thenReturn(fieldErrorJson);
+
+        Mockito.when(webClientMock.method(HttpMethod.POST)).thenReturn(requestBodyUriSpecMock);
+        Mockito.when(requestBodyUriSpecMock.uri(anyString())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.header(anyString(), any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.contentType(any())).thenReturn(requestBodySpecMock);
+        Mockito.when(requestBodySpecMock.bodyValue(userDto))
+                .thenReturn((WebClient.RequestHeadersSpec) requestHeadersSpecMock);
+        Mockito.when(requestHeadersSpecMock.retrieve()).thenReturn(responseSpecMock);
+        Mockito.when(responseSpecMock.bodyToMono(UserDetailsResponse.class))
+                .thenReturn(Mono.error(wcException));
+
+        OAuth2AuthenticationException thrown = assertThrows(OAuth2AuthenticationException.class,
+                () -> userManagementClient.selfCreateUser(userDto, httpServletRequest));
+
+        assertEquals("BAD_REQUEST", thrown.getError().getErrorCode());
+        assertTrue(thrown.getError().getDescription().startsWith("Validation failed:"));
+        assertTrue(thrown.getError().getDescription().contains("invalid.phone.number"));
     }
 }
