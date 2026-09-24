@@ -21,6 +21,7 @@ package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -45,12 +46,39 @@ public class ExternalIdpRegisteredClient {
     private String userNameAttributeName;
     private String jwkSetUri;
     private String tokenInfoSource;
+
+    /**
+     * Whether the raw ID token issued by this external OIDC provider should be
+     * included as the {@code externalIdpIdToken} claim in the UIDAM ID token.
+     * Disabled by default because the upstream token is a sensitive credential.
+     */
+    private boolean includeIdpIdToken;
+
     private String createUserMode;
     private Set<String> defaultUserRoles;
 
     private String claimMappings; // Holds comma-separated values
     private Map<String, String> mappings; // Populated after parsing
     private Condition conditions; // Condition configuration for IDP
+
+    // ── Dynamic scope claim mapping ──────────────────────────────────────────
+
+    /**
+     * The IDP claim key whose value holds the user's role/group memberships.
+     * e.g. {@code groups} (Azure AD/Okta), {@code roles} (Cognito).
+     * Defaults to {@code groups}.
+     */
+    private String roleClaimKey;
+
+    /**
+     * Ordered list of external-role → internal-scope mapping rules for this IDP.
+     * Each rule maps IDP claim values to UIDAM scope names.
+     * All configuration is property-driven — no DB or API calls needed.
+     */
+    private List<ScopeRoleMapping> scopeRoleMappings;
+
+    // Default to INTERNAL for backward compatibility
+    private ScopePreference scopePreference = ScopePreference.INTERNAL;
 
     /**
      * Claims conditions.

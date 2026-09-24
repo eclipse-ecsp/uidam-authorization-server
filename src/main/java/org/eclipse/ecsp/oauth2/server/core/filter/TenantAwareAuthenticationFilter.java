@@ -91,7 +91,9 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
         } catch (RuntimeException e) {
             LOGGER.error("Runtime error in tenant-aware authentication filter",  e);
             // Fail secure: redirect to error page instead of continuing
-            response.sendRedirect(ERROR_REDIRECT_PATH + "?error=tenant_security_error");
+            // Note: ERROR_REDIRECT_PATH already contains "?error=true", so additional params must be
+            // appended with '&', not '?', to avoid producing an invalid URL like "?error=true?error=...".
+            response.sendRedirect(ERROR_REDIRECT_PATH + "&error=tenant_security_error");
         }
     }
 
@@ -164,12 +166,14 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
             throws IOException {
         try {
             // No alternative available - show error
+            // Note: ERROR_REDIRECT_PATH already contains "?error=true", so additional params must be
+            // appended with '&', not '?', to avoid producing an invalid URL like "?error=true?error=...".
             LOGGER.warn("No authentication methods available for tenant: {}", SessionTenantResolver.getCurrentTenant());
-            response.sendRedirect(ERROR_REDIRECT_PATH + "?error=no_auth_methods_available");
+            response.sendRedirect(ERROR_REDIRECT_PATH + "&error=no_auth_methods_available");
 
         } catch (Exception e) {
             LOGGER.error("Error redirecting for tenant: {}", SessionTenantResolver.getCurrentTenant(), e);
-            response.sendRedirect(ERROR_REDIRECT_PATH + "?error=redirect_error");
+            response.sendRedirect(ERROR_REDIRECT_PATH + "&error=redirect_error");
         }
     }
 }

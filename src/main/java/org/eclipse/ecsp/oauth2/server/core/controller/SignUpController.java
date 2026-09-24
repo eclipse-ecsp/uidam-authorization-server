@@ -20,36 +20,48 @@ package org.eclipse.ecsp.oauth2.server.core.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.SignupClientConfig;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.UserDto;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.PasswordPolicyService;
+import org.eclipse.ecsp.oauth2.server.core.service.SignupAttributeService;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.UiAttributeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.propertyeditors.StringTrimmerEditor;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.ADD_REQ_PAR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.EMAIL_SENT_SUFFIX;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.FAILED_TO_CREATE_USER_WITH_USERNAME;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_INPUT_ERROR;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.INVALID_SOURCE_IDENTIFIER;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.REDIRECT_LITERAL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SELF_SIGN_UP;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.SIGN_UP_NOT_ENABLED;
@@ -58,6 +70,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.Authorization
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.AuthorizationServerConstants.USER_CREATED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_SITE;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.COMMA_DELIMITER;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ERROR_LITERAL;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.IS_SIGN_UP_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.MSG_LITERAL;
@@ -72,6 +85,8 @@ public class SignUpController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SignUpController.class);
     private static final int SIGN_UP_FIELD_MAX_LENGTH = 50;
+    private static final String CLIENT_ID_PARAM = "client_id";
+    private static final String CLIENT_ID_QUERY_PARAM = "?client_id=";
 
     private UserManagementClient userManagementClient;
 
@@ -81,6 +96,10 @@ public class SignUpController {
 
     private UiAttributeUtils uiAttributeUtils;
 
+    private SignupAttributeService signupAttributeService;
+
+    private CacheClientUtils cacheClientUtils;
+
     /**
      * Constructor for SelfUserController.
      *
@@ -88,11 +107,24 @@ public class SignUpController {
      */
     public SignUpController(UserManagementClient userManagementClient,
             TenantConfigurationService tenantConfigurationService, PasswordPolicyService passwordPolicyService,
-            UiAttributeUtils uiAttributeUtils) {
+            UiAttributeUtils uiAttributeUtils, SignupAttributeService signupAttributeService,
+            CacheClientUtils cacheClientUtils) {
         this.userManagementClient = userManagementClient;
         this.tenantConfigurationService = tenantConfigurationService;
         this.passwordPolicyService = passwordPolicyService;
         this.uiAttributeUtils = uiAttributeUtils;
+        this.signupAttributeService = signupAttributeService;
+        this.cacheClientUtils = cacheClientUtils;
+    }
+
+    /**
+     * Trims all incoming String fields and converts empty strings to {@code null},
+     * so that optional fields left blank on the sign-up form are not sent as
+     * empty strings to downstream validation.
+     */
+    @InitBinder
+    public void initBinder(WebDataBinder binder) {
+        binder.registerCustomEditor(String.class, new StringTrimmerEditor(true));
     }
 
     /**
@@ -102,20 +134,42 @@ public class SignUpController {
      * @return the name of the sign-up view
      */
     @GetMapping(SLASH + SELF_SIGN_UP)
-    public String selfSignUpInit(@PathVariable(value = "tenantId", required = false) String tenantId, Model model) {
+    public String selfSignUpInit(@PathVariable(value = "tenantId", required = false) String tenantId,
+            @RequestParam(value = CLIENT_ID_PARAM, required = false) String clientId,
+            Model model) {
         tenantId = TenantUtils.resolveTenantId(tenantId);
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
-        model.addAttribute(IS_SIGN_UP_ENABLED, tenantProperties.isSignUpEnabled());
-        model.addAttribute("issuer", tenantId);
-        uiAttributeUtils.addUiAttributes(model, tenantId);
-        if (tenantProperties.isSignUpEnabled()) {
-            setupCaptcha(model);
-            passwordPolicyService.setupPasswordPolicy(model, false);
-            // Add terms privacy policy URL if configured
-            addTermsPrivacyPolicyUrl(model, tenantProperties);
+        boolean clientIdSupplied = StringUtils.hasText(clientId);
+        String resolvedClientId = resolveClientId(clientId);
+        if (clientIdSupplied && resolvedClientId == null) {
+            LOGGER.warn("[SECURITY] Signup page access blocked: client_id '{}' could not be resolved",
+                    InputSanitizer.forLog(clientId));
+            model.addAttribute(IS_SIGN_UP_ENABLED, false);
+            model.addAttribute(ERROR_LITERAL, INVALID_SOURCE_IDENTIFIER);
+            uiAttributeUtils.addUiAttributes(model, tenantId);
         } else {
-            model.addAttribute(MSG_LITERAL, SIGN_UP_NOT_ENABLED);
+            model.addAttribute(IS_SIGN_UP_ENABLED, tenantProperties.isSignUpEnabled());
+            model.addAttribute("issuer", tenantId);
+            model.addAttribute("clientId", resolvedClientId);
+            uiAttributeUtils.addUiAttributes(model, tenantId);
+            if (tenantProperties.isSignUpEnabled()) {
+                setupCaptcha(model);
+                passwordPolicyService.setupPasswordPolicy(model, false);
+                // Add terms privacy policy URL if configured
+                addTermsPrivacyPolicyUrl(model, tenantProperties);
+                try {
+                    signupAttributeService.setupSignupAttributes(model, resolvedClientId);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to load signup attributes for client '{}'",
+                            InputSanitizer.forLog(resolvedClientId), e);
+                    model.addAttribute(IS_SIGN_UP_ENABLED, false);
+                    model.addAttribute(ERROR_LITERAL, UNEXPECTED_ERROR);
+                }
+            } else {
+                model.addAttribute(MSG_LITERAL, SIGN_UP_NOT_ENABLED);
+            }
         }
+        // Single exit point: this view is always rendered, only the model attributes differ.
         return SELF_SIGN_UP;
     }
 
@@ -182,6 +236,13 @@ public class SignUpController {
         LOGGER.info("## addSelfUser - START for FirstName after input validation: {}", userDto.getFirstName());
 
         TenantProperties tenantProperties = tenantConfigurationService.getTenantProperties();
+        String rawClientId = request.getParameter(CLIENT_ID_PARAM);
+        if (isInvalidClientId(rawClientId)) {
+            LOGGER.warn("[SECURITY] Signup POST blocked: client_id '{}' could not be resolved",
+                    InputSanitizer.forLog(rawClientId));
+            return redirectWithInvalidSourceIdentifier(tenantId, redirectAttributes);
+        }
+        String resolvedClientId = resolveClientId(request);
         boolean reqParametersPresent = checkForReqParameters(userDto, obtainRecaptchaResponse(request),
                 request, tenantProperties);
         if (!reqParametersPresent) {
@@ -193,21 +254,58 @@ public class SignUpController {
         if (!tenantProperties.isSignUpEnabled()) {
             LOGGER.debug(SIGN_UP_NOT_ENABLED);
             redirectAttributes.addFlashAttribute(MSG_LITERAL, SIGN_UP_NOT_ENABLED);
+            if (resolvedClientId != null) {
+                return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP
+                    + CLIENT_ID_QUERY_PARAM + resolvedClientId);
+            }
             return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
         }
 
-        return handleSelfUserCreation(tenantId, userDto, request, redirectAttributes);
+        if (!applyResolvedClientSignupConfig(userDto, tenantProperties, resolvedClientId, redirectAttributes)) {
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP
+                    + CLIENT_ID_QUERY_PARAM + resolvedClientId);
+        }
+        addSignupAttrParams(userDto, request);
+
+        return handleSelfUserCreation(tenantId, userDto, request, redirectAttributes, resolvedClientId);
+    }
+
+    private boolean applyResolvedClientSignupConfig(UserDto userDto,
+            TenantProperties tenantProperties, String resolvedClientId,
+            RedirectAttributes redirectAttributes) {
+        if (resolvedClientId == null) {
+            return true;
+        }
+
+        // Only validate/apply custom attribute mappings when the tenant-level
+        // feature for additional attributes is enabled. When disabled we still
+        // apply non-attribute client defaults (roles/account/status) but avoid
+        // any calls to user-management to fetch attribute metadata.
+        boolean attrsEnabled = tenantProperties != null
+                && tenantProperties.getSignup() != null
+                && tenantProperties.getSignup().isAdditionalAttributesEnabled();
+        if (attrsEnabled) {
+            try {
+                signupAttributeService.validateCustomAttributeKeys(resolvedClientId);
+            } catch (Exception e) {
+                LOGGER.error("Custom attribute key validation failed for client '{}'", resolvedClientId, e);
+                redirectAttributes.addFlashAttribute(ERROR_LITERAL, INVALID_INPUT_ERROR);
+                return false;
+            }
+        }
+        applyClientSignupConfig(userDto, resolvedClientId, tenantProperties);
+        return true;
     }
 
     private ModelAndView handleSelfUserCreation(String tenantId, UserDto userDto, HttpServletRequest request,
-            RedirectAttributes redirectAttributes) {
+            RedirectAttributes redirectAttributes, String resolvedClientId) {
         LOGGER.debug("Processing self user creation request");
         try {
             UserDetailsResponse userDetailsResponse = userManagementClient.selfCreateUser(userDto, request);
             if (userDetailsResponse == null) {
                 LOGGER.error(FAILED_TO_CREATE_USER_WITH_USERNAME, userDto.getUserName());
                 redirectAttributes.addFlashAttribute(ERROR_LITERAL, UNEXPECTED_ERROR);
-                return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+                return redirectToSelfSignUp(tenantId, resolvedClientId);
             }
 
             LOGGER.info("User created successfully with username: {}", userDto.getUserName());
@@ -225,8 +323,16 @@ public class SignUpController {
         } catch (Exception e) {
             LOGGER.error("Failed to create self user", e);
             redirectAttributes.addFlashAttribute(ERROR_LITERAL, resolveSignUpErrorMessage(e));
-            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+            return redirectToSelfSignUp(tenantId, resolvedClientId);
         }
+    }
+
+    private ModelAndView redirectToSelfSignUp(String tenantId, String resolvedClientId) {
+        if (StringUtils.hasText(resolvedClientId)) {
+            return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP
+                    + CLIENT_ID_QUERY_PARAM + resolvedClientId);
+        }
+        return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
     }
 
     private String resolveSignUpErrorMessage(Exception e) {
@@ -245,11 +351,11 @@ public class SignUpController {
         String password = userDto.getPassword();
 
         return StringUtils.hasText(firstName)
-            && StringUtils.hasText(email)
-            && StringUtils.hasText(password)
-            && firstName.length() <= SIGN_UP_FIELD_MAX_LENGTH
-            && (!StringUtils.hasText(lastName) || lastName.length() <= SIGN_UP_FIELD_MAX_LENGTH)
-            && password.length() <= SIGN_UP_FIELD_MAX_LENGTH;
+                && StringUtils.hasText(email)
+                && StringUtils.hasText(password)
+                && firstName.length() <= SIGN_UP_FIELD_MAX_LENGTH
+                && (!StringUtils.hasText(lastName) || lastName.length() <= SIGN_UP_FIELD_MAX_LENGTH)
+                && password.length() <= SIGN_UP_FIELD_MAX_LENGTH;
     }
 
     private boolean checkForReqParameters(UserDto userDto, String recaptchaResp, HttpServletRequest request,
@@ -278,7 +384,6 @@ public class SignUpController {
      */
     private void addTermsPrivacyPolicyUrl(Model model, TenantProperties tenantProperties) {
         String termsPrivacyPolicyUrl = "";
-
         if (tenantProperties.getUi() != null
                 && StringUtils.hasText(tenantProperties.getUi().getTermsPrivacyPolicy())) {
             String url = tenantProperties.getUi().getTermsPrivacyPolicy();
@@ -307,6 +412,16 @@ public class SignUpController {
         }
     }
 
+    private boolean isInvalidClientId(String clientId) {
+        return StringUtils.hasText(clientId) && resolveClientId(clientId) == null;
+    }
+
+    private ModelAndView redirectWithInvalidSourceIdentifier(String tenantId,
+            RedirectAttributes redirectAttributes) {
+        redirectAttributes.addFlashAttribute(ERROR_LITERAL, INVALID_SOURCE_IDENTIFIER);
+        return new ModelAndView(REDIRECT_LITERAL + tenantId + "/" + SELF_SIGN_UP);
+    }
+
     /**
      * Checks all user input fields for dangerous content (scripts, HTML tags, SQL injection).
      * Returns false if any field contains potentially malicious input.
@@ -315,5 +430,106 @@ public class SignUpController {
         return InputSanitizer.isSafe(userDto.getFirstName())
                 && InputSanitizer.isSafe(userDto.getLastName())
                 && InputSanitizer.isSafe(userDto.getEmail());
+    }
+
+    /**
+     * Resolves the OAuth2 client ID from the request. Returns {@code null} if the value is
+     * absent, unsafe, or not registered in auth-management.
+     */
+    private String resolveClientId(HttpServletRequest request) {
+        String clientId = request.getParameter(CLIENT_ID_PARAM);
+        return resolveClientId(clientId);
+    }
+
+    private String resolveClientId(String clientId) {
+        if (!StringUtils.hasText(clientId)) {
+            return null;
+        }
+        if (!InputSanitizer.isSafe(clientId)) {
+            LOGGER.warn("[SECURITY] Unsafe client_id value rejected during signup — input failed sanitization check");
+            return null;
+        }
+        if (cacheClientUtils.getClientDetails(clientId) == null) {
+            LOGGER.warn(
+                    "[SECURITY] Unrecognized client_id '{}' supplied during signup",
+                    clientId.replaceAll("[\n\r\t]", " "));
+            return null;
+        }
+        return clientId;
+    }
+
+    /**
+     * Applies the {@link SignupClientConfig} matching {@code clientId} to the {@link UserDto}:
+     * stamps the source client ID, sets default roles/account/status, and auto-populates
+     * additional attributes from {@code customAttributeListMap}.
+     */
+    private void applyClientSignupConfig(UserDto userDto, String clientId, TenantProperties tenantProperties) {
+        userDto.setAdditionalAttributes("signupSourceClientId", clientId);
+        SignupClientConfig cfg = tenantProperties.getSignupClientConfig(clientId);
+        if (cfg == null) {
+            return;
+        }
+        applySignupConfig(userDto, cfg);
+        // Only apply server-side auto-population of custom attributes when
+        // the tenant feature is enabled. This prevents calls to user-management
+        // and prevents adding attributes that the UI didn't render.
+        boolean attrsEnabled = tenantProperties.getSignup() != null
+                && tenantProperties.getSignup().isAdditionalAttributesEnabled();
+        if (attrsEnabled) {
+            applyCustomAttributeListMap(userDto, cfg.getCustomAttributeListMap());
+        }
+    }
+
+    private void applySignupConfig(UserDto userDto, SignupClientConfig config) {
+        if (StringUtils.hasText(config.getDefaultRoles())) {
+            List<String> roles = Arrays.stream(config.getDefaultRoles().split(COMMA_DELIMITER))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.toList());
+            if (!roles.isEmpty()) {
+                userDto.setRoles(roles);
+            }
+        }
+        if (StringUtils.hasText(config.getDefaultAccount())) {
+            userDto.setAdditionalAttributes("signupDefaultAccount", config.getDefaultAccount());
+        }
+        if (StringUtils.hasText(config.getUserStatus())) {
+            userDto.setStatus(config.getUserStatus().trim().toUpperCase());
+        }
+    }
+
+    private void applyCustomAttributeListMap(UserDto userDto, String customAttributeListMap) {
+        if (!StringUtils.hasText(customAttributeListMap)) {
+            return;
+        }
+        Arrays.stream(customAttributeListMap.split(COMMA_DELIMITER))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .forEach(entry -> {
+                    int hashIdx = entry.indexOf('#');
+                    if (hashIdx > 0) {
+                        String key = entry.substring(0, hashIdx).trim();
+                        String value = entry.substring(hashIdx + 1).trim();
+                        if (StringUtils.hasText(key)) {
+                            userDto.setAdditionalAttributes(key, value);
+                        }
+                    }
+                });
+    }
+
+    private static final Set<String> STANDARD_FORM_PARAMS = Set.of(
+            "email", "firstName", "lastName", "password", "confirmPassword",
+            "termsCheckbox", "captchaToken", CLIENT_ID_PARAM, "g-recaptcha-response");
+
+    private void addSignupAttrParams(UserDto userDto, HttpServletRequest request) {
+        request.getParameterNames().asIterator().forEachRemaining(name -> {
+            if (!STANDARD_FORM_PARAMS.contains(name)) {
+                String attrValue = request.getParameter(name);
+                if (StringUtils.hasText(name) && StringUtils.hasText(attrValue)
+                        && InputSanitizer.isSafe(attrValue)) {
+                    userDto.setAdditionalAttributes(name, attrValue);
+                }
+            }
+        });
     }
 }

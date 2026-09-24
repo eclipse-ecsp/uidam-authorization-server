@@ -18,11 +18,13 @@
 
 package org.eclipse.ecsp.oauth2.server.core.authentication.customizer;
 
+import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.oauth2.core.oidc.endpoint.OidcParameterNames;
@@ -35,9 +37,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -238,5 +241,92 @@ class FederatedIdentityIdTokenCustomizerTest {
         customizer.customize(context);
 
         verify(claimsBuilder).claims(any());
+    }
+
+    /**
+     * {@link FederatedIdentityIdTokenCustomizer#mergeFederatedClaims(JwtClaimsSet.Builder, Authentication)} is a
+     * public static method reused directly by {@code ClaimsConfigManager} (outside of {@link #customize}). It must
+     * be a no-op for non-federated principals (e.g. internal username/password logins).
+     */
+    @Test
+    void mergeFederatedClaims_NonFederatedPrincipal_NoOp() {
+        Authentication nonFederatedPrincipal = mock(Authentication.class);
+
+        FederatedIdentityIdTokenCustomizer.mergeFederatedClaims(claimsBuilder, nonFederatedPrincipal);
+
+        verify(claimsBuilder, never()).claims(any());
+    }
+
+    /**
+     * Locks in that federated claim merging is scoped to External IDP logins only: internal
+     * username/password logins use {@link CustomUserPwdAuthenticationToken} (not
+     * {@link OAuth2AuthenticationToken}), so {@code customize}/{@code mergeFederatedClaims} must be a
+     * complete no-op for them even when building an id_token.
+     */
+    @Test
+    void customize_WithIdTokenType_InternalLoginPrincipal_NoFederatedClaimsMerged() {
+        CustomUserPwdAuthenticationToken internalPrincipal =
+                CustomUserPwdAuthenticationToken.authenticated("testUser", "pwd", "acc1", null);
+
+        when(context.getTokenType()).thenReturn(
+            new OAuth2TokenType(OidcParameterNames.ID_TOKEN));
+        when(context.getPrincipal()).thenReturn(internalPrincipal);
+        when(context.getClaims()).thenReturn(claimsBuilder);
+
+        customizer.customize(context);
+
+        // mergeFederatedClaims must no-op before touching the claims builder at all.
+        verify(claimsBuilder, never()).claims(any());
+    }
+
+    /**
+     * Exercises {@link FederatedIdentityIdTokenCustomizer#mergeFederatedClaims(JwtClaimsSet.Builder, Authentication)}
+     * directly (bypassing {@link #customize} / {@link JwtEncodingContext} entirely), matching how
+     * {@code ClaimsConfigManager#addClaimsForIdToken} calls it.
+     */
+    @Test
+    void mergeFederatedClaims_CalledDirectly_MergesThirdPartyClaims() {
+        Map<String, Object> userAttributes = new HashMap<>();
+        userAttributes.put("email", "user@example.com");
+
+        when(oauth2Token.getPrincipal()).thenReturn(oauth2User);
+        when(oauth2User.getAttributes()).thenReturn(userAttributes);
+        when(claimsBuilder.claims(any())).thenAnswer(invocation -> {
+            Consumer<Map<String, Object>> consumer = invocation.getArgument(0);
+            Map<String, Object> existingClaims = new HashMap<>();
+            consumer.accept(existingClaims);
+            assertTrue(existingClaims.containsKey("email"));
+            return claimsBuilder;
+        });
+
+        FederatedIdentityIdTokenCustomizer.mergeFederatedClaims(claimsBuilder, oauth2Token);
+
+        verify(claimsBuilder).claims(any());
+    }
+
+    /**
+     * Regression test: {@link OAuth2User#getAttributes()} returns an unmodifiable map in practice (e.g.
+     * {@code DefaultOAuth2User}); {@code mergeFederatedClaims} must copy it before removing entries, or
+     * merging would fail with {@link UnsupportedOperationException}.
+     */
+    @Test
+    void customize_WithIdTokenType_ImmutableAttributesMap_DoesNotThrow() {
+        Map<String, Object> immutableAttributes = Map.of("email", "user@example.com", "name", "John Doe");
+
+        when(context.getTokenType()).thenReturn(
+            new OAuth2TokenType(OidcParameterNames.ID_TOKEN));
+        when(context.getPrincipal()).thenReturn(oauth2Token);
+        when(oauth2Token.getPrincipal()).thenReturn(oauth2User);
+        when(oauth2User.getAttributes()).thenReturn(immutableAttributes);
+        when(context.getClaims()).thenReturn(claimsBuilder);
+        when(claimsBuilder.claims(any())).thenAnswer(invocation -> {
+            Consumer<Map<String, Object>> consumer = invocation.getArgument(0);
+            Map<String, Object> existingClaims = new HashMap<>();
+            consumer.accept(existingClaims);
+            assertTrue(existingClaims.containsKey("email"));
+            return claimsBuilder;
+        });
+
+        assertDoesNotThrow(() -> customizer.customize(context));
     }
 }

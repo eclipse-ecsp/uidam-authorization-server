@@ -34,6 +34,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationContext;
@@ -224,6 +225,57 @@ class CustomScopeValidatorTest {
         ClientCacheDetails clientCacheDetails = new ClientCacheDetails();
         clientCacheDetails.setRegisteredClient(registeredClient().build());
         doReturn(clientCacheDetails).when(cacheClientUtils).getClientDetails(anyString());
+        assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class,
+                () -> customScopeValidator.accept(authenticationContext));
+    }
+
+    /**
+     * Requesting the full set of standard OIDC scopes (openid/profile/email/address/phone) without any of
+     * them being registered on the client must not fail scope validation: {@code CustomScopeValidator}
+     * excludes all standard OIDC scopes from the app-scope check, not just {@code openid}.
+     */
+    @Test
+    void acceptSuccess_WithAllStandardOidcScopesNotRegisteredOnClient() {
+        CustomUserPwdAuthenticationToken principal = new CustomUserPwdAuthenticationToken(TEST_USER_NAME, TEST_PASSWORD,
+                TEST_ACCOUNT_NAME, null);
+        Set<String> scopes = new HashSet<>();
+        scopes.add(OidcScopes.OPENID);
+        scopes.add(OidcScopes.PROFILE);
+        scopes.add(OidcScopes.EMAIL);
+        scopes.add(OidcScopes.ADDRESS);
+        scopes.add(OidcScopes.PHONE);
+        OAuth2AuthorizationCodeRequestAuthenticationToken authorizationCodeRequestAuthentication =
+                new OAuth2AuthorizationCodeRequestAuthenticationToken(URI, TEST_CLIENT_ID, principal, URI, null, scopes,
+                        null);
+        RegisteredClient registeredClient = registeredClient().build();
+        OAuth2AuthorizationCodeRequestAuthenticationContext authenticationContext =
+                OAuth2AuthorizationCodeRequestAuthenticationContext.with(authorizationCodeRequestAuthentication)
+                        .registeredClient(registeredClient).build();
+
+        assertDoesNotThrow(() -> customScopeValidator.accept(authenticationContext));
+    }
+
+    /**
+     * A non-OIDC application scope not registered on the client must still fail validation even when
+     * standard OIDC scopes are requested alongside it - OIDC scopes are excluded from, not a substitute
+     * for, the application-scope check.
+     */
+    @Test
+    void acceptFailClientScopes_WithOidcScopesAndUnregisteredAppScope() {
+        CustomUserPwdAuthenticationToken principal = new CustomUserPwdAuthenticationToken(TEST_USER_NAME, TEST_PASSWORD,
+                TEST_ACCOUNT_NAME, null);
+        Set<String> scopes = new HashSet<>();
+        scopes.add(OidcScopes.OPENID);
+        scopes.add(OidcScopes.EMAIL);
+        scopes.add("unregistered_app_scope");
+        OAuth2AuthorizationCodeRequestAuthenticationToken authorizationCodeRequestAuthentication =
+                new OAuth2AuthorizationCodeRequestAuthenticationToken(URI, TEST_CLIENT_ID, principal, URI, null, scopes,
+                        null);
+        RegisteredClient registeredClient = registeredClient().build();
+        OAuth2AuthorizationCodeRequestAuthenticationContext authenticationContext =
+                OAuth2AuthorizationCodeRequestAuthenticationContext.with(authorizationCodeRequestAuthentication)
+                        .registeredClient(registeredClient).build();
+
         assertThrows(OAuth2AuthorizationCodeRequestAuthenticationException.class,
                 () -> customScopeValidator.accept(authenticationContext));
     }

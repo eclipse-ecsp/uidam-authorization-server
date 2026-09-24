@@ -70,6 +70,7 @@ public final class PiiMasker {
         "accessToken",
         "refreshToken",
         "idToken",
+        "externalIdpIdToken",
         "apiKey",
         "key",
         "privateKey",
