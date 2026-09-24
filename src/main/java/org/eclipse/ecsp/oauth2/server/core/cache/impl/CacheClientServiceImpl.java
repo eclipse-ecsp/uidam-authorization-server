@@ -27,7 +27,6 @@ import org.eclipse.ecsp.oauth2.server.core.service.RegisteredClientMapper;
 import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -51,16 +50,20 @@ public class CacheClientServiceImpl implements CacheClientService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CacheClientServiceImpl.class);
 
-    @Autowired
-    AuthManagementClient authManagementClient;
-    
-    @Autowired
-    RegisteredClientMapper registeredClientMapper;
+    private final AuthManagementClient authManagementClient;
+
+    private final RegisteredClientMapper registeredClientMapper;
 
     @Value("${cache.client.ids}")
     private String cacheClientIds;
     
     private List<String> cacheClientIdList = null;
+
+    public CacheClientServiceImpl(AuthManagementClient authManagementClient,
+            RegisteredClientMapper registeredClientMapper) {
+        this.authManagementClient = authManagementClient;
+        this.registeredClientMapper = registeredClientMapper;
+    }
 
     /**
      * Retrieves client details with synchronization enabled.
@@ -120,6 +123,7 @@ public class CacheClientServiceImpl implements CacheClientService {
         RegisteredClient registeredClient = registeredClientMapper.toRegisteredClient(registeredClientDetails);
         ClientCacheDetails clientCacheDetails = new ClientCacheDetails();
         clientCacheDetails.setRegisteredClient(registeredClient);
+        clientCacheDetails.setAdditionalInformation(registeredClientDetails.getAdditionalInformation());
         clientCacheDetails.setTenantId(registeredClientDetails.getTenantId());
         clientCacheDetails.setClientType(registeredClientDetails.getClientType());
         clientCacheDetails.setAccountType(registeredClientDetails.getAccountType());

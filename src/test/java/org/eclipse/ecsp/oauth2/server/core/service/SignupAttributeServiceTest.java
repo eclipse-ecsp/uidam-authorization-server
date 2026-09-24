@@ -18,7 +18,8 @@
 
 package org.eclipse.ecsp.oauth2.server.core.service;
 
-import org.eclipse.ecsp.oauth2.server.core.client.AuthManagementClient;
+import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
+import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.SignupClientConfig;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.SignupProperties;
@@ -54,7 +55,7 @@ class SignupAttributeServiceTest {
     private UserManagementClient userManagementClient;
 
     @Mock
-    private AuthManagementClient authManagementClient;
+    private CacheClientUtils cacheClientUtils;
 
     @Mock
     private TenantConfigurationService tenantConfigurationService;
@@ -73,7 +74,7 @@ class SignupAttributeServiceTest {
         SignupProperties enabledSignup = new SignupProperties();
         enabledSignup.setAdditionalAttributesEnabled(true);
         when(tenantProperties.getSignup()).thenReturn(enabledSignup);
-        service = new SignupAttributeService(userManagementClient, authManagementClient,
+        service = new SignupAttributeService(userManagementClient, cacheClientUtils,
                 tenantConfigurationService);
     }
 
@@ -545,10 +546,9 @@ class SignupAttributeServiceTest {
         SignupClientConfig cfg = config("test-portal", null, null, null);
         when(tenantProperties.getSignupClientConfig("test-portal")).thenReturn(cfg);
 
-        org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails clientDetails =
-                new org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails();
+        ClientCacheDetails clientDetails = new ClientCacheDetails();
         clientDetails.setAdditionalInformation("{\"signupSkipAttributes\":[\"hasValidPassport\"]}");
-        when(authManagementClient.getClientDetails("test-portal")).thenReturn(clientDetails);
+        when(cacheClientUtils.getClientDetails("test-portal")).thenReturn(clientDetails);
 
         Model model = new ExtendedModelMap();
         service.setupSignupAttributes(model, "test-portal");
@@ -569,8 +569,8 @@ class SignupAttributeServiceTest {
         when(userManagementClient.getAllUserAttributes()).thenReturn(fetched);
         SignupClientConfig cfg = config("test-portal", null, null, null);
         when(tenantProperties.getSignupClientConfig("test-portal")).thenReturn(cfg);
-        when(authManagementClient.getClientDetails("test-portal"))
-                .thenThrow(new RuntimeException("auth-mgmt unavailable"));
+        when(cacheClientUtils.getClientDetails("test-portal"))
+            .thenThrow(new RuntimeException("cache unavailable"));
 
         Model model = new ExtendedModelMap();
         service.setupSignupAttributes(model, "test-portal");

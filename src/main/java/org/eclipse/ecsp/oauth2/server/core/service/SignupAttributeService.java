@@ -21,10 +21,10 @@ package org.eclipse.ecsp.oauth2.server.core.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.eclipse.ecsp.oauth2.server.core.client.AuthManagementClient;
+import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
+import org.eclipse.ecsp.oauth2.server.core.cache.ClientCacheDetails;
 import org.eclipse.ecsp.oauth2.server.core.client.UserManagementClient;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.SignupClientConfig;
-import org.eclipse.ecsp.oauth2.server.core.request.dto.RegisteredClientDetails;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.UserAttributeDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +41,7 @@ import java.util.Set;
 /**
  * Service responsible for fetching dynamic user attributes from user-management
  * and adding them to the sign-up model, respecting per-client skip lists stored
- * in {@code RegisteredClientDetails.additionalInformation}.
+ * in the cached client details payload.
  */
 @Service
 public class SignupAttributeService {
@@ -53,7 +53,7 @@ public class SignupAttributeService {
     private static final String SIGNUP_SKIP_ATTRIBUTES_KEY = "signupSkipAttributes";
 
     private final UserManagementClient userManagementClient;
-    private final AuthManagementClient authManagementClient;
+    private final CacheClientUtils cacheClientUtils;
     private final TenantConfigurationService tenantConfigurationService;
     private final ObjectMapper objectMapper;
 
@@ -61,14 +61,14 @@ public class SignupAttributeService {
      * Constructs a {@code SignupAttributeService}.
      *
      * @param userManagementClient       the client for user-management service calls
-     * @param authManagementClient       the client for auth-management service calls
+    * @param cacheClientUtils            the cache-backed client details lookup
      * @param tenantConfigurationService the service to read per-client signup config
      */
     public SignupAttributeService(UserManagementClient userManagementClient,
-            AuthManagementClient authManagementClient,
+            CacheClientUtils cacheClientUtils,
             TenantConfigurationService tenantConfigurationService) {
         this.userManagementClient = userManagementClient;
-        this.authManagementClient = authManagementClient;
+        this.cacheClientUtils = cacheClientUtils;
         this.tenantConfigurationService = tenantConfigurationService;
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -255,7 +255,7 @@ public class SignupAttributeService {
             }
         } catch (Exception ex) {
             LOGGER.warn("Could not resolve custom attribute keys for client '{}': {}",
-                    clientId, ex.getMessage());
+                    clientId, ex);
         }
         return keys;
     }
@@ -289,12 +289,12 @@ public class SignupAttributeService {
                         .forEach(merged::add);
             }
         } catch (Exception ex) {
-            LOGGER.warn("Could not resolve properties skip-list for client '{}': {}", clientId, ex.getMessage());
+            LOGGER.warn("Could not resolve properties skip-list for client '{}': {}", clientId, ex);
         }
 
-        // Source 2: DB-based skip list from RegisteredClientDetails.additionalInformation
+        // Source 2: cached skip list from the cached client payload
         try {
-            RegisteredClientDetails clientDetails = authManagementClient.getClientDetails(clientId);
+            ClientCacheDetails clientDetails = cacheClientUtils.getClientDetails(clientId);
             if (clientDetails != null && StringUtils.hasText(clientDetails.getAdditionalInformation())) {
                 com.fasterxml.jackson.databind.JsonNode root =
                         objectMapper.readTree(clientDetails.getAdditionalInformation());
@@ -309,7 +309,7 @@ public class SignupAttributeService {
                 }
             }
         } catch (Exception ex) {
-            LOGGER.warn("Could not resolve DB skip-list for client '{}': {}", clientId, ex.getMessage());
+            LOGGER.warn("Could not resolve DB skip-list for client '{}': {}", clientId, ex);
         }
 
         LOGGER.debug("Resolved skip-list for client '{}': {}", clientId, merged);

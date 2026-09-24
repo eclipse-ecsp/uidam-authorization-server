@@ -28,6 +28,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 public class ClientCacheDetails {
 
     private RegisteredClient registeredClient;
+    private String additionalInformation;
     private String tenantId;
     private String clientType;
     private String accountType;
