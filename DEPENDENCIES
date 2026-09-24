@@ -24,7 +24,7 @@ maven/mavencentral/com.h2database/h2/2.4.240, EPL-1.0 AND MPL-2.0 AND LGPL-2.1-o
 maven/mavencentral/com.jayway.jsonpath/json-path/2.10.0, Apache-2.0, approved, clearlydefined
 maven/mavencentral/com.nimbusds/content-type/2.3, Apache-2.0, approved, clearlydefined
 maven/mavencentral/com.nimbusds/lang-tag/1.7, Apache-2.0, approved, clearlydefined
-maven/mavencentral/com.nimbusds/nimbus-jose-jwt/10.4, Apache-2.0, approved, #22824
+maven/mavencentral/com.nimbusds/nimbus-jose-jwt/10.4, Apache-2.0, approved, #22617
 maven/mavencentral/com.nimbusds/oauth2-oidc-sdk/11.26.1, Apache-2.0, approved, clearlydefined
 maven/mavencentral/com.opencsv/opencsv/5.12.0, Apache-2.0, approved, #22890
 maven/mavencentral/com.sun.istack/istack-commons-runtime/4.1.2, BSD-3-Clause, approved, #15290
@@ -88,13 +88,13 @@ maven/mavencentral/io.prometheus/simpleclient_servlet_common/0.16.0, Apache-2.0,
 maven/mavencentral/io.prometheus/simpleclient_tracer_common/0.16.0, Apache-2.0, approved, #19716
 maven/mavencentral/io.prometheus/simpleclient_tracer_otel/0.16.0, Apache-2.0, approved, #20002
 maven/mavencentral/io.prometheus/simpleclient_tracer_otel_agent/0.16.0, Apache-2.0, approved, #19706
-maven/mavencentral/jakarta.activation/jakarta.activation-api/2.1.4, EPL-2.0 OR BSD-3-Clause OR GPL-2.0-only with Classpath-exception-2.0, approved, ee4j.jaf
+maven/mavencentral/jakarta.activation/jakarta.activation-api/2.1.4, BSD-3-Clause OR EPL-2.0 OR GPL-2.0-only WITH Classpath-Exception-2.0, approved, #8015
 maven/mavencentral/jakarta.annotation/jakarta.annotation-api/3.0.0, EPL-2.0 OR GPL-2.0-only with Classpath-exception-2.0, approved, ee4j.ca
-maven/mavencentral/jakarta.inject/jakarta.inject-api/2.0.1, Apache-2.0, approved, ee4j.cdi
+maven/mavencentral/jakarta.inject/jakarta.inject-api/2.0.1, Apache-2.0, approved, #25006
 maven/mavencentral/jakarta.persistence/jakarta.persistence-api/3.2.0, EPL-2.0 OR BSD-3-Clause, approved, ee4j.jpa
-maven/mavencentral/jakarta.transaction/jakarta.transaction-api/2.0.1, EPL-2.0 OR GPL-2.0-only with Classpath-exception-2.0, approved, ee4j.jta
+maven/mavencentral/jakarta.transaction/jakarta.transaction-api/2.0.1, EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0, approved, #7697
 maven/mavencentral/jakarta.validation/jakarta.validation-api/3.1.1, Apache-2.0, approved, ee4j.validation
-maven/mavencentral/jakarta.xml.bind/jakarta.xml.bind-api/4.0.4, BSD-3-Clause, approved, ee4j.jaxb
+maven/mavencentral/jakarta.xml.bind/jakarta.xml.bind-api/4.0.4, BSD-3-Clause, approved, #8016
 maven/mavencentral/javax.el/javax.el-api/3.0.0, CDDL-1.0 or Apache-2.0, approved, CQ7249
 maven/mavencentral/javax.xml.bind/jaxb-api/2.3.1, CDDL-1.1 OR GPL-2.0-only WITH Classpath-exception-2.0, approved, CQ16911
 maven/mavencentral/jaxen/jaxen/2.0.1, BSD-3-Clause, approved, #9695
@@ -122,7 +122,7 @@ maven/mavencentral/org.apache.tomcat/tomcat-annotations-api/11.0.22, Apache-2.0,
 maven/mavencentral/org.apache.ws.commons.axiom/axiom-api/1.4.0, Apache-2.0, approved, #20720
 maven/mavencentral/org.apereo.cas.client/cas-client-core/4.0.4, Apache-2.0, approved, #20717
 maven/mavencentral/org.apiguardian/apiguardian-api/1.1.2, Apache-2.0, approved, #17641
-maven/mavencentral/org.aspectj/aspectjweaver/1.9.25.1, EPL-1.0, approved, tools.aspectj
+maven/mavencentral/org.aspectj/aspectjweaver/1.9.25.1, Apache-2.0 AND BSD-3-Clause AND EPL-1.0 AND BSD-3-Clause AND Apache-1.1, approved, #15252
 maven/mavencentral/org.assertj/assertj-core/3.27.7, Apache-2.0, approved, #17980
 maven/mavencentral/org.attoparser/attoparser/2.0.7.RELEASE, Apache-2.0, approved, CQ18900
 maven/mavencentral/org.awaitility/awaitility/4.3.0, Apache-2.0, approved, clearlydefined
@@ -240,7 +240,7 @@ maven/mavencentral/org.springframework.cloud/spring-cloud-starter/5.0.1, Apache-
 maven/mavencentral/org.springframework.data/spring-data-commons/4.0.5, Apache-2.0, approved, #25623
 maven/mavencentral/org.springframework.data/spring-data-jpa/4.0.5, Apache-2.0, approved, #25600
 maven/mavencentral/org.springframework.retry/spring-retry/2.0.12, Apache-2.0, approved, #16889
-maven/mavencentral/org.springframework.security/spring-security-cas/7.0.5, Apache-2.0, approved, https://gitlab.eclipse.org/eclip
+maven/mavencentral/org.springframework.security/spring-security-cas/7.0.5, Apache-2.0, approved, #28855
 maven/mavencentral/org.springframework.security/spring-security-config/7.0.5, Apache-2.0, approved, #26189
 maven/mavencentral/org.springframework.security/spring-security-core/7.0.5, Apache-2.0, approved, #25609
 maven/mavencentral/org.springframework.security/spring-security-crypto/7.0.5, Apache-2.0 AND ISC, approved, #25599
