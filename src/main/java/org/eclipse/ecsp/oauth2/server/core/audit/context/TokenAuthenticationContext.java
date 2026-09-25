@@ -34,6 +34,7 @@ import java.util.Map;
  *   <li>authType - Authentication method (password, idp:google, client_credentials)</li>
  *   <li>clientId - OAuth2 client identifier</li>
  *   <li>scopes - Requested/granted scopes</li>
+ *   <li>failureCode - bounded, machine-readable failure category (failure events only)</li>
  * </ul>
  *
  */
@@ -45,6 +46,7 @@ public class TokenAuthenticationContext implements AuthenticationContext {
     private String authType;
     private String clientId;
     private String scopes;
+    private String failureCode;
     
     @Override
     public Map<String, Object> toMap() {
@@ -60,6 +62,9 @@ public class TokenAuthenticationContext implements AuthenticationContext {
         }
         if (scopes != null) {
             map.put("scopes", scopes);
+        }
+        if (failureCode != null) {
+            map.put("failure_code", failureCode);
         }
         return map;
     }

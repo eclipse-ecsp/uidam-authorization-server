@@ -18,6 +18,7 @@
 
 package org.eclipse.ecsp.oauth2.server.core.config;
 
+import org.eclipse.ecsp.audit.enums.AuditEventResult;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.cache.CacheClientUtils;
@@ -34,6 +35,7 @@ import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.SignupClientC
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.UserProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
+import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.request.dto.FederatedUserDto;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.ClaimMappingService;
@@ -961,6 +963,10 @@ class ClaimsConfigManagerTest {
         // Verify - ClaimsConfigManager delegates to the scope-role mapping service on every federated login
         verify(scopeRoleClaimMappingService).applyScopeRoleMapping(eq(googleClient), eq(attributes),
                 any(), any(UserDetailsResponse.class));
+        verify(authorizationMetricsService).incrementMetricsForTenantAndIdp(
+                anyString(), eq("google"), eq(MetricType.RBAC_SCOPE_MAPPING_SUCCESS));
+        verify(auditLogger).log(eq("RBAC_SCOPE_MAPPING_SUCCEEDED"), anyString(),
+                eq(AuditEventResult.SUCCESS), anyString(), any(), any(), any(), any());
     }
 
     @Test
@@ -985,6 +991,10 @@ class ClaimsConfigManagerTest {
         OAuth2AuthenticationException exception = assertThrows(OAuth2AuthenticationException.class,
                 () -> jwtCustomizer.customize(createTestContext(token)));
         assertEquals(CustomOauth2TokenGenErrorCodes.INVALID_SCOPE.name(), exception.getError().getErrorCode());
+        verify(authorizationMetricsService).incrementMetricsForTenantAndIdp(
+                anyString(), eq("google"), eq(MetricType.RBAC_SCOPE_MAPPING_FAILURE));
+        verify(auditLogger).log(eq("RBAC_SCOPE_MAPPING_FAILED"), anyString(),
+                eq(AuditEventResult.FAILURE), anyString(), any(), any(), any(), any());
     }
 
     @Test

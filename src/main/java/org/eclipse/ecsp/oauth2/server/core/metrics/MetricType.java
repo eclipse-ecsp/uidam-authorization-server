@@ -95,6 +95,40 @@ public enum MetricType {
     FAILURE_LOGIN_ACCOUNT_LOCKED("failure.login.attempts.account.locked",
                                   "Total number of failed login attempts due to account being locked"),
 
+    // ========== RBAC Scope Mapping Metrics ==========
+
+    /**
+     * Tracks successful dynamic scope-role mapping evaluations.
+     */
+    RBAC_SCOPE_MAPPING_SUCCESS("rbac.scope.mapping.success",
+                               "Total number of successful RBAC scope-role mapping evaluations"),
+
+    /**
+     * Tracks rejected or failed dynamic scope-role mapping evaluations.
+     */
+    RBAC_SCOPE_MAPPING_FAILURE("rbac.scope.mapping.failure",
+                               "Total number of failed RBAC scope-role mapping evaluations"),
+
+    // ========== ID Token Metrics ==========
+
+    /**
+     * Tracks ID-token generation attempts that reached the JWT generator.
+     */
+    ID_TOKEN_GENERATION_INITIATED("id.token.generation.initiated",
+                                  "Total number of initiated ID-token generation attempts"),
+
+    /**
+     * Tracks ID tokens that were successfully encoded and signed.
+     */
+    ID_TOKEN_GENERATION_SUCCESS("id.token.generation.success",
+                                "Total number of successfully generated ID tokens"),
+
+    /**
+     * Tracks ID-token generation failures, including an empty generator result.
+     */
+    ID_TOKEN_GENERATION_FAILURE("id.token.generation.failure",
+                                "Total number of failed ID-token generation attempts"),
+
     // ========== MFA Metrics ==========
 
     /**

@@ -255,7 +255,7 @@ public class SignupAttributeService {
             }
         } catch (Exception ex) {
             LOGGER.warn("Could not resolve custom attribute keys for client '{}': {}",
-                    clientId, ex);
+                    clientId, ex.getMessage());
         }
         return keys;
     }
@@ -289,7 +289,7 @@ public class SignupAttributeService {
                         .forEach(merged::add);
             }
         } catch (Exception ex) {
-            LOGGER.warn("Could not resolve properties skip-list for client '{}': {}", clientId, ex);
+            LOGGER.warn("Could not resolve properties skip-list for client '{}': {}", clientId, ex.getMessage());
         }
 
         // Source 2: cached skip list from the cached client payload
@@ -309,7 +309,7 @@ public class SignupAttributeService {
                 }
             }
         } catch (Exception ex) {
-            LOGGER.warn("Could not resolve DB skip-list for client '{}': {}", clientId, ex);
+            LOGGER.warn("Could not resolve DB skip-list for client '{}': {}", clientId, ex.getMessage());
         }
 
         LOGGER.debug("Resolved skip-list for client '{}': {}", clientId, merged);
