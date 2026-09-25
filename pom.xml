@@ -70,11 +70,10 @@
         <spring.version>4.0.6</spring.version>
         <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
         <jacoco.plugin.version>0.8.14</jacoco.plugin.version>
-        <spring-security-oauth2-version>1.5.6</spring-security-oauth2-version>
         <spring-security-oauth2-client-version>6.4.2</spring-security-oauth2-client-version>
         <spring-jdbc-version>6.0.11</spring-jdbc-version>
         <sql.dao.version>1.2.3</sql.dao.version>
-        <ecsp-utils.version>1.1.1</ecsp-utils.version>
+
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
         <org.projectlombok.version>1.18.20</org.projectlombok.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
@@ -113,14 +112,17 @@
         <skipSource>false</skipSource>
         <skipGpgSign>true</skipGpgSign>
         <skipMavenPublishing>true</skipMavenPublishing>
-        <ecsp-utils.version>1.2.0</ecsp-utils.version>
-        <spring-security-oauth2-version>7.0.5</spring-security-oauth2-version>
+        <ecsp-utils.version>1.2.3</ecsp-utils.version>
+        <spring-security-oauth2-version>7.1.1</spring-security-oauth2-version>
         <org.projectlombok.version>1.18.42</org.projectlombok.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <hypersistence-utils-hibernate-73.version>3.15.2</hypersistence-utils-hibernate-73.version>
         <hibernate.version>7.4.0.Final</hibernate.version>
-        <netty.version>4.2.15.Final</netty.version>
-        <tomcat.version>11.0.22</tomcat.version>
+        <netty.version>4.2.18.Final</netty.version>
+        <tomcat.version>11.0.25</tomcat.version>
+		<jackson2.version>2.22.2</jackson2.version>
+        <jackson3.version>3.2.2</jackson3.version>
+		<mongodb.version>5.12.0</mongodb.version>
     </properties>
 
     <dependencyManagement>
@@ -129,6 +131,27 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-bom</artifactId>
                 <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+			<dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-bom</artifactId>
+                <version>${mongodb.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson2.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson3.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -160,7 +183,7 @@
 	<dependency>
 	    <groupId>org.springframework.cloud</groupId>
 	    <artifactId>spring-cloud-starter-config</artifactId>
-	    <version>5.0.3</version>
+	    <version>5.0.5</version>
         <exclusions>
             <exclusion>
                 <groupId>org.bouncycastle</groupId>
@@ -255,7 +278,7 @@
         <dependency>
         	<groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
-            <version>7.0.5</version>
+            <version>7.1.1</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -298,7 +321,7 @@
         <dependency>
         <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.84</version>
+            <version>1.86</version>
         </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -367,6 +390,10 @@
             		<groupId>io.github.classgraph</groupId>
             		<artifactId>classgraph</artifactId>
             	</exclusion>
+                <exclusion>
+                    <groupId>org.mongodb</groupId>
+                    <artifactId>mongodb-driver-legacy</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>

@@ -64,6 +64,8 @@ public enum AuditEventType {
     LOGOUT("LOGOUT", "User logged out successfully"),
     TOKEN_REFRESHED("TOKEN_REFRESHED", "Access token refreshed using refresh token"),
     ACCESS_TOKEN_GENERATED("ACCESS_TOKEN_GENERATED", "Access token generated successfully"),
+    ID_TOKEN_GENERATED("ID_TOKEN_GENERATED", "ID token generated and signed successfully"),
+    ID_TOKEN_GENERATION_FAILED("ID_TOKEN_GENERATION_FAILED", "ID token generation failed"),
     
     // ========== MFA Events ==========
 
@@ -97,7 +99,15 @@ public enum AuditEventType {
     ),
 
     // ========== Authorization Events ==========
-    
+
+    RBAC_SCOPE_MAPPING_SUCCEEDED(
+        "RBAC_SCOPE_MAPPING_SUCCEEDED",
+        "External identity roles mapped to UIDAM scopes successfully"
+    ),
+    RBAC_SCOPE_MAPPING_FAILED(
+        "RBAC_SCOPE_MAPPING_FAILED",
+        "External identity roles could not be mapped to authorized UIDAM scopes"
+    ),
     AUTHZ_FAILURE_REVOKED_TOKEN("AUTHZ_FAILURE_REVOKED_TOKEN", "Authorization failed - token has been revoked");
     
     private final String type;
@@ -139,7 +149,8 @@ public enum AuditEventType {
      */
     public boolean isAuthentication() {
         return type.startsWith("AUTH_") || this == LOGOUT || this == TOKEN_REFRESHED 
-            || this == ACCESS_TOKEN_GENERATED;
+            || this == ACCESS_TOKEN_GENERATED || this == ID_TOKEN_GENERATED
+            || this == ID_TOKEN_GENERATION_FAILED;
     }
     
     /**
