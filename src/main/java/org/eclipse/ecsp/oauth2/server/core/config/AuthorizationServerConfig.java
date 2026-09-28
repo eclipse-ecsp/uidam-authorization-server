@@ -61,6 +61,7 @@ import org.springframework.security.oauth2.jwt.JwtTypeValidator;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
@@ -172,13 +173,17 @@ public class AuthorizationServerConfig {
 
     Jwt generateJwt(JwtGenerator jwtGenerator, OAuth2TokenContext context,
             AuthorizationMetricsService metricsService, AuditLogger auditLogger) {
-        if (context == null || context.getTokenType() == null
-                || !OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue())) {
+        if (context == null) {
+            return null;
+        }
+        if (!OidcParameterNames.ID_TOKEN.equals(context.getTokenType().getValue())) {
             return jwtGenerator.generate(context);
         }
 
         recordIdTokenMetric(metricsService, MetricType.ID_TOKEN_GENERATION_INITIATED);
-        LOGGER.debug("ID token generation initiated: clientId={}", clientId(context));
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("ID token generation initiated: clientId={}", clientId(context));
+        }
         try {
             Jwt jwt = jwtGenerator.generate(context);
             if (jwt == null) {
@@ -187,10 +192,12 @@ public class AuthorizationServerConfig {
                 recordIdTokenMetric(metricsService, MetricType.ID_TOKEN_GENERATION_SUCCESS);
                 writeIdTokenAudit(context, auditLogger, AuditEventType.ID_TOKEN_GENERATED,
                         AuditEventResult.SUCCESS, null);
-                LOGGER.debug("ID token generation succeeded: clientId={}", clientId(context));
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("ID token generation succeeded: clientId={}", clientId(context));
+                }
             }
             return jwt;
-        } catch (RuntimeException | Error ex) {
+        } catch (RuntimeException ex) {
             recordIdTokenFailure(context, metricsService, auditLogger, ex.getClass().getSimpleName());
             throw ex;
         }
@@ -201,7 +208,9 @@ public class AuthorizationServerConfig {
         recordIdTokenMetric(metricsService, MetricType.ID_TOKEN_GENERATION_FAILURE);
         writeIdTokenAudit(context, auditLogger, AuditEventType.ID_TOKEN_GENERATION_FAILED,
                 AuditEventResult.FAILURE, failureCode);
-        LOGGER.error("ID token generation failed: clientId={}, failureCode={}", clientId(context), failureCode);
+        if (LOGGER.isErrorEnabled()) {
+            LOGGER.error("ID token generation failed: clientId={}, failureCode={}", clientId(context), failureCode);
+        }
     }
 
     private void recordIdTokenMetric(AuthorizationMetricsService metricsService, MetricType metricType) {
@@ -231,7 +240,7 @@ public class AuthorizationServerConfig {
                             ? null : context.getAuthorizationGrantType().getValue())
                     .authType(authenticationType(principal))
                     .clientId(clientId(context))
-                    .scopes(context.getAuthorizedScopes() == null
+                    .scopes(context.getAuthorizedScopes() == null //NOSONAR - can be null in tests
                             ? null : String.join(" ", context.getAuthorizedScopes()))
                     .failureCode(failureCode)
                     .build();
@@ -254,7 +263,8 @@ public class AuthorizationServerConfig {
     }
 
     private String clientId(OAuth2TokenContext context) {
-        return context.getRegisteredClient() == null ? UNKNOWN_VALUE : context.getRegisteredClient().getClientId();
+        RegisteredClient registeredClient = context.getRegisteredClient();
+        return registeredClient == null ? UNKNOWN_VALUE : registeredClient.getClientId(); //NOSONAR
     }
 
     /**

@@ -81,11 +81,11 @@ class TokenAuthenticationContextTest {
 
         Map<String, Object> map = context.toMap();
 
-        assertThat(map).containsEntry("failure_code", "JWT_ENCODING_EXCEPTION");
-        assertThat(map).containsEntry("grant_type", "authorization_code");
-        assertThat(map).containsEntry("auth_type", "internal");
-        assertThat(map).containsEntry("client_id", "web-client");
-        assertThat(map).hasSize(4);
+        assertThat(map).containsEntry("failure_code", "JWT_ENCODING_EXCEPTION")
+            .containsEntry("grant_type", "authorization_code")
+            .containsEntry("auth_type", "internal")
+            .containsEntry("client_id", "web-client")
+            .hasSize(4);
     }
 
     @Test
