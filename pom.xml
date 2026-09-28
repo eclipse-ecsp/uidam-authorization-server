@@ -67,7 +67,7 @@
     <properties>
         <java.version>25</java.version>
         <maven.compiler.parameters>true</maven.compiler.parameters>
-        <spring.version>4.0.6</spring.version>
+        <spring.version>4.1.1</spring.version>
         <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
         <jacoco.plugin.version>0.8.14</jacoco.plugin.version>
         <spring-security-oauth2-client-version>6.4.2</spring-security-oauth2-client-version>
@@ -119,14 +119,25 @@
         <hypersistence-utils-hibernate-73.version>3.15.2</hypersistence-utils-hibernate-73.version>
         <hibernate.version>7.4.0.Final</hibernate.version>
         <netty.version>4.2.18.Final</netty.version>
-        <tomcat.version>11.0.25</tomcat.version>
+        <tomcat.version>11.0.26</tomcat.version>
 		<jackson2.version>2.22.2</jackson2.version>
         <jackson3.version>3.2.2</jackson3.version>
 		<mongodb.version>5.12.0</mongodb.version>
+        <logback.version>1.6.4</logback.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-core</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
+            </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-bom</artifactId>
