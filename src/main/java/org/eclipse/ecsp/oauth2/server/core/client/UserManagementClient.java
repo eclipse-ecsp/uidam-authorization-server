@@ -437,7 +437,7 @@ public class UserManagementClient {
                 }
             }
         } catch (Exception e) {
-            LOGGER.debug("Could not parse field validation errors: {}", e.getMessage());
+            LOGGER.debug("Could not parse field validation errors: ", e);
         }
         return INVALID_INPUT_ERROR;
     }
@@ -623,7 +623,7 @@ public class UserManagementClient {
             WebClient currentWebClient = getWebClientForCurrentTenant();
             String uri = tenantProperties.getExternalUrls()
                     .get(TENANT_EXTERNAL_URLS_USER_ATTRIBUTES_ENDPOINT);
-            if (uri == null) {
+            if (!StringUtils.hasText(uri)) {
                 LOGGER.warn("user-attributes-endpoint not configured for tenant '{}'",
                         tenantProperties.getTenantId());
                 return null;
@@ -634,7 +634,7 @@ public class UserManagementClient {
                     .header(TENANT_ID_HEADER, tenantProperties.getTenantId())
                     .accept(MediaType.APPLICATION_JSON).retrieve()
                     .bodyToMono(String.class).block();
-            if (json == null) {
+            if (!StringUtils.hasText(json)) {
                 return null;
             }
             List<UserAttributeDto> result = objectMapper.readValue(json,

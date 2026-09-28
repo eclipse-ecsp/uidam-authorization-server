@@ -46,6 +46,8 @@ class MetricTypeTest {
         assertNotNull(MetricType.TOTAL_LOGIN_ATTEMPTS);
         assertNotNull(MetricType.SUCCESS_LOGIN_ATTEMPTS);
         assertNotNull(MetricType.FAILURE_LOGIN_ATTEMPTS);
+        assertNotNull(MetricType.RBAC_SCOPE_MAPPING_SUCCESS);
+        assertNotNull(MetricType.RBAC_SCOPE_MAPPING_FAILURE);
     }
     
     @Test

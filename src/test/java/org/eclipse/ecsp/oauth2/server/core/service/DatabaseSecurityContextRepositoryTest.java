@@ -43,6 +43,8 @@ import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 
 import java.sql.Timestamp;
@@ -65,12 +67,14 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -314,6 +318,41 @@ class DatabaseSecurityContextRepositoryTest {
         assertDoesNotThrow(() ->
             databaseSecurityContextRepository.saveContext(null, request, response));
         verify(authorizationSecurityContextRepository, times(0)).save(any());
+    }
+
+    @Test
+    void saveContextDoesNotCreateSessionForStatelessRequest() {
+        MockHttpServletRequest statelessRequest = new MockHttpServletRequest();
+        SecurityContext securityContext = new SecurityContextImpl();
+        securityContext.setAuthentication(new CustomUserPwdAuthenticationToken(
+            TEST_USER_NAME, TEST_PASSWORD, null, null));
+
+        databaseSecurityContextRepository.saveContext(securityContext, statelessRequest, response);
+
+        assertNull(statelessRequest.getSession(false));
+        verifyNoInteractions(authorizationSecurityContextRepository);
+    }
+
+    @Test
+    void saveContextDoesNotPersistJwtAuthenticationWithExistingSession() {
+        Instant now = Instant.now();
+        Jwt jwt = new Jwt("access-token", now, now.plusSeconds(60),
+            Map.of("alg", "RS256"), Map.of("sub", TEST_USER_NAME));
+        SecurityContext securityContext = new SecurityContextImpl(new JwtAuthenticationToken(jwt));
+
+        databaseSecurityContextRepository.saveContext(securityContext, request, response);
+
+        verifyNoInteractions(authorizationSecurityContextRepository);
+    }
+
+    @Test
+    void containsContextDoesNotCreateSessionForStatelessRequest() {
+        MockHttpServletRequest statelessRequest = new MockHttpServletRequest();
+
+        assertFalse(databaseSecurityContextRepository.containsContext(statelessRequest));
+
+        assertNull(statelessRequest.getSession(false));
+        verifyNoInteractions(authorizationSecurityContextRepository);
     }
 
     /**

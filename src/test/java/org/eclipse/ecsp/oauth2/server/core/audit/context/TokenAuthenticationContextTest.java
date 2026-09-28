@@ -71,6 +71,24 @@ class TokenAuthenticationContextTest {
     }
 
     @Test
+    void toMapWithFailureCodeShouldWork() {
+        TokenAuthenticationContext context = TokenAuthenticationContext.builder()
+            .grantType("authorization_code")
+            .authType("internal")
+            .clientId("web-client")
+            .failureCode("JWT_ENCODING_EXCEPTION")
+            .build();
+
+        Map<String, Object> map = context.toMap();
+
+        assertThat(map).containsEntry("failure_code", "JWT_ENCODING_EXCEPTION")
+            .containsEntry("grant_type", "authorization_code")
+            .containsEntry("auth_type", "internal")
+            .containsEntry("client_id", "web-client")
+            .hasSize(4);
+    }
+
+    @Test
     void toMapWithClientCredentialsShouldWork() {
         // Given
         TokenAuthenticationContext context = TokenAuthenticationContext.builder()
