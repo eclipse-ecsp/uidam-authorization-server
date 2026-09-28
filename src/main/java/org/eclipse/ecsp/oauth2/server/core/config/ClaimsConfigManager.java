@@ -847,7 +847,6 @@ public class ClaimsConfigManager {
         }
 
         if (!(oauth2Token.getPrincipal() instanceof OidcUser oidcUser)
-                || oidcUser.getIdToken() == null
                 || !StringUtils.hasText(oidcUser.getIdToken().getTokenValue())) {
             LOGGER.warn("External IdP '{}' is configured to include its ID token, but no OIDC ID token is available",
                     idpClient.getRegistrationId());
@@ -1358,10 +1357,12 @@ public class ClaimsConfigManager {
         AuditEventType eventType = success
                 ? AuditEventType.RBAC_SCOPE_MAPPING_SUCCEEDED
                 : AuditEventType.RBAC_SCOPE_MAPPING_FAILED;
-        String failureCode = failure instanceof OAuth2AuthenticationException oauthException
-                && oauthException.getError() != null
-                ? oauthException.getError().getErrorCode()
-                : failure == null ? null : failure.getClass().getSimpleName();
+        String failureCode;
+        if (failure instanceof OAuth2AuthenticationException oauthException) {
+            failureCode = oauthException.getError().getErrorCode();
+        } else {
+            failureCode = failure == null ? null : failure.getClass().getSimpleName();
+        }
         try {
             TokenAuthenticationContext authorizationContext = TokenAuthenticationContext.builder()
                     .grantType(AUTHORIZATION_CODE_GRANT_TYPE)
@@ -1396,7 +1397,7 @@ public class ClaimsConfigManager {
             
             // Extract just the IdP name (e.g., "google" from "demo-google")
             String idpRegistrationId = tenantPrefixedRegistrationId;
-            if (tenantPrefixedRegistrationId != null && tenantPrefixedRegistrationId.contains("-")) {
+            if (tenantPrefixedRegistrationId.contains("-")) {
                 String[] parts = tenantPrefixedRegistrationId.split("-", TENANT_PREFIX_PARTS);
                 if (parts.length == TENANT_PREFIX_PARTS) {
                     idpRegistrationId = parts[1];
@@ -1595,7 +1596,7 @@ public class ClaimsConfigManager {
      */
     private String extractIdpName(OAuth2AuthenticationToken oauth2Token) {
         String tenantPrefixedRegistrationId = oauth2Token.getAuthorizedClientRegistrationId();
-        if (tenantPrefixedRegistrationId != null && tenantPrefixedRegistrationId.contains("-")) {
+        if (tenantPrefixedRegistrationId.contains("-")) {
             String[] parts = tenantPrefixedRegistrationId.split("-", TENANT_PREFIX_PARTS);
             if (parts.length == TENANT_PREFIX_PARTS) {
                 return parts[1];

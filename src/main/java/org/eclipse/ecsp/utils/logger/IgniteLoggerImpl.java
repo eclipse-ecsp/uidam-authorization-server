@@ -63,8 +63,7 @@ public class IgniteLoggerImpl implements IgniteLogger {
      * @return cached logger instance
      */
     protected static IgniteLogger getIgniteLoggerInstance(Class<?> clazz) {
-        IGNITE_LOGGERS_MAP.computeIfAbsent(clazz.getName(), key -> new IgniteLoggerImpl(clazz));
-        return IGNITE_LOGGERS_MAP.get(clazz.getName());
+        return getIgniteLoggerImplInstance(clazz);
     }
 
     static IgniteLoggerImpl getIgniteLoggerImplInstance(Class<?> clazz) {
@@ -225,17 +224,23 @@ public class IgniteLoggerImpl implements IgniteLogger {
 
     @Override
     public void warn(IgniteEvent event, String msg) {
-        logger.warn(getMessageWithHeader(event, msg));
+        if (logger.isWarnEnabled()) {
+            logger.warn(getMessageWithHeader(event, msg));
+        }
     }
 
     @Override
     public void warn(IgniteEvent event, String format, Object... arguments) {
-        logger.warn(getMessageWithHeader(event, format), arguments);
+        if (logger.isWarnEnabled()) {
+            logger.warn(getMessageWithHeader(event, format), arguments);
+        }
     }
 
     @Override
     public void warn(IgniteEvent event, String msg, Throwable throwable) {
-        logger.warn(getMessageWithHeader(event, msg), throwable);
+        if (logger.isWarnEnabled()) {
+            logger.warn(getMessageWithHeader(event, msg), throwable);
+        }
     }
 
     @Override
@@ -255,17 +260,23 @@ public class IgniteLoggerImpl implements IgniteLogger {
 
     @Override
     public void error(IgniteEvent event, String msg) {
-        logger.error(getMessageWithHeader(event, msg));
+        if (logger.isErrorEnabled()) {
+            logger.error(getMessageWithHeader(event, msg));
+        }
     }
 
     @Override
     public void error(IgniteEvent event, String format, Object... arguments) {
-        logger.error(getMessageWithHeader(event, format), arguments);
+        if (logger.isErrorEnabled()) {
+            logger.error(getMessageWithHeader(event, format), arguments);
+        }
     }
 
     @Override
     public void error(IgniteEvent event, String msg, Throwable throwable) {
-        logger.error(getMessageWithHeader(event, msg), throwable);
+        if (logger.isErrorEnabled()) {
+            logger.error(getMessageWithHeader(event, msg), throwable);
+        }
     }
 
     @Override
