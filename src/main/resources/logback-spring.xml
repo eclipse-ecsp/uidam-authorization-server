@@ -15,39 +15,39 @@
   ~ SPDX-License-Identifier: Apache-2.0
   ~
   -->
-<configuration scan="true" scanPeriod="60 seconds">
+<configuration>
 
     <conversionRule conversionWord="crlf"
-        converterClass="org.owasp.security.logging.mask.CRLFConverter" />
+        class="org.owasp.security.logging.mask.CRLFConverter" />
 
     <springProperty scope="context" name="GRAYLOG_ENABLED"
-                    source="APP_GRAYLOG_ENABLED" />
+                    source="APP_GRAYLOG_ENABLED" defaultValue="false" />
     <springProperty scope="context" name="GRAYLOG_HOST"
-                    source="APP_GRAYLOG_HOST" />
+                    source="APP_GRAYLOG_HOST" defaultValue="graylog.default.svc.cluster.local" />
     <springProperty scope="context" name="GRAYLOG_PORT"
-                    source="APP_GRAYLOG_PORT" />
+                    source="APP_GRAYLOG_PORT" defaultValue="12201" />
     <springProperty scope="context" name="NEVER_BLOCK_FOR_GRAYLOG"
-                    source="APP_NEVER_BLOCK_FOR_GRAYLOG" />
+                    source="APP_NEVER_BLOCK_FOR_GRAYLOG" defaultValue="false" />
     <springProperty scope="context" name="LOG_LEVEL"
-                    source="APP_LOG_LEVEL" />
+                    source="APP_LOG_LEVEL" defaultValue="ERROR" />
     <springProperty scope="context" name="IGNITE_LOG_LEVEL"
-                    source="APP_IGNITE_LOG_LEVEL" />
+                    source="APP_IGNITE_LOG_LEVEL" defaultValue="ERROR" />
     <springProperty scope="context" name="SVC_LOG_LEVEL"
-                    source="APP_SVC_LOG_LEVEL" />
+                    source="APP_SVC_LOG_LEVEL" defaultValue="ERROR" />
     <springProperty scope="context" name="STORAGE_LOG_LEVEL"
-                    source="APP_STORAGE_LOG_LEVEL" />
+                    source="APP_STORAGE_LOG_LEVEL" defaultValue="ERROR" />
     <springProperty scope="context" name="SPRING_LOG_LEVEL"
-                    source="APP_SPRING_LOG_LEVEL" />
+                    source="APP_SPRING_LOG_LEVEL" defaultValue="ERROR" />
     <springProperty scope="context" name="LOG_FOLDER"
-                    source="APP_LOG_FOLDER" />
+                    source="APP_LOG_FOLDER" defaultValue="logs/" />
     <springProperty scope="context" name="PROP_LOAD_LOG_LEVEL"
-                    source="APP_PROP_LOAD_LOG_LEVEL" />
+                    source="APP_PROP_LOAD_LOG_LEVEL" defaultValue="INFO" />
 
 
     <appender name="GELF"
         class="de.siegmar.logbackgelf.GelfTcpAppender">
         <graylogHost>${GRAYLOG_HOST}</graylogHost>
-        <graylogPort>12201</graylogPort>
+        <graylogPort>${GRAYLOG_PORT}</graylogPort>
         <connectTimeout>15000</connectTimeout>
         <reconnectInterval>300</reconnectInterval>
         <maxRetries>10</maxRetries>
@@ -115,54 +115,30 @@
         </encoder>
     </appender>
 
-    <root level="${LOG_LEVEL}">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </root>
+    <condition class="ch.qos.logback.core.boolex.PropertyEqualityCondition">
+        <key>GRAYLOG_ENABLED</key>
+        <value>true</value>
+    </condition>
+    <if>
+        <then>
+            <root level="${LOG_LEVEL:-INFO}">
+                <appender-ref ref="ASYNC-GELF"/>
+            </root>
+        </then>
+        <else>
+            <root level="${LOG_LEVEL:-INFO}">
+                <appender-ref ref="ASYNC-STDOUT"/>
+            </root>
+        </else>
+    </if>
 
-    <logger name="org.eclipse.ecsp" level="${IGNITE_LOG_LEVEL}"
-        additivity="false">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </logger>
+    <logger name="org.eclipse.ecsp" level="${IGNITE_LOG_LEVEL:-ERROR}"/>
     <logger name="org.eclipse.ecsp.uidam.config.TenantDefaultPropertiesProcessor"
-        level="${PROP_LOAD_LOG_LEVEL}" additivity="false">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </logger>
+            level="${PROP_LOAD_LOG_LEVEL:-INFO}"/>
     <logger name="org.eclipse.ecsp.uidam.config.ConfigRefreshListener"
-        level="${PROP_LOAD_LOG_LEVEL}" additivity="false">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </logger>
-    <logger name="org.eclipse.ecsp.oauth2.server.core"
-        level="${SVC_LOG_LEVEL}" additivity="false">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </logger>
-    <logger name="org.eclipse.ecsp.sql"
-        level="${STORAGE_LOG_LEVEL}" additivity="false">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </logger>
-    <logger name="org.springframework"
-        level="${SPRING_LOG_LEVEL}" additivity="false">
-        <if condition='p("GRAYLOG_ENABLED").contains("true")'>
-            <then><appender-ref ref="ASYNC-GELF" /></then>
-            <else><appender-ref ref="ASYNC-STDOUT" /></else>
-        </if>
-    </logger>
+            level="${PROP_LOAD_LOG_LEVEL:-INFO}"/>
+    <logger name="org.eclipse.ecsp.oauth2.server.core" level="${SVC_LOG_LEVEL:-ERROR}"/>
+    <logger name="org.eclipse.ecsp.sql" level="${STORAGE_LOG_LEVEL:-ERROR}"/>
+    <logger name="org.springframework" level="${SPRING_LOG_LEVEL:-ERROR}"/>
 
 </configuration>

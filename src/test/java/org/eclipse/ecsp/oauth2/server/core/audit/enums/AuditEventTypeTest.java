@@ -35,6 +35,14 @@ class AuditEventTypeTest {
             .isEqualTo("LOGOUT");
         assertThat(AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN.getType())
             .isEqualTo("AUTHZ_FAILURE_REVOKED_TOKEN");
+        assertThat(AuditEventType.RBAC_SCOPE_MAPPING_SUCCEEDED.getType())
+            .isEqualTo("RBAC_SCOPE_MAPPING_SUCCEEDED");
+        assertThat(AuditEventType.RBAC_SCOPE_MAPPING_FAILED.getType())
+            .isEqualTo("RBAC_SCOPE_MAPPING_FAILED");
+        assertThat(AuditEventType.ID_TOKEN_GENERATED.getType())
+            .isEqualTo("ID_TOKEN_GENERATED");
+        assertThat(AuditEventType.ID_TOKEN_GENERATION_FAILED.getType())
+            .isEqualTo("ID_TOKEN_GENERATION_FAILED");
     }
 
     @Test
@@ -60,6 +68,8 @@ class AuditEventTypeTest {
         assertThat(AuditEventType.LOGOUT.isAuthentication()).isTrue();
         assertThat(AuditEventType.TOKEN_REFRESHED.isAuthentication()).isTrue();
         assertThat(AuditEventType.ACCESS_TOKEN_GENERATED.isAuthentication()).isTrue();
+        assertThat(AuditEventType.ID_TOKEN_GENERATED.isAuthentication()).isTrue();
+        assertThat(AuditEventType.ID_TOKEN_GENERATION_FAILED.isAuthentication()).isTrue();
     }
 
     @Test
@@ -72,6 +82,8 @@ class AuditEventTypeTest {
     void isAuthorization_ShouldReturnTrueForAuthzEvents() {
         // When/Then
         assertThat(AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN.isAuthorization()).isTrue();
+        assertThat(AuditEventType.RBAC_SCOPE_MAPPING_SUCCEEDED.isAuthorization()).isTrue();
+        assertThat(AuditEventType.RBAC_SCOPE_MAPPING_FAILED.isAuthorization()).isTrue();
     }
 
     @Test
@@ -91,6 +103,10 @@ class AuditEventTypeTest {
             .isEqualTo(AuditEventType.LOGOUT);
         assertThat(AuditEventType.fromType("AUTHZ_FAILURE_REVOKED_TOKEN"))
             .isEqualTo(AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN);
+        assertThat(AuditEventType.fromType("ID_TOKEN_GENERATED"))
+            .isEqualTo(AuditEventType.ID_TOKEN_GENERATED);
+        assertThat(AuditEventType.fromType("ID_TOKEN_GENERATION_FAILED"))
+            .isEqualTo(AuditEventType.ID_TOKEN_GENERATION_FAILED);
     }
 
     @Test
@@ -134,6 +150,8 @@ class AuditEventTypeTest {
             AuditEventType.LOGOUT,
             AuditEventType.TOKEN_REFRESHED,
             AuditEventType.ACCESS_TOKEN_GENERATED,
+            AuditEventType.ID_TOKEN_GENERATED,
+            AuditEventType.ID_TOKEN_GENERATION_FAILED,
             AuditEventType.AUTHZ_FAILURE_REVOKED_TOKEN
         );
     }

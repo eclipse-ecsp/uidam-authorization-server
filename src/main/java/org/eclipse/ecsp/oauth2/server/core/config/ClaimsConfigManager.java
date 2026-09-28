@@ -326,9 +326,18 @@ public class ClaimsConfigManager {
                                                                         claims);
 
         // Apply dynamic external-role -> internal-scope mapping on every federated login
-        LOGGER.debug("[EXTERNAL_IDP_TOKEN] Registration: " + tenantPrefixedRegistrationId 
-            + " | Claims from external IDP: " + claims);
-        scopeRoleClaimMappingService.applyScopeRoleMapping(idpClient, claims, requestedScope, userDetailsResponse);
+        LOGGER.debug("Federated claims received: registrationId={}, claimCount={}",
+                tenantPrefixedRegistrationId, claims.size());
+        try {
+            scopeRoleClaimMappingService.applyScopeRoleMapping(
+                    idpClient, claims, requestedScope, userDetailsResponse);
+            recordScopeRoleMappingOutcome(
+                    tenantId, idpClient.getRegistrationId(), userDetailsResponse, null);
+        } catch (RuntimeException ex) {
+            recordScopeRoleMappingOutcome(
+                    tenantId, idpClient.getRegistrationId(), userDetailsResponse, ex);
+            throw ex;
+        }
 
         // Log successful external IDP authentication
         logIdpAuthenticationSuccess(userDetailsResponse, oauth2AuthenticationToken);
@@ -1329,6 +1338,43 @@ public class ClaimsConfigManager {
             LOGGER.debug("User Scopes are not empty");
             claimsBuilder.claim(OAuth2ParameterNames.SCOPE, String.join(" ", scopeSet)).claim(CLAIM_SCOPES,
                     userDetailsResponse.getScopes());
+        }
+    }
+
+    private void recordScopeRoleMappingOutcome(String tenantId, String idProvider,
+            UserDetailsResponse userDetailsResponse, RuntimeException failure) {
+        boolean success = failure == null;
+        MetricType metricType = success
+                ? MetricType.RBAC_SCOPE_MAPPING_SUCCESS
+                : MetricType.RBAC_SCOPE_MAPPING_FAILURE;
+        try {
+            authorizationMetricsService.incrementMetricsForTenantAndIdp(
+                    tenantId, idProvider, metricType);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Unable to record RBAC metric: metric={}, failureType={}",
+                    metricType.getMetricName(), ex.getClass().getSimpleName());
+        }
+
+        AuditEventType eventType = success
+                ? AuditEventType.RBAC_SCOPE_MAPPING_SUCCEEDED
+                : AuditEventType.RBAC_SCOPE_MAPPING_FAILED;
+        String failureCode = failure instanceof OAuth2AuthenticationException oauthException
+                && oauthException.getError() != null
+                ? oauthException.getError().getErrorCode()
+                : failure == null ? null : failure.getClass().getSimpleName();
+        try {
+            TokenAuthenticationContext authorizationContext = TokenAuthenticationContext.builder()
+                    .grantType(AUTHORIZATION_CODE_GRANT_TYPE)
+                    .authType("idp:" + idProvider)
+                    .failureCode(failureCode)
+                    .build();
+            auditLogger.log(eventType.getType(), COMPONENT_NAME,
+                    success ? AuditEventResult.SUCCESS : AuditEventResult.FAILURE,
+                    eventType.getDescription(), buildUserActorContext(userDetailsResponse),
+                    null, null, authorizationContext);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Unable to record RBAC audit event: eventType={}, failureType={}",
+                    eventType.getType(), ex.getClass().getSimpleName());
         }
     }
 

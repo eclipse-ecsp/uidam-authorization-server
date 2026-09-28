@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
@@ -40,6 +41,7 @@ import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.jackson2.SecurityJackson2Modules;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
@@ -147,15 +149,21 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
      */
     @Override
     public void saveContext(SecurityContext context, HttpServletRequest request, HttpServletResponse response) {
-        String requestedSessionId = request.getSession().getId();
         if (context == null) {
-            LOGGER.debug("Null SecurityContext for Session Id: {}", requestedSessionId);
+            LOGGER.debug("Null SecurityContext");
             return;
         }
-        if (StringUtils.isEmpty(requestedSessionId)) {
+        Authentication authentication = context.getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken) {
+            LOGGER.debug("Not persisting stateless JWT SecurityContext");
+            return;
+        }
+        HttpSession session = request.getSession(false);
+        if (session == null || StringUtils.isEmpty(session.getId())) {
             LOGGER.debug("No Session currently exists");
             return;
         }
+        String requestedSessionId = session.getId();
         SecurityContext emptyContext = generateNewContext();
         if (emptyContext.equals(context)) {
             unauthenticatedContextInDb(requestedSessionId);
@@ -174,7 +182,12 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
      * @param request the HttpServletRequest
      */
     private void authenticatedContextInDb(SecurityContext context, HttpServletRequest request) {
-        String requestedSessionId = request.getSession().getId();
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            LOGGER.debug("No Session currently exists");
+            return;
+        }
+        String requestedSessionId = session.getId();
         LOGGER.info("Storing Authenticated SecurityContext to Database for Session Id: {}", requestedSessionId);
         Timestamp currentTimestamp = Timestamp.from(Instant.now());
         AuthorizationSecurityContext authorizationSecurityContext = getSecurityContextFromDb(requestedSessionId);
@@ -265,11 +278,12 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
      * @return the SecurityContext for the request, or null if none exists
      */
     private SecurityContext readSecurityContext(HttpServletRequest request) {
-        String requestedSessionId = request.getSession().getId();
-        if (StringUtils.isEmpty(requestedSessionId)) {
+        HttpSession session = request.getSession(false);
+        if (session == null || StringUtils.isEmpty(session.getId())) {
             LOGGER.debug("No Session currently exists");
             return null;
         }
+        String requestedSessionId = session.getId();
         LOGGER.info("Retrieving SecurityContext for Session Id: {}", requestedSessionId);
         AuthorizationSecurityContext authorizationSecurityContext = getSecurityContextFromDb(requestedSessionId);
         if (authorizationSecurityContext == null) {
