@@ -103,7 +103,7 @@
 						   th:href="@{'/' + ${issuer} + ${externalIdpAuthorizationUri} + ${issuer} + '-' + ${externalIdp.getRegistrationId()}}"
 						   role="link"
 						   style="display: flex; align-items: center; margin: 10px;">
-							<img th:src="@{'/images/' + ${#strings.toLowerCase(externalIdp.getClientName())} + '.png'}" width="20"
+							<img th:src="@{'/images/' + ${#strings.toLowerCase(externalIdp.getRegistrationId())} + '.png'}" width="20"
 								 style="margin-right: 5px;" th:alt="'Log in with ' + ${externalIdp.getClientName()}"/>
 							<span style="font-family:sans-serif;" th:text="${externalIdp.getClientName()}"></span>
 						</a>
