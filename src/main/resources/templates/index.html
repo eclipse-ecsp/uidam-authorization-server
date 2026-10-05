@@ -5,11 +5,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>UIDAM</title>
-    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-/Y6pD6FV/Vv2HJnA6t+vslU6fwYXjCFtcEpHbNJ0lyAFsXTsjBbfaDjzALeQsN6M" crossorigin="anonymous">
-    <link rel="stylesheet" th:href="@{tenantStylesheetPath != null ? ${tenantStylesheetPath} : '/css/style.css'}" >
+	<link rel="stylesheet" th:href="@{/css/style.css}">
+	<link rel="stylesheet" th:if="${tenantStylesheetPath != null and tenantStylesheetPath != '/css/style.css'}" th:href="@{${tenantStylesheetPath}}">
     
 </head>
-<body>
+<body class="uidam-page">
 	<div class="home-container">
 		<h1 th:align="center">
 			<img th:src="@{tenantLogoPath != null ? ${tenantLogoPath} : '/images/logo.svg'}" alt="Harman" title="Harman" class="logo1" th:width="200" th:height="200"/>

@@ -6,13 +6,14 @@
   <title>RESET PASSWORD</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" th:href="@{tenantStylesheetPath != null ? ${tenantStylesheetPath} : '/css/style.css'}">
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:if="${tenantStylesheetPath != null and tenantStylesheetPath != '/css/style.css'}" th:href="@{${tenantStylesheetPath}}">
 
   <script src='https://www.google.com/recaptcha/api.js'></script>
   <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
 </head>
 
-<body>
+<body class="uidam-page">
   <div class="home-container">
     <div th:align="center">
       <img th:src="@{tenantLogoPath != null ? ${tenantLogoPath} : '/images/' + ${issuer} + '-logo.svg'}" alt="Harman" title="Harman" class="logo1" th:width="200" th:height="200" />

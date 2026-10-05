@@ -4,25 +4,9 @@
     <title>MFA Error – UIDAM</title>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e, #0f3460);
-            min-height: 100vh;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .card {
-            background: #fff; border-radius: 12px; padding: 40px;
-            max-width: 420px; width: 100%; text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-        }
-        h1 { font-size: 20px; color: #c0392b; margin: 12px 0 8px; }
-        p { color: #555; font-size: 14px; margin-bottom: 24px; }
-        a { color: #0f3460; font-weight: bold; }
-    </style>
+    <link rel="stylesheet" th:href="@{/css/style.css}"/>
 </head>
-<body>
+<body class="uidam-page uidam-mfa">
 <div class="card">
     <div style="font-size:52px">⚠️</div>
     <h1>MFA Error</h1>

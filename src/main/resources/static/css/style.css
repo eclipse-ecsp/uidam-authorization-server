@@ -1,5 +1,3 @@
-@import url(https://fonts.googleapis.com/css?family=Roboto:300);
-
 .login-page {
   display: flex;
   flex-direction: column;
@@ -499,4 +497,421 @@ body {
     height: 100%;
     width: 100%;
   }
+}
+
+/* Shared UIDAM authentication experience. */
+.uidam-page .fas.fa-check::before { content: "✓"; }
+.uidam-page .fas.fa-times::before { content: "×"; }
+
+body.uidam-page,
+body.uidam-mfa {
+  --login-accent: #006da3;
+  --login-accent-hover: #005581;
+  --login-gradient: linear-gradient(115deg, #006da3, #008eaa);
+  --login-text: #172b42;
+  --login-muted: #62748a;
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100svh;
+  margin: 0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  align-items: center;
+  gap: 16px;
+  background: radial-gradient(ellipse at 12% 15%, #087fab70 0, transparent 50%),
+              radial-gradient(ellipse at 90% 90%, #116a9570 0, transparent 50%),
+              linear-gradient(135deg, #102a43, #123c59 55%, #0b263f);
+  isolation: isolate;
+  color: var(--login-text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+body.uidam-page::before,
+body.uidam-page::after,
+body.uidam-mfa::before,
+body.uidam-mfa::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+body.uidam-page::before,
+body.uidam-mfa::before {
+  background-image: radial-gradient(#c4eaff25 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(120deg, #000, transparent 70%);
+}
+
+body.uidam-page::after,
+body.uidam-mfa::after {
+  background: linear-gradient(120deg, transparent 25%, #82ddff08 25.1%, transparent 55%),
+              linear-gradient(145deg, transparent 65%, #82ddff09 65.1%, transparent 90%);
+}
+
+.uidam-page *, .uidam-page *::before, .uidam-page *::after,
+.uidam-mfa *, .uidam-mfa *::before, .uidam-mfa *::after {
+  box-sizing: border-box;
+}
+
+.uidam-page .login-page,
+.uidam-page .home-container,
+.uidam-page .error-container,
+.uidam-mfa .card {
+  position: relative;
+  width: min(100%, 560px);
+  height: auto;
+  flex: 0 0 auto;
+  padding: 36px 40px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  border: 1px solid #ffffffb3;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #fff 65%, #f3faff);
+  box-shadow: 0 28px 80px -20px #020f27a6, 0 0 0 6px #ffffff08;
+  color: var(--login-text);
+  text-align: left;
+}
+
+.uidam-page .login-page::before,
+.uidam-page .home-container::before,
+.uidam-page .error-container::before,
+.uidam-mfa .card::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 36px;
+  right: 36px;
+  height: 4px;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(90deg, #009edd, #39cbd2, #009edd);
+}
+
+.uidam-page .home-container,
+.uidam-page .error-container {
+  max-width: 520px;
+  transform: none;
+  top: auto;
+  left: auto;
+  font-size: 16px;
+}
+
+.uidam-page .error-container { color: #a62222; }
+.uidam-page .error-container h2,
+.uidam-page .login-header,
+.uidam-page .password-header { color: #143652; }
+
+.uidam-page .login-page h1,
+.uidam-page .home-container h1,
+.uidam-page .error-container h1,
+.uidam-mfa .card h1 {
+  color: #143652;
+  font-size: 26px;
+  line-height: 1.3;
+}
+
+.uidam-page .logo,
+.uidam-page .logo1 {
+  display: block;
+  width: auto;
+  max-width: 190px;
+  height: 60px;
+  max-height: 60px;
+  object-fit: contain;
+  padding: 0;
+  margin: 0 auto 20px;
+}
+
+.uidam-page .login-page label,
+.uidam-page .home-container label,
+.uidam-mfa .card label {
+  display: block;
+  margin: 0 0 7px;
+  color: #263f56;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.uidam-page .login-page input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+.uidam-page .login-page textarea,
+.uidam-page .home-container input:not([type="hidden"]),
+.uidam-mfa .card input:not([type="hidden"]) {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 14px;
+  border: 1px solid #cbd7e4;
+  border-radius: 10px;
+  background: #f3f7fb;
+  color: var(--login-text);
+  font: inherit;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.uidam-page .login-page input:focus,
+.uidam-page .login-page textarea:focus,
+.uidam-page .home-container input:focus,
+.uidam-mfa .card input:focus {
+  border-color: var(--login-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px #007eae18;
+  background: #fff;
+}
+
+.uidam-page .login-page button:not(.login-password-toggle):not(.login-account-toggle),
+.uidam-page .home-container button,
+.uidam-mfa .card button.btn,
+.uidam-mfa .card button.option-primary {
+  border: 0;
+  border-radius: 10px;
+  background: var(--login-gradient);
+  box-shadow: 0 6px 16px #006da329;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: box-shadow 150ms, transform 150ms, background 150ms;
+}
+
+.uidam-page .login-page button:not(:disabled):hover,
+.uidam-page .home-container button:not(:disabled):hover,
+.uidam-mfa .card button.btn:not(:disabled):hover,
+.uidam-mfa .card button.option-primary:hover {
+  background: var(--login-accent-hover);
+  box-shadow: 0 8px 20px #006da33b;
+  transform: translateY(-1px);
+}
+
+.uidam-page a,
+.uidam-mfa a { color: var(--login-accent); }
+.uidam-page a:focus-visible,
+.uidam-page button:focus-visible,
+.uidam-mfa a:focus-visible,
+.uidam-mfa button:focus-visible { outline: 3px solid #19a8c1; outline-offset: 3px; }
+
+.uidam-page .success-title,
+.uidam-page .success-message,
+.uidam-page .return-to-login,
+.uidam-page .login-header,
+.uidam-page .password-header { text-align: center; }
+
+.uidam-page .success-title { color: #143652; }
+.uidam-page .success-message,
+.uidam-page .return-to-login { color: var(--login-muted); }
+.uidam-page .row { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+.uidam-page .col { flex: 1; min-width: 0; }
+.uidam-page .col-1 { flex: 0 0 auto; }
+.uidam-page .col-1 img { display: block; width: 64px; max-width: 100%; height: auto; }
+.uidam-page .password-header,
+.uidam-page .login-header { margin: 0 0 20px; font-size: 22px; font-weight: 700; }
+.uidam-page .policy { color: var(--login-muted); }
+.uidam-page #password-message { padding-left: 20px; color: var(--login-muted); }
+.uidam-page #password-message li { color: var(--login-muted); font-size: 12px; line-height: 1.6; }
+
+.uidam-page .rights {
+  display: block !important;
+  position: static;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  color: #bdd0df;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.uidam-mfa .card { max-width: 480px; text-align: center; }
+.uidam-mfa .card h1 { margin: 0 0 10px; }
+.uidam-mfa .card p { color: var(--login-muted); }
+.uidam-mfa .card .subtitle { margin: 0 0 22px; line-height: 1.6; }
+.uidam-mfa .card .icon,
+.uidam-mfa .card .shield { margin: 0 0 14px; font-size: 48px; }
+.uidam-mfa .card .user-badge {
+  display: inline-block;
+  margin: 0 0 18px;
+  padding: 5px 14px;
+  border: 1px solid #d6eaf5;
+  border-radius: 999px;
+  background: #eef8fc;
+  color: #185472;
+  font-size: 13px;
+  font-weight: 600;
+}
+.uidam-mfa .card form { text-align: left; }
+.uidam-mfa .card .btn,
+.uidam-mfa .card .option-primary { width: 100%; min-height: 46px; padding: 12px 16px; margin-top: 14px; }
+.uidam-mfa .card .btn:disabled { background: #dce7ef; color: #53677b; box-shadow: none; cursor: not-allowed; }
+.uidam-mfa .card .hint { margin: 14px 0 0; color: #738397; font-size: 12px; line-height: 1.6; }
+.uidam-mfa .card .error-msg,
+.uidam-mfa .card .error-box {
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  border: 1px solid #f0c5c5;
+  border-radius: 10px;
+  background: #fff4f4;
+  color: #a62222;
+  font-size: 13px;
+  text-align: left;
+}
+.uidam-mfa .card .success-msg,
+.uidam-mfa .card .info-box {
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  border: 1px solid #bfe4d4;
+  border-radius: 10px;
+  background: #effaf5;
+  color: #246449;
+  font-size: 13px;
+  text-align: left;
+}
+.uidam-mfa .card .warning-box,
+.uidam-mfa .card .low-warning,
+.uidam-mfa .card .debug-box {
+  padding: 12px 14px;
+  margin: 0 0 18px;
+  border: 1px solid #f0d79c;
+  border-radius: 10px;
+  background: #fff9e9;
+  color: #76551a;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+}
+.uidam-mfa .card .step { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 16px; text-align: left; }
+.uidam-mfa .card .step-num { display: flex; flex: 0 0 28px; align-items: center; justify-content: center; height: 28px; border-radius: 50%; background: var(--login-gradient); color: #fff; font-size: 13px; font-weight: 700; }
+.uidam-mfa .card .step-text { color: #344e63; line-height: 1.6; }
+.uidam-mfa .card .qr-box { padding: 16px; margin: 16px 0; border: 1px dashed #bdd0df; border-radius: 12px; background: #f8fbfd; text-align: center; }
+.uidam-mfa .card .qr-box img { max-width: 200px; }
+.uidam-mfa .card .manual-key,
+.uidam-mfa .card .code-item { padding: 10px 14px; border: 1px solid #d7e2ec; border-radius: 9px; background: #f3f7fb; color: #143652; font-family: monospace; text-align: center; overflow-wrap: anywhere; }
+.uidam-mfa .card .manual-key { margin: 10px 0 18px; letter-spacing: 2px; }
+.uidam-mfa .card .codes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.uidam-mfa .card .code-item { font-size: 15px; font-weight: 700; letter-spacing: 2px; }
+.uidam-mfa .card .confirm-wrap { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 16px; color: #344e63; text-align: left; }
+.uidam-mfa .card .confirm-wrap input { width: 18px; min-height: 18px; flex: 0 0 18px; margin: 2px 0 0; accent-color: var(--login-accent); }
+.uidam-mfa .card .option-btn { display: block; width: 100%; padding: 14px 16px; margin: 0 0 12px; border: 1px solid #d7e2ec; border-radius: 11px; text-align: left; text-decoration: none; }
+.uidam-mfa .card .option-secondary { background: #f7fafc; color: var(--login-text); cursor: default; }
+.uidam-mfa .card .option-title { display: block; margin-bottom: 4px; font-weight: 700; }
+.uidam-mfa .card .option-desc { font-size: 12px; opacity: .85; }
+.uidam-mfa .card .back-link,
+.uidam-mfa .card .resend-link { display: block; margin: 16px 0 0; border: 0; background: transparent; color: var(--login-accent); font-size: 13px; font-weight: 600; text-align: center; text-decoration: none; cursor: pointer; }
+.uidam-mfa .card .resend-wrap,
+.uidam-mfa .card .re-enroll-wrap { padding-top: 16px; margin-top: 18px; border-top: 1px solid #e4ebf2; color: var(--login-muted); font-size: 13px; }
+.uidam-mfa .card .timer-ring { position: relative; width: 50px; height: 50px; margin: 16px auto 8px; }
+.uidam-mfa .card .timer-ring svg { transform: rotate(-90deg); }
+.uidam-mfa .card .timer-ring circle { fill: none; stroke: #dce7ef; stroke-width: 4; }
+.uidam-mfa .card .timer-ring .progress { stroke: #008eaa; stroke-dasharray: 126; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.uidam-mfa .card .timer-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #185472; font-size: 13px; font-weight: 700; }
+.uidam-mfa .card #totpCode,
+.uidam-mfa .card #recoveryKey,
+.uidam-mfa .card #backupCode { text-align: center; font-family: monospace; font-size: 22px; letter-spacing: 5px; }
+.uidam-mfa .card .btn-recover { display: block; padding: 12px; border: 1px solid #d7e2ec; border-radius: 10px; background: #f7fafc; font-weight: 600; text-decoration: none; }
+
+/* Login-only components within the shared page system. */
+body.uidam-login {
+  padding: 20px;
+  gap: 16px;
+}
+.uidam-login .login-page {
+  width: 100%;
+  max-width: 460px;
+  padding: 28px 36px !important;
+  border-radius: 24px;
+  text-align: left;
+}
+.uidam-login .login-page::before { left: 36px; right: 36px; }
+.uidam-login .login-brand { margin-bottom: 20px; text-align: center; }
+.uidam-login .logo { margin: 0 auto 16px; }
+.uidam-login h1 { margin: 0 0 8px; color: #143652; font-size: 28px; letter-spacing: -.8px; }
+.uidam-login .login-subtitle,
+.uidam-login .login-section-label { margin: 0; color: var(--login-muted); }
+.uidam-login .login-section-label { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13px; text-align: center; }
+.uidam-login .login-section-label::before,
+.uidam-login .login-section-label::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, transparent, #bdcfdd); }
+.uidam-login .login-section-label::after { background: linear-gradient(90deg, #bdcfdd, transparent); }
+.uidam-login .login-provider-list { display: grid; gap: 10px; }
+.uidam-login .login-provider { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px 16px; border: 1px solid #d1e1ee; border-radius: 12px; background: linear-gradient(120deg, #fff, #f2f8fd); color: var(--login-text); font-weight: 600; text-decoration: none; transition: border-color 150ms, box-shadow 150ms, transform 150ms; }
+.uidam-login .login-provider img { flex-shrink: 0; object-fit: contain; }
+.uidam-login .login-provider:hover { border-color: var(--login-accent); background: #f4faff; box-shadow: 0 5px 16px #006da315; transform: translateY(-1px); }
+.uidam-login .login-provider-arrow { margin-left: auto; color: var(--login-accent); font-size: 20px; }
+.uidam-login .login-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--login-muted); font-size: 12px; text-align: center; }
+.uidam-login .login-divider::before,
+.uidam-login .login-divider::after { content: ""; height: 1px; flex: 1; background: #e3eaf2; }
+.uidam-login .container-auth-input,
+.uidam-login .container-auth-input2 { position: relative; margin-bottom: 14px; }
+.uidam-login .login-form label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+.uidam-login .login-required { color: #b42318; }
+.uidam-login .login-optional { color: var(--login-muted); font-weight: 400; }
+.uidam-login .login-form input:not([type="hidden"]) { width: 100%; min-height: 48px; padding: 12px 14px; margin: 0; border: 1px solid #cbd7e4; border-radius: 10px; background: #f3f7fb; color: var(--login-text); font: inherit; transition: border-color 150ms, box-shadow 150ms; }
+.uidam-login .login-form input:focus { border-color: var(--login-accent); outline: none; box-shadow: 0 0 0 3px #007eae18; background: #fff; }
+.uidam-login .login-form input::placeholder { color: #738397; font-size: 14px; font-weight: 400; }
+.uidam-login #password { padding-right: 72px; }
+.uidam-login .login-password-toggle { position: absolute; top: 32px; right: 8px; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: var(--login-accent); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.uidam-login .login-password-toggle:hover { background: #e5f2fa; }
+.uidam-login a:focus-visible,
+.uidam-login button:focus-visible { outline: 3px solid #19a8c1; outline-offset: 3px; }
+.uidam-login .login-field-error { margin-top: 6px; color: #b42318; font-size: 12px; }
+.uidam-login [hidden] { display: none !important; }
+.uidam-login .login-account-option { margin: -2px 0 12px; text-align: left; }
+.uidam-login .login-account-toggle { padding: 0; border: 0; background: transparent; color: var(--login-accent); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.uidam-login .link-forgot-password { padding: 0; margin: -2px 0 20px; text-align: right; text-decoration: none; font-size: 13px; }
+.uidam-login .link-forgot-password a,
+.uidam-login .sign-up-link a { color: var(--login-accent) !important; font-weight: 600; text-decoration: none; }
+.uidam-login .link-forgot-password a:hover,
+.uidam-login .sign-up-link a:hover { text-decoration: underline; }
+.uidam-login .sign-in-custom { padding: 0; }
+.uidam-login .sign-in-custom button { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 48px; padding: 12px 16px; border: 0; border-radius: 11px; background: var(--login-gradient); box-shadow: 0 6px 16px #006da329; color: #fff; font: inherit; font-weight: 600; transition: box-shadow 150ms, transform 150ms; }
+.uidam-login .sign-in-custom button.enabled { background: var(--login-gradient); }
+.uidam-login .sign-in-custom button.enabled:hover { background: var(--login-accent-hover); box-shadow: 0 8px 20px #006da33b; transform: translateY(-1px); }
+.uidam-login .sign-in-custom button:disabled { background: #dce7ef; box-shadow: none; color: #53677b; }
+.uidam-login .container-sign-up { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 6px; padding: 0; margin-top: 18px; color: var(--login-muted); font-size: 13px; }
+.uidam-login .sign-up-text-helper,
+.uidam-login .sign-up-link { margin: 0; padding: 0; font-size: inherit; }
+.uidam-login .login-alert { padding: 12px 14px; margin-bottom: 20px; border: 1px solid #f4caca; border-radius: 9px; background: #fff4f4; color: #a62222; font-size: 13px; overflow-wrap: anywhere; }
+.uidam-login .login-alert p { margin: 0; }
+.uidam-login .login-alert-success { border-color: #c2e6d7; background: #eefaf5; color: #246449; }
+.uidam-login .login-redirect { color: var(--login-muted); text-align: center; }
+.uidam-login .g-recaptcha { max-width: 100%; margin-bottom: 18px; }
+.uidam-login .rights { color: #bdd0df; }
+
+@media (max-width: 799px) {
+  body.uidam-page, body.uidam-mfa { padding: 18px 12px; gap: 14px; }
+  .uidam-page .login-page,
+  .uidam-page .home-container,
+  .uidam-page .error-container,
+  .uidam-mfa .card { width: 100%; padding: 28px 24px !important; border-radius: 18px; }
+  .uidam-page .logo, .uidam-page .logo1 { height: 56px; margin-bottom: 16px; }
+  .uidam-login .login-page { max-width: 460px; }
+  .uidam-page .rights { display: block !important; }
+}
+
+@media (max-width: 420px) {
+  body.uidam-page, body.uidam-mfa { padding: 12px 8px; }
+  .uidam-page .login-page,
+  .uidam-page .home-container,
+  .uidam-page .error-container,
+  .uidam-mfa .card { padding: 24px 16px !important; }
+  .uidam-mfa .card .codes-grid { grid-template-columns: 1fr; }
+  .uidam-login .login-divider { gap: 6px; font-size: 11px; }
+}
+
+@media (max-height: 760px) {
+  body.uidam-login { padding-top: 12px; padding-bottom: 12px; gap: 10px; }
+  .uidam-login .login-page { padding-top: 20px !important; padding-bottom: 20px !important; }
+  .uidam-login .login-brand { margin-bottom: 14px; }
+  .uidam-login .logo { height: 48px; margin-bottom: 12px; }
+  .uidam-login h1 { font-size: 25px; }
+  .uidam-login .login-divider { margin: 14px 0; }
+  .uidam-login .container-auth-input,
+  .uidam-login .container-auth-input2 { margin-bottom: 12px; }
+  .uidam-login .container-sign-up { margin-top: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uidam-page *, .uidam-mfa * { transition: none !important; }
 }
