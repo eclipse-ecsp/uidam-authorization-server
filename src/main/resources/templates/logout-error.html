@@ -1,13 +1,13 @@
-<!DOCTYE html>
+<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>Logout Error</title>
-    <link rel="stylesheet" th:href="@{/css/bootstrap.css}">
-    <link rel="stylesheet" th:href="@{tenantStylesheetPath != null ? ${tenantStylesheetPath} : '/css/style.css'}">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <link rel="stylesheet" th:if="${tenantStylesheetPath != null and tenantStylesheetPath != '/css/style.css'}" th:href="@{${tenantStylesheetPath}}">
 </head>
-<body>
+<body class="uidam-page">
 <div class="jumbotron">
     <div class="error-container">
         <h2>Logout Error</h2>

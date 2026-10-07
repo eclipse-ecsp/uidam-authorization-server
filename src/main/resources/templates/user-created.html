@@ -1,12 +1,13 @@
-<!DOCTPE html>
+<!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Created</title>
-	<link rel="stylesheet" th:href="@{tenantStylesheetPath != null ? ${tenantStylesheetPath} : '/css/style.css'}">
+	<link rel="stylesheet" th:href="@{/css/style.css}">
+	<link rel="stylesheet" th:if="${tenantStylesheetPath != null and tenantStylesheetPath != '/css/style.css'}" th:href="@{${tenantStylesheetPath}}">
 </head>
-<body>
+<body class="uidam-page">
 	<div class="home-container">
 	    <div th:align="center">
 			<img style="padding-bottom: 30px !important; width: 140px !important; height: 80px !important" th:src="@{tenantLogoPath != null ? ${tenantLogoPath} : '/images/logo.svg'}" alt="Harman" title="Harman"

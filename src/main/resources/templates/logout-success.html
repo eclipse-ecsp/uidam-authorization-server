@@ -1,12 +1,13 @@
-<!DOCTPE html>
+<!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Logout Successful</title>
-    <link rel="stylesheet" th:href="@{tenantStylesheetPath != null ? ${tenantStylesheetPath} : '/css/style.css'}">
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <link rel="stylesheet" th:if="${tenantStylesheetPath != null and tenantStylesheetPath != '/css/style.css'}" th:href="@{${tenantStylesheetPath}}">
 </head>
-<body>    <div class="home-container">
+<body class="uidam-page">    <div class="home-container">
         <div class="success-title">LOGOUT SUCCESSFUL!</div>
         <div class="success-title">You have been logged out</div>
         <p class="success-message">Your session has been terminated successfully.</p>

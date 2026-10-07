@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="https://www.thymeleaf.org">
 <head>
-    <title>Log In</title>
-    <link rel="stylesheet" th:href="@{tenantStylesheetPath != null ? ${tenantStylesheetPath} : '/css/style.css'}">
+    <title>Sign in | UIDAM</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <link rel="stylesheet" th:if="${tenantStylesheetPath != null and tenantStylesheetPath != '/css/style.css'}" th:href="@{${tenantStylesheetPath}}">
 	<meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
@@ -11,51 +12,83 @@
             if (recaptchaElement) {
                 grecaptcha.render(recaptchaElement, {
                     'sitekey': '[[${captchaSite}]]',
-                    'callback': recaptchaCallback
+                    'callback': recaptchaCallback,
+                    'expired-callback': recaptchaCallback,
+                    'error-callback': recaptchaCallback
                 });
             }
         };
 		
 		function recaptchaCallback(response) {
-            handleInputFields();
+            if (window.handleInputFields) {
+                window.handleInputFields();
+            }
         }
 	</script>
     <script src='https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit' async defer></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
     <script th:src="@{/js/input-validator.js}"></script>
 </head>
-<body>
-<div class="login-page">
-    <div th:align="center">
-        <img th:src="@{tenantLogoPath != null ? ${tenantLogoPath} : '/images/' + ${issuer} + '-logo.svg'}" alt="Logo" title="Logo" class="logo"/>
-    </div>
+<body class="uidam-page uidam-login">
+<main class="login-page" aria-labelledby="login-title"
+      th:with="showExternal=${((isExternalIdpEnabled == true and isIDPAutoRedirectionEnabled == false) or
+      (isInternalLoginEnabled == true and isExternalIdpEnabled == true and isIDPAutoRedirectionEnabled == true))
+      and !#lists.isEmpty(externalIdpList)}">
+    <header class="login-brand">
+        <img th:src="@{${tenantLogoPath != null ? tenantLogoPath : '/images/' + issuer + '-logo.svg'}}" alt="Organization logo" class="logo"/>
+        <h1 id="login-title">Welcome back</h1>
+        <p class="login-subtitle">Sign in to continue to your account.</p>
+    </header>
     <div>
-        <div class="error" style="text-align: center; padding-bottom: 20px; color: red; font-weight: 600; font-size: 14px;" th:if="${param.error}">
+        <div class="error login-alert" role="alert" th:if="${param.error}">
             <p th:text="${session['SPRING_SECURITY_LAST_EXCEPTION'].message}"></p>
         </div>
 
-        <div class="error" style="text-align: center; padding-bottom: 20px; color: red; font-weight: 600; font-size: 14px;" th:if="${param.logout}">
+        <div class="login-alert login-alert-success" aria-live="polite" th:if="${param.logout}">
             You have been logged out.
+        </div>
+        <section class="login-sso" aria-label="Single sign-on" th:if="${showExternal}">
+            <p class="login-section-label">Sign in with your SSO</p>
+            <div class="login-provider-list">
+                <a class="btn btn-light login-provider" th:each="externalIdp: ${externalIdpList}"
+                   th:href="@{'/' + ${issuer} + ${externalIdpAuthorizationUri} + ${issuer} + '-' + ${externalIdp.getRegistrationId()}}">
+                    <img th:src="@{'/images/' + ${#strings.toLowerCase(externalIdp.getRegistrationId())} + '.png'}"
+                         width="24" height="24" alt=""/>
+                    <span th:text="${externalIdp.getClientName()}"></span>
+                    <span class="login-provider-arrow" aria-hidden="true">&#8594;</span>
+                </a>
+            </div>
+        </section>
+        <div class="login-divider" th:if="${showExternal and isInternalLoginEnabled == true}">
+            <span>or sign in with your username</span>
         </div>
         <div th:if="true == ${isInternalLoginEnabled}">
             <form  class="login-form" th:action="@{/login}" method="post">
                 <div class="container-auth-input">
-                    <label for="username" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Username*</label>
-                    <input type="text" id="username" name="username" placeholder="Username*"/>
-                    <div id="usernameError" style="color: red; font-size: 12px; display: none;"></div>
-                    <div class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
+                    <label for="username">Username <span class="login-required" aria-hidden="true">*</span></label>
+                    <input type="text" id="username" name="username" placeholder="Enter your username"
+                           autocomplete="username" required aria-describedby="usernameError usernameRequired"/>
+                    <div id="usernameError" class="login-field-error" style="display: none;" aria-live="polite"></div>
+                    <div id="usernameRequired" class="error-message login-field-error" style="display: none;">Username is required.</div>
 
                 </div>
                 <div class="container-auth-input">
-                    <label for="password" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Password*</label>
-                    <input type="password" id="password" name="password"  placeholder="Password*"/>
-                    <div class="error-message" style="display: none; color: red; margin-top: -4px; font-size: 12px; font-weight: bold;">This is required</div>
+                        <label for="password">Password <span class="login-required" aria-hidden="true">*</span></label>
+                        <input type="password" id="password" name="password" placeholder="Enter your password"
+                           autocomplete="current-password" required aria-describedby="passwordRequired"/>
+                        <button class="login-password-toggle" id="togglePassword" type="button"
+                            aria-controls="password" aria-label="Show password" aria-pressed="false">Show</button>
+                        <div id="passwordRequired" class="error-message login-field-error" style="display: none;">Password is required.</div>
 
                 </div>
-                <div class="container-auth-input2" th:if="true == ${isAccountFieldEnabled}">
-                    <label for="account_name" class="hidden" style="font-size: 14px; font-weight: bold; font-family: sans-serif;">Account Name</label>
-                    <input type="text" id="account_name" name="account_name" th:pattern="${T(org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants).ACC_NAME_REGEX}" placeholder="Account Name"/>
-                    <div id="account_nameError" style="color: red; font-size: 12px; display: none;"></div>
+                <div class="login-account-option" th:if="true == ${isAccountFieldEnabled}">
+                    <button type="button" id="toggleAccountName" class="login-account-toggle"
+                            aria-expanded="false" aria-controls="accountNameFields">Use an account name</button>
+                </div>
+                <div id="accountNameFields" class="container-auth-input2" hidden th:if="true == ${isAccountFieldEnabled}">
+                    <label for="account_name">Account name <span class="login-optional">(optional)</span></label>
+                    <input type="text" id="account_name" name="account_name" th:pattern="${T(org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants).ACC_NAME_REGEX}" placeholder="Enter your account name" aria-describedby="account_nameError"/>
+                    <div id="account_nameError" class="login-field-error" style="display: none;" aria-live="polite"></div>
 
                 </div>
 
@@ -65,21 +98,22 @@
                 <span id="captchaError" class="alert alert-danger col-sm-4"
                       style="display:none"></span>
 
-                <div class="sign-in-custom">
-                    <button id="submitLogin" type="submit" value="Log in" th:disabled="${#strings.isEmpty(username) or #strings.isEmpty(password) or #strings.isEmpty(account_name)}">
-                        <div class="text-button-auth">Log in</div>
-                    </button>
-                </div>
                 <div class="link-forgot-password">
-                    <a th:href="@{|/${issuer}/recovery|}">Forgot Password?</a>
+                    <a th:href="@{|/${issuer}/recovery|}">Forgot password?</a>
+                </div>
+                <div class="sign-in-custom">
+                    <button id="submitLogin" type="submit" value="Log in" disabled>
+                        <span class="text-button-auth">Sign in</span>
+                        <span aria-hidden="true">&#8594;</span>
+                    </button>
                 </div>
                 <div class="container-sign-up" th:if="${isSignUpEnabled}">
                     <div class="sign-up-text-helper">
-                        Don't have an account yet?
+                        New here?
                     </div>
                     <div class="sign-up-link">
                         <a id="sign-up"
-                           th:href="${client_id != null and !#strings.isEmpty(client_id)} ? @{|/${issuer}/sign-up?client_id=${client_id}|} : @{|/${issuer}/sign-up|}">Sign Up Here</a>
+                           th:href="${client_id != null and !#strings.isEmpty(client_id)} ? @{|/${issuer}/sign-up?client_id=${client_id}|} : @{|/${issuer}/sign-up|}">Create an account</a>
                     </div>
                 </div>
                 <input type="hidden" name="client_id" th:value="${client_id}" />
@@ -92,33 +126,13 @@
             </form>
         </div>
 
-		<div th:if="((true == ${isExternalIdpEnabled} and false == ${isIDPAutoRedirectionEnabled}) or
-        (true == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled}))
-        and false == ${#lists.isEmpty(externalIdpList)}">
-			<div style="text-align: center;">
-				<div class="login-header">Log in via...</div>
-				<div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-					<div th:each="externalIdp: ${externalIdpList}">
-						<a class="btn btn-light"
-						   th:href="@{'/' + ${issuer} + ${externalIdpAuthorizationUri} + ${issuer} + '-' + ${externalIdp.getRegistrationId()}}"
-						   role="link"
-						   style="display: flex; align-items: center; margin: 10px;">
-							<img th:src="@{'/images/' + ${#strings.toLowerCase(externalIdp.getClientName())} + '.png'}" width="20"
-								 style="margin-right: 5px;" th:alt="'Log in with ' + ${externalIdp.getClientName()}"/>
-							<span style="font-family:sans-serif;" th:text="${externalIdp.getClientName()}"></span>
-						</a>
-					</div>
-				</div>
-			</div>
-		</div>
-
         <div th:if="false == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled}
         and false == ${#lists.isEmpty(externalIdpList)}">
-            <h3 th:align="center">Redirecting...</h3>
-            <tr th:each="externalIdp: ${externalIdpList}">
+            <p class="login-redirect" aria-live="polite">Taking you to your organization's sign-in page...</p>
+            <th:block th:each="externalIdp: ${externalIdpList}">
                 <meta http-equiv="refresh"
                       th:content="'0; url=/' + ${issuer} + ${externalIdpAuthorizationUri} + ${issuer} + '-' + ${externalIdp.getRegistrationId()}">
-            </tr>
+            </th:block>
 
         </div>
     </div>
@@ -127,11 +141,36 @@
     <script th:inline="javascript">
         $(document).ready(function() {
 
+            $('#toggleAccountName').on('click', function() {
+                var expanded = $(this).attr('aria-expanded') !== 'true';
+                $('#accountNameFields').prop('hidden', !expanded);
+                $(this).attr('aria-expanded', String(expanded))
+                    .text(expanded ? 'Hide account name' : 'Use an account name');
+                if (expanded) {
+                    $('#account_name').trigger('focus');
+                } else {
+                    $('#account_name').val('').removeAttr('data-dirty');
+                    $('#account_nameError').hide().text('');
+                }
+                handleInputFields();
+            });
+
+            $('#togglePassword').on('click', function() {
+                var showPassword = $('#password').attr('type') === 'password';
+                $('#password').attr('type', showPassword ? 'text' : 'password');
+                $(this).text(showPassword ? 'Hide' : 'Show')
+                    .attr('aria-label', showPassword ? 'Hide password' : 'Show password')
+                    .attr('aria-pressed', String(showPassword));
+            });
+
             function handleInputFields() {
-                var username = $('#username').val().trim();
-                var password = $('#password').val().trim();
+                if (!$('#username').length) {
+                    return;
+                }
+                var username = ($('#username').val() || '').trim();
+                var password = ($('#password').val() || '').trim();
                 var accountName = ($('#account_name').val() || '').trim();
-                var recaptchaResponse = $('#g-recaptcha-response').val();
+                var recaptchaResponse = $('#g-recaptcha-response').val() || '';
                 var isCaptchaFieldEnabled = $('#g-recaptcha').length > 0;
 
                 var areFieldsFilled = username !== '' && password !== '';
@@ -152,7 +191,6 @@
                 $('.container-auth-input input,.container-auth-input2 input').each(function () {
                     var inputField = $(this);
                     var errorMessage = inputField.siblings('.error-message');
-                    var label = inputField.siblings('label');
 
                     if (inputField.val().trim() === '' && (inputField.is(':focus') || inputField.attr('data-dirty') === 'true')) {
                         errorMessage.show();
@@ -160,16 +198,11 @@
                         errorMessage.hide();
                     }
 
-                    if (inputField.val().trim() !== '') {
-                        label.removeClass('hidden');
-                    } else {
-                        label.addClass('hidden');
-                    }
                 });
             }
 
 
-            $('input[type="text"], input[type="password"]').on('keyup', function() {
+            $('input[type="text"], input[type="password"]').on('input change', function() {
                 handleInputFields();
             });
 
@@ -239,7 +272,7 @@
 
     </script>
 
-</div>
+</main>
 
 <div class="rights" th:fragment="footer">
     © <script>document.write(new Date().getFullYear());</script> HARMAN International. All Rights Reserved.
