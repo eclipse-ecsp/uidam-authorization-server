@@ -78,6 +78,8 @@ import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.UriUtils;
+import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -601,21 +603,20 @@ public class IgniteSecurityConfig {
                 }
             }
             UriComponentsBuilder builder = UriComponentsBuilder.fromPath(issuerPrefix + "/login");
-            Map<String, String> variables = new LinkedHashMap<>();
+            // Encode names and values ourselves; build(true) avoids treating '{...}' as URI template variables
             params.forEach((name, value) -> {
+                String encodedName = UriUtils.encode(name, StandardCharsets.UTF_8);
                 if (value == null) {
-                    builder.queryParam(name);
+                    builder.queryParam(encodedName);
                 } else {
-                    String variable = "param" + variables.size();
-                    builder.queryParam(name, "{" + variable + "}");
-                    variables.put(variable, value);
+                    builder.queryParam(encodedName, UriUtils.encode(value, StandardCharsets.UTF_8));
                 }
             });
             // Optionally, add issuerPrefix as a parameter
             if (!issuerPrefix.isEmpty()) {
-                builder.queryParam(ISSUER_PARAM, issuerPrefix.substring(1));
+                builder.queryParam(ISSUER_PARAM, UriUtils.encode(issuerPrefix.substring(1), StandardCharsets.UTF_8));
             }
-            String redirectUrl = builder.encode().buildAndExpand(variables).toUriString();
+            String redirectUrl = builder.build(true).toUriString();
             response.sendRedirect(redirectUrl);
         };
     }

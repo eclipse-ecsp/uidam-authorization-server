@@ -348,6 +348,19 @@ class IgniteSecurityConfigTest {
     }
 
     @Test
+    void testCustomLoginAuthenticationEntryPointEncodesBracesInQueryParamName() throws Exception {
+        when(request.getParameterNames()).thenReturn(
+                Collections.enumeration(Collections.singletonList("label{lang}")));
+        when(request.getParameter("label{lang}")).thenReturn("en+US");
+        when(request.getRequestURI()).thenReturn("/oauth2/authorize");
+
+        config.customLoginAuthenticationEntryPoint()
+                .commence(request, response, new BadCredentialsException("Test"));
+
+        verify(response).sendRedirect("/login?label%7Blang%7D=en%2BUS");
+    }
+
+    @Test
     void testCustomSimpleUrlAuthenticationFailureHandlerWithNullParameters() throws Exception {
         // Arrange
         when(request.getSession(false)).thenReturn(session);
