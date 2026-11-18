@@ -326,6 +326,41 @@ class IgniteSecurityConfigTest {
     }
 
     @Test
+    void testCustomLoginAuthenticationEntryPointEncodesReservedCharactersInParams() throws Exception {
+        // Arrange - Tableau-style JSON state plus reserved characters and a valueless param
+        when(request.getParameterNames()).thenReturn(Collections.enumeration(
+            java.util.Arrays.asList("redirect_uri", "state", "flag")));
+        when(request.getParameter("redirect_uri"))
+            .thenReturn("https://prod-in-a.online.tableau.com/auth/add_oauth_token");
+        when(request.getParameter("state")).thenReturn("{\"id\":\"a&b+c\",\"token\":\"x y\"}");
+        when(request.getParameter("flag")).thenReturn(null);
+        when(request.getRequestURI()).thenReturn("/oauth2/authorize");
+
+        // Act
+        AuthenticationEntryPoint entryPoint = config.customLoginAuthenticationEntryPoint();
+        entryPoint.commence(request, response, new BadCredentialsException("Test"));
+
+        // Assert
+        verify(response).sendRedirect("/login"
+                + "?redirect_uri=https%3A%2F%2Fprod-in-a.online.tableau.com%2Fauth%2Fadd_oauth_token"
+                + "&state=%7B%22id%22%3A%22a%26b%2Bc%22%2C%22token%22%3A%22x%20y%22%7D"
+                + "&flag");
+    }
+
+    @Test
+    void testCustomLoginAuthenticationEntryPointEncodesBracesInQueryParamName() throws Exception {
+        when(request.getParameterNames()).thenReturn(
+                Collections.enumeration(Collections.singletonList("label{lang}")));
+        when(request.getParameter("label{lang}")).thenReturn("en+US");
+        when(request.getRequestURI()).thenReturn("/oauth2/authorize");
+
+        config.customLoginAuthenticationEntryPoint()
+                .commence(request, response, new BadCredentialsException("Test"));
+
+        verify(response).sendRedirect("/login?label%7Blang%7D=en%2BUS");
+    }
+
+    @Test
     void testCustomSimpleUrlAuthenticationFailureHandlerWithNullParameters() throws Exception {
         // Arrange
         when(request.getSession(false)).thenReturn(session);
