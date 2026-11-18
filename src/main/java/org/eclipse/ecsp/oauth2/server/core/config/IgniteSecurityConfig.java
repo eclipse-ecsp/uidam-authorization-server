@@ -601,12 +601,21 @@ public class IgniteSecurityConfig {
                 }
             }
             UriComponentsBuilder builder = UriComponentsBuilder.fromPath(issuerPrefix + "/login");
-            params.forEach(builder::queryParam);
+            Map<String, String> variables = new LinkedHashMap<>();
+            params.forEach((name, value) -> {
+                if (value == null) {
+                    builder.queryParam(name);
+                } else {
+                    String variable = "param" + variables.size();
+                    builder.queryParam(name, "{" + variable + "}");
+                    variables.put(variable, value);
+                }
+            });
             // Optionally, add issuerPrefix as a parameter
             if (!issuerPrefix.isEmpty()) {
                 builder.queryParam(ISSUER_PARAM, issuerPrefix.substring(1));
             }
-            String redirectUrl = builder.build().toUriString();
+            String redirectUrl = builder.encode().buildAndExpand(variables).toUriString();
             response.sendRedirect(redirectUrl);
         };
     }
