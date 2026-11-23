@@ -60,6 +60,14 @@ public class JwtTokenValidator {
     private static final Logger LOGGER = LoggerFactory.getLogger(JwtTokenValidator.class);
     private static final String INVALIDATED_KEY = "invalidated";
 
+    private static final class MissingExpiryClaimException extends CustomOauth2AuthorizationException {
+        private static final long serialVersionUID = 1L;
+
+        private MissingExpiryClaimException() {
+            super(CustomOauth2TokenGenErrorCodes.MISSING_TOKEN_EXPIRY);
+        }
+    }
+
     private final JWKSource<SecurityContext> jwkSource;
     private final AuthorizationRepository authorizationRepository;
     
@@ -140,21 +148,17 @@ public class JwtTokenValidator {
      */
     public Claims getClaimsFromToken(String token) {
         LOGGER.debug("## getClaimsFromToken - START");
+        Claims claims;
         try {
             // Get the public key from JWKSource
             RSAPublicKey publicKey = getCurrentTenantPublicKey();
 
             // Parse and verify the token using the public key
-            Claims claims = Jwts.parser()
+            claims = Jwts.parser()
                     .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
-
-            LOGGER.debug("Successfully parsed and verified JWT token");
-            LOGGER.debug("## getClaimsFromToken - END");
-            return claims;
-
         } catch (SecurityException | MalformedJwtException | ExpiredJwtException | UnsupportedJwtException
                  | IllegalArgumentException ex) {
             LOGGER.error("JWT Parser error.", ex);
@@ -163,6 +167,13 @@ public class JwtTokenValidator {
             LOGGER.error("Unable to parse the Token with JWTParser.", ex);
             throw new CustomOauth2AuthorizationException(CustomOauth2TokenGenErrorCodes.INVALID_TOKEN);
         }
+        if (claims.getExpiration() == null) {
+            RequiredExpiryValidator.logMissingExpiry(claims.getSubject());
+            throw new MissingExpiryClaimException();
+        }
+        LOGGER.debug("Successfully parsed and verified JWT token");
+        LOGGER.debug("## getClaimsFromToken - END");
+        return claims;
     }
 
     /**
@@ -196,6 +207,8 @@ public class JwtTokenValidator {
             LOGGER.debug("## validateToken - END");
             return scopeList.contains(requiredScope);
 
+        } catch (MissingExpiryClaimException e) {
+            return false;
         } catch (Exception e) {
             LOGGER.error("## validateToken - ERROR: Error encountered while validating token.", e);
             return false;
@@ -238,6 +251,8 @@ public class JwtTokenValidator {
             LOGGER.debug("## introspectToken - END: isActive={}", isActive);
             return isActive;
             
+        } catch (MissingExpiryClaimException e) {
+            return false;
         } catch (Exception e) {
             LOGGER.error("## introspectToken - ERROR: Error encountered while introspecting token.", e);
             return false;

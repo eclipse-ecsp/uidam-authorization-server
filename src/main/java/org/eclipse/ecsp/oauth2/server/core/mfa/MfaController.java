@@ -20,6 +20,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
@@ -32,7 +35,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 /**
  * Handles all /mfa/** and /{tenantId}/mfa/** endpoints for the MFA (TOTP) login, enrollment,
@@ -667,10 +672,17 @@ public class MfaController {
 
         MfaPendingAuthenticationToken pending = getPending(request);
 
+        List<GrantedAuthority> completedAuthorities = pending != null
+                ? new ArrayList<>(pending.getPendingAuthorities())
+                : new ArrayList<>();
+        // Marks the moment the second (TOTP) factor actually completed, alongside the
+        // FACTOR_PASSWORD marker already carried forward from CustomUserPwdAuthenticationProvider.
+        // Both are later promoted back into real FactorGrantedAuthority instances (with the
+        // correct timestamp) by DatabaseSecurityContextRepository.
+        completedAuthorities.add(new SimpleGrantedAuthority(FactorGrantedAuthority.OTT_AUTHORITY));
+
         UsernamePasswordAuthenticationToken fullAuth =
-                new UsernamePasswordAuthenticationToken(
-                        username, null,
-                        pending != null ? pending.getPendingAuthorities() : Collections.emptyList());
+                new UsernamePasswordAuthenticationToken(username, null, completedAuthorities);
 
         SecurityContext ctx = SecurityContextHolder.createEmptyContext();
         ctx.setAuthentication(fullAuth);

@@ -43,6 +43,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationToken;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.LOGIN_ATTEMPT;
@@ -143,6 +144,9 @@ class CustomUserPwdAuthenticationProviderTest {
         assertEquals(authentication.getPrincipal(), authenticationToken.getPrincipal());
         assertEquals(authentication.getCredentials(), authenticationToken.getCredentials());
         assertEquals(authentication.getAccountName(), authenticationToken.getAccountName());
+        assertTrue(authenticationToken.getAuthorities().stream()
+                .anyMatch(a -> FactorGrantedAuthority.PASSWORD_AUTHORITY.equals(a.getAuthority())),
+            "successful password authentication must carry a FACTOR_PASSWORD marker authority");
     }
 
     /**

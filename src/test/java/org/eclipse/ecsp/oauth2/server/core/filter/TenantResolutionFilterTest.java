@@ -38,6 +38,7 @@ import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,6 +47,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 
@@ -124,6 +126,49 @@ class TenantResolutionFilterTest {
     void destroyShouldCompleteWithoutException() {
         // Test that destroy method completes without exception
         assertDoesNotThrow(() -> tenantResolutionFilter.destroy());
+    }
+
+    @Test
+    void bareOptionsShouldBeRejectedBeforeTenantResolutionAndStaticResourceHandling()
+            throws IOException, ServletException {
+        request.setMethod("OPTIONS");
+        for (String path : new String[] {"/ecsp/oauth2/introspect", "/css/style.css"}) {
+            request.setRequestURI(path);
+            response = new MockHttpServletResponse();
+
+            tenantResolutionFilter.doFilter(request, response, filterChain);
+
+            assertEquals(HttpStatus.METHOD_NOT_ALLOWED.value(), response.getStatus());
+            assertNull(response.getHeader("Allow"));
+        }
+        verifyNoInteractions(filterChain);
+        verifyNoInteractions(tenantConfigurationService);
+    }
+
+    @Test
+    void incompletePreflightShouldBeRejected() throws IOException, ServletException {
+        request.setMethod("OPTIONS");
+        request.setRequestURI("/ecsp/oauth2/introspect");
+        request.addHeader("Origin", "https://client.harman.com");
+
+        tenantResolutionFilter.doFilter(request, response, filterChain);
+
+        assertEquals(HttpStatus.METHOD_NOT_ALLOWED.value(), response.getStatus());
+        assertNull(response.getHeader("Allow"));
+        verifyNoInteractions(filterChain);
+    }
+
+    @Test
+    void corsPreflightShouldContinueToCorsValidation() throws IOException, ServletException {
+        request.setMethod("OPTIONS");
+        request.setRequestURI("/ecsp/oauth2/introspect");
+        request.addHeader("Origin", "https://client.harman.com");
+        request.addHeader("Access-Control-Request-Method", "POST");
+        when(tenantConfigurationService.tenantExists("ecsp")).thenReturn(true);
+
+        tenantResolutionFilter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
     }
 
     @Test

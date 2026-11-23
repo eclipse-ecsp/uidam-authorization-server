@@ -42,6 +42,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -50,6 +52,7 @@ import org.springframework.ui.ExtendedModelMap;
 import org.springframework.ui.Model;
 
 import java.lang.reflect.Field;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -57,6 +60,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -453,6 +457,36 @@ class MfaControllerTest {
 
         // Redirects to root since no saved request
         assertNotNull(view);
+    }
+
+    /**
+     * Verifies the GH-297 fix: once the second (TOTP) factor is actually verified, the
+     * resulting authenticated token must carry a {@code FACTOR_OTT} marker authority -
+     * this is later promoted into a real {@link org.springframework.security.core.authority
+     * .FactorGrantedAuthority} by {@code DatabaseSecurityContextRepository} on the next request,
+     * which is what lets {@code JwtGenerator} compute {@code auth_time} without crashing.
+     */
+    @Test
+    void challengeSubmit_withValidCode_authorityCarriesOttFactorMarker() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, List.of(new SimpleGrantedAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY)));
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
+
+        Model model = new ExtendedModelMap();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        mfaController.challengeSubmit(TENANT_ID, TOTP_CODE, request, response, model);
+
+        Collection<? extends GrantedAuthority> authorities =
+                SecurityContextHolder.getContext().getAuthentication().getAuthorities();
+        assertTrue(authorities.stream().anyMatch(a -> FactorGrantedAuthority.OTT_AUTHORITY.equals(a.getAuthority())),
+            "completed MFA login must carry a FACTOR_OTT marker authority");
+        assertTrue(authorities.stream()
+                .anyMatch(a -> FactorGrantedAuthority.PASSWORD_AUTHORITY.equals(a.getAuthority())),
+            "FACTOR_PASSWORD marker from the earlier password step must still be carried forward");
     }
 
     @Test

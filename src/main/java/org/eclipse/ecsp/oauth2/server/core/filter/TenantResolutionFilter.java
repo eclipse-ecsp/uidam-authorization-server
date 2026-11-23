@@ -44,6 +44,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.cors.CorsUtils;
 
 import java.io.IOException;
 import java.util.Set;
@@ -145,6 +146,12 @@ public class TenantResolutionFilter implements Filter {
 
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+        if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod()) && !CorsUtils.isPreFlightRequest(httpRequest)) {
+            httpResponse.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            return;
+        }
+
         String requestUri = httpRequest.getRequestURI();
         
         // Extract and log source IP address only if enabled

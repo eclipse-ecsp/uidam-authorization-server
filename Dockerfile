@@ -1,4 +1,4 @@
-FROM azul/zulu-openjdk-alpine:25-latest
+FROM azul/zulu-openjdk-alpine:25.0.5.1
 WORKDIR /app
 
 EXPOSE 8080

@@ -816,15 +816,21 @@ body.uidam-mfa::after {
 body.uidam-login {
   padding: 20px;
   gap: 16px;
+  background: #eaf5fb;
 }
+body.uidam-login::before,
+body.uidam-login::after { display: none; }
 .uidam-login .login-page {
   width: 100%;
   max-width: 460px;
   padding: 28px 36px !important;
-  border-radius: 24px;
+  border: 1px solid #e0eaf0;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 16px 40px #173a541a;
   text-align: left;
 }
-.uidam-login .login-page::before { left: 36px; right: 36px; }
+.uidam-login .login-page::before { display: none; }
 .uidam-login .login-brand { margin-bottom: 20px; text-align: center; }
 .uidam-login .logo { margin: 0 auto 16px; }
 .uidam-login h1 { margin: 0 0 8px; color: #143652; font-size: 28px; letter-spacing: -.8px; }
@@ -834,6 +840,14 @@ body.uidam-login {
 .uidam-login .login-section-label::before,
 .uidam-login .login-section-label::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, transparent, #bdcfdd); }
 .uidam-login .login-section-label::after { background: linear-gradient(90deg, #bdcfdd, transparent); }
+.uidam-login .login-method { padding: 16px; border: 1px solid #d6e1ea; border-radius: 12px; }
+.uidam-login .login-method[open] { border-color: var(--login-accent); box-shadow: 0 0 0 3px #009edd26; }
+.uidam-login .login-method summary { display: flex; align-items: center; gap: 12px; color: #143652; font-weight: 700; cursor: pointer; list-style: none; }
+.uidam-login .login-method summary::-webkit-details-marker { display: none; }
+.uidam-login .login-method summary::before { content: ""; flex: 0 0 18px; width: 18px; height: 18px; border: 1.5px solid #738397; border-radius: 50%; }
+.uidam-login .login-method[open] summary::before { border: 5px solid var(--login-accent); }
+.uidam-login .login-method summary:focus-visible { outline: 3px solid #19a8c1; outline-offset: 4px; border-radius: 3px; }
+.uidam-login .login-method[open] summary { margin-bottom: 16px; }
 .uidam-login .login-provider-list { display: grid; gap: 10px; }
 .uidam-login .login-provider { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px 16px; border: 1px solid #d1e1ee; border-radius: 12px; background: linear-gradient(120deg, #fff, #f2f8fd); color: var(--login-text); font-weight: 600; text-decoration: none; transition: border-color 150ms, box-shadow 150ms, transform 150ms; }
 .uidam-login .login-provider img { flex-shrink: 0; object-fit: contain; }
@@ -876,8 +890,8 @@ body.uidam-login {
 .uidam-login .login-alert p { margin: 0; }
 .uidam-login .login-alert-success { border-color: #c2e6d7; background: #eefaf5; color: #246449; }
 .uidam-login .login-redirect { color: var(--login-muted); text-align: center; }
-.uidam-login .g-recaptcha { max-width: 100%; margin-bottom: 18px; }
-.uidam-login .rights { color: #bdd0df; }
+.uidam-login .g-recaptcha { max-width: 100%; margin-bottom: 18px; overflow-x: auto; }
+.uidam-login .rights { color: #62748a; }
 
 @media (max-width: 799px) {
   body.uidam-page, body.uidam-mfa { padding: 18px 12px; gap: 14px; }
