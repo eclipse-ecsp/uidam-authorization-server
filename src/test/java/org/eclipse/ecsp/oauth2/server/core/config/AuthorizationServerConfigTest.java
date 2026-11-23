@@ -316,6 +316,14 @@ class AuthorizationServerConfigTest {
         assertThrows(BadJwtException.class, () -> jwtDecoder.decode(token));
     }
 
+    @Test
+    void testJwtDecoder_ShouldRejectTokenWithoutExpiration() throws Exception {
+        JwtDecoder jwtDecoder = authorizationServerConfig.jwtDecoder(rsaJwkSource());
+        String token = signJwt("at+jwt", false);
+
+        assertThrows(BadJwtException.class, () -> jwtDecoder.decode(token));
+    }
+
     private JWKSource<SecurityContext> rsaJwkSource() throws Exception {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
         keyPairGenerator.initialize(RSA_KEY_SIZE_BITS);
@@ -329,16 +337,22 @@ class AuthorizationServerConfigTest {
     }
 
     private String signJwt(String typeHeader) throws Exception {
+        return signJwt(typeHeader, true);
+    }
+
+    private String signJwt(String typeHeader, boolean includeExpiration) throws Exception {
         JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
                 .type(new JOSEObjectType(typeHeader))
                 .keyID(this.signingKey.getKeyID())
                 .build();
         Instant now = Instant.now();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder()
                 .subject("test-user")
-                .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plusSeconds(TOKEN_EXPIRY_SECONDS)))
-                .build();
+                .issueTime(Date.from(now));
+        if (includeExpiration) {
+            claimsBuilder.expirationTime(Date.from(now.plusSeconds(TOKEN_EXPIRY_SECONDS)));
+        }
+        JWTClaimsSet claims = claimsBuilder.build();
         SignedJWT signedJwt = new SignedJWT(header, claims);
         signedJwt.sign(new RSASSASigner(this.signingKey.toRSAPrivateKey()));
         return signedJwt.serialize();

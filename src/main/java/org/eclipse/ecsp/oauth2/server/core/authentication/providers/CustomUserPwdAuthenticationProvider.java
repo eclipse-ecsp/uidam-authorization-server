@@ -44,6 +44,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Component;
@@ -299,6 +300,11 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
         
         List<GrantedAuthority> grantedAuthorities = userDetailsResponse.getScopes().stream()
             .map(SimpleGrantedAuthority::new).collect(Collectors.toList());
+        // Marks the moment password authentication actually succeeded. This name-only marker
+        // is later promoted back into a real FactorGrantedAuthority (with the correct
+        // timestamp) by DatabaseSecurityContextRepository once the session round-trips through
+        // the database - see FactorGrantedAuthority.PASSWORD_AUTHORITY for details.
+        grantedAuthorities.add(new SimpleGrantedAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
         return CustomUserPwdAuthenticationToken.authenticated(username, password, accountName,
                 userDetailsResponse.getAccountId(), userDetailsResponse.getMfaRequired(), grantedAuthorities);
     }

@@ -75,6 +75,7 @@ import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -123,6 +124,9 @@ public class ClaimsConfigManager {
      * (see {@link #resolveMandatoryFieldClaim}).
      */
     private static final String CUSTOM_ATTRIBUTE_CLAIM_PREFIX = "ATTR_";
+
+    private static final Set<String> OIDC_SCOPES = Set.of(OidcScopes.OPENID, OidcScopes.PROFILE,
+            OidcScopes.EMAIL, OidcScopes.PHONE, OidcScopes.ADDRESS);
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ClaimsConfigManager.class);
 
@@ -1090,10 +1094,9 @@ public class ClaimsConfigManager {
     }
 
     /**
-     * Populates the scopeSet with all user scopes when {@code tenant.client.portal-scopeless-user-scopes} is
-     * {@code true} and the requested scopeSet is empty (i.e., a scopeless / portal user flow).
-     * In that case, all scopes assigned to the user are merged into the scopeSet so that
-     * they are included in both the {@code scope} and {@code scopes} claims of the JWT.
+     * Populates the scopeSet with user scopes for scopeless requests when
+     * {@code tenant.client.auth-code-scopeless-user-scopes} is {@code true}, or for requests containing only
+     * OIDC scopes when {@code tenant.client.oidc-only-scope-expansion-enabled} is {@code true}.
      *
      * @param clientDetails       The registered client details (may be null).
      * @param userDetailsResponse The user details containing the user's assigned scopes.
@@ -1116,6 +1119,18 @@ public class ClaimsConfigManager {
         }
 
         TenantProperties tenantProperties = getCurrentTenantProperties();
+        if (Boolean.TRUE.equals(tenantProperties.getClient().getOidcOnlyScopeExpansionEnabled())
+                && isOidcOnlyScopeRequest(scopeSet)) {
+            Set<String> expandedScopeSet = new HashSet<>(scopeSet);
+            if (userDetailsResponse != null && !CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+                expandedScopeSet.addAll(userDetailsResponse.getScopes());
+            }
+            LOGGER.debug("oidc-only-scope-expansion-enabled=true: expanded OIDC-only scopeSet={}",
+                    expandedScopeSet);
+            LOGGER.debug("## populateUserScopes - END");
+            return expandedScopeSet;
+        }
+
         Boolean portalScopelessUserScopes = tenantProperties.getClient().getAuthCodeScopelessUserScopes();
         if (Boolean.TRUE.equals(portalScopelessUserScopes)
                 && userDetailsResponse != null
@@ -1130,6 +1145,10 @@ public class ClaimsConfigManager {
         }
         LOGGER.debug("## populateUserScopes - END");
         return scopeSet;
+    }
+
+    private boolean isOidcOnlyScopeRequest(Set<String> scopeSet) {
+        return !CollectionUtils.isEmpty(scopeSet) && scopeSet.stream().allMatch(OIDC_SCOPES::contains);
     }
 
     /**
