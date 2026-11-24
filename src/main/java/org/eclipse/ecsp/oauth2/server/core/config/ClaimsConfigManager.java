@@ -67,6 +67,8 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2RefreshTokenAuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenClaimsContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
@@ -75,6 +77,7 @@ import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -532,7 +535,8 @@ public class ClaimsConfigManager {
         boolean isFederatedUser = isFederatedUser(context.getPrincipal());
         if (AUTHORIZATION_CODE_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
             setUserCustomClaims(claimsBuilder, userDetailsResponse, clientId);
-            scopeSet = populateUserScopes(userDetailsResponse, scopeSet, isFederatedUser);
+            scopeSet = populateUserScopes(context, userDetailsResponse, scopeSet,
+                    isFederatedUser);
             addScopeAndScopes(clientDetails, userDetailsResponse, claimsBuilder, scopeSet, false,
                     isFederatedUser);
             LOGGER.debug("Claims added to JWT Access token for grant type - authorization_code");
@@ -543,7 +547,8 @@ public class ClaimsConfigManager {
         } else if (REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
             if (userDetailsResponse != null) {
                 setUserCustomClaims(claimsBuilder, userDetailsResponse, clientId);
-                scopeSet = populateUserScopes(userDetailsResponse, scopeSet, isFederatedUser);
+                scopeSet = populateUserScopes(context, userDetailsResponse, scopeSet,
+                        isFederatedUser);
             } else {
                 LOGGER.warn("userDetailsResponse is null during refresh_token grant "
                         + "(PKCE/public client flow) - skipping user claims, using existing scope");
@@ -1090,17 +1095,72 @@ public class ClaimsConfigManager {
     }
 
     /**
-     * Populates the scopeSet with all user scopes when {@code tenant.client.portal-scopeless-user-scopes} is
-     * {@code true} and the requested scopeSet is empty (i.e., a scopeless / portal user flow).
-     * In that case, all scopes assigned to the user are merged into the scopeSet so that
-     * they are included in both the {@code scope} and {@code scopes} claims of the JWT.
+     * Expands an OIDC-only request with the user's scopes that the client is registered for.
+     * Clients requiring consent are not expanded, since the user only consented to the requested scopes.
      *
-     * @param clientDetails       The registered client details (may be null).
+     * <p>On refresh the expansion is limited to the scopes granted when the user authorized (read from the
+     * previous access token's claims), so newly assigned user scopes are not added without a new login.
+     * A refresh request that names its own scopes is an explicit reduction and is not expanded.
+     */
+    private Set<String> expandOidcOnlyScopes(JwtEncodingContext context,
+            UserDetailsResponse userDetailsResponse, Set<String> scopeSet) {
+        RegisteredClient registeredClient = context.getRegisteredClient();
+        if (registeredClient == null || registeredClient.getClientSettings().isRequireAuthorizationConsent()) {
+            LOGGER.debug("OIDC-only scope expansion skipped: client missing or requires consent");
+            return scopeSet;
+        }
+        Set<String> allowedScopes = new HashSet<>(registeredClient.getScopes());
+        if (REFRESH_TOKEN_GRANT_TYPE.equals(context.getAuthorizationGrantType().getValue())) {
+            if (context.getAuthorizationGrant() instanceof OAuth2RefreshTokenAuthenticationToken refreshGrant
+                    && !CollectionUtils.isEmpty(refreshGrant.getScopes())) {
+                LOGGER.debug("OIDC-only scope expansion skipped: refresh request names explicit scopes");
+                return scopeSet;
+            }
+            allowedScopes.retainAll(previouslyGrantedScopes(context.getAuthorization()));
+        }
+        Set<String> expandedScopeSet = new HashSet<>(scopeSet);
+        if (userDetailsResponse != null && !CollectionUtils.isEmpty(userDetailsResponse.getScopes())) {
+            userDetailsResponse.getScopes().stream()
+                    .filter(allowedScopes::contains)
+                    .forEach(expandedScopeSet::add);
+        }
+        LOGGER.debug("oidc-only-scope-expansion-enabled=true: expanded OIDC-only scopeSet={}", expandedScopeSet);
+        return expandedScopeSet;
+    }
+
+    /**
+     * Returns the scopes in the {@code scope} claim of the authorization's current access token, i.e. the
+     * scopes actually granted earlier in this authorization. Empty when unavailable, which disables expansion.
+     */
+    private Set<String> previouslyGrantedScopes(OAuth2Authorization authorization) {
+        if (authorization == null || authorization.getAccessToken() == null
+                || authorization.getAccessToken().getClaims() == null) {
+            return Set.of();
+        }
+        Object scopeClaim = authorization.getAccessToken().getClaims().get(OAuth2ParameterNames.SCOPE);
+        if (scopeClaim instanceof String scopes) {
+            return Set.copyOf(Arrays.asList(scopes.trim().split("\\s+")));
+        }
+        if (scopeClaim instanceof java.util.Collection<?> scopes) {
+            Set<String> result = new HashSet<>();
+            scopes.forEach(scope -> result.add(String.valueOf(scope)));
+            return result;
+        }
+        return Set.of();
+    }
+
+    /**
+     * Populates the scopeSet with user scopes for scopeless requests when
+     * {@code tenant.client.auth-code-scopeless-user-scopes} is {@code true}, or for requests containing only
+     * OIDC scopes when {@code tenant.client.oidc-only-scope-expansion-enabled} is {@code true}.
+     *
+     * @param context             The token encoding context.
      * @param userDetailsResponse The user details containing the user's assigned scopes.
      * @param scopeSet            The current scope set derived from the token request.
      * @return The (possibly enriched) scope set to use for claim population.
      */
-    private Set<String> populateUserScopes(UserDetailsResponse userDetailsResponse,
+    private Set<String> populateUserScopes(JwtEncodingContext context,
+                                           UserDetailsResponse userDetailsResponse,
                                            Set<String> scopeSet,
                                            boolean isFederatedUser) {
         LOGGER.debug("## populateUserScopes - START");
@@ -1116,6 +1176,11 @@ public class ClaimsConfigManager {
         }
 
         TenantProperties tenantProperties = getCurrentTenantProperties();
+        if (Boolean.TRUE.equals(tenantProperties.getClient().getOidcOnlyScopeExpansionEnabled())
+                && CommonMethodsUtils.isOidcOnlyScopeRequest(scopeSet)) {
+            return expandOidcOnlyScopes(context, userDetailsResponse, scopeSet);
+        }
+
         Boolean portalScopelessUserScopes = tenantProperties.getClient().getAuthCodeScopelessUserScopes();
         if (Boolean.TRUE.equals(portalScopelessUserScopes)
                 && userDetailsResponse != null

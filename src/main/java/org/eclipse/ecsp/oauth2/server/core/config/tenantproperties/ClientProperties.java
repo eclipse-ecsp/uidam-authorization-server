@@ -43,6 +43,10 @@ public class ClientProperties {
      */
     private Boolean authCodeScopelessUserScopes;
     /**
+     * If true, authorization-code requests containing only OIDC scopes also receive all user scopes.
+     */
+    private Boolean oidcOnlyScopeExpansionEnabled;
+    /**
      * If true, public clients (PKCE, ClientAuthenticationMethod.NONE) are allowed to use
      * the refresh_token grant type without providing a client_secret.
      * Refresh token rotation is enforced for security.

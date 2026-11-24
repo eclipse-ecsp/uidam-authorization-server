@@ -75,26 +75,28 @@ public class TenantAwareAuthenticationFilter extends OncePerRequestFilter {
         LOGGER.debug("Processing authentication filter for  URI: {}", requestUri);
 
         try {
-            // Only check authentication-related endpoints
+            // Only guard the tenant authentication-method check. The downstream filter chain is
+            // intentionally kept OUT of this try block: if filterChain.doFilter() were inside it, a
+            // RuntimeException thrown anywhere downstream (e.g. token, userinfo, introspect endpoints)
+            // would be caught below and rewritten as a login redirect, causing redirect loops for
+            // requests that have nothing to do with tenant login.
             if (isAuthenticationEndpoint(requestUri) && !isAuthenticationMethodAllowed(request)) {
                 LOGGER.warn("Authentication method not allowed for URI: {}", requestUri);
                 redirectToAlternativeAuth(response);
                 return;
             }
-
-            // Continue filter chain if authentication method is allowed
-            filterChain.doFilter(request, response);
-
-        } catch (ServletException | IOException e) {
-            // Re-throw servlet exceptions as they're part of the filter contract
-            throw e;
         } catch (RuntimeException e) {
             LOGGER.error("Runtime error in tenant-aware authentication filter",  e);
             // Fail secure: redirect to error page instead of continuing
             // Note: ERROR_REDIRECT_PATH already contains "?error=true", so additional params must be
             // appended with '&', not '?', to avoid producing an invalid URL like "?error=true?error=...".
             response.sendRedirect(ERROR_REDIRECT_PATH + "&error=tenant_security_error");
+            return;
         }
+
+        // Continue filter chain if authentication method is allowed. Exceptions raised downstream
+        // propagate to the container / Spring Security unchanged and are NOT converted to redirects.
+        filterChain.doFilter(request, response);
     }
 
     /**

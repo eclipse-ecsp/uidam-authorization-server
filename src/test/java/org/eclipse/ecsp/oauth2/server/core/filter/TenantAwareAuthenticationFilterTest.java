@@ -325,12 +325,13 @@ class TenantAwareAuthenticationFilterTest {
     }
 
     /**
-     * Regression test for the equivalent malformed-URL bug in the top-level
-     * {@code catch (RuntimeException e)} branch of {@code doFilterInternal} (the
-     * {@code tenant_security_error} redirect).
+     * Regression test for the catch-all scope bug: a {@link RuntimeException} raised downstream of
+     * this filter (e.g. by token/userinfo/introspect endpoints) on a NON-login URL must NOT be
+     * caught here and rewritten as a login redirect. Doing so caused redirect loops. The exception
+     * must propagate unchanged and no redirect may be issued.
      */
     @Test
-    void doFilterInternal_shouldProduceValidAmpersandJoinedUrl_whenRuntimeExceptionDuringFilterChain()
+    void doFilterInternal_shouldPropagateDownstreamRuntimeException_withoutRedirect()
             throws ServletException, IOException {
         when(request.getRequestURI()).thenReturn("/api/data");
         org.mockito.Mockito.doThrow(new RuntimeException("boom"))
@@ -339,9 +340,10 @@ class TenantAwareAuthenticationFilterTest {
         try (MockedStatic<SessionTenantResolver> resolver = mockStatic(SessionTenantResolver.class)) {
             resolver.when(SessionTenantResolver::getCurrentTenant).thenReturn("ecsp");
 
-            filter.doFilterInternal(request, response, filterChain);
-
-            verify(response).sendRedirect("/login?error=true&error=tenant_security_error");
+            RuntimeException thrown = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> filter.doFilterInternal(request, response, filterChain));
+            org.junit.jupiter.api.Assertions.assertEquals("boom", thrown.getMessage());
+            verify(response, never()).sendRedirect(org.mockito.ArgumentMatchers.anyString());
         }
     }
 }

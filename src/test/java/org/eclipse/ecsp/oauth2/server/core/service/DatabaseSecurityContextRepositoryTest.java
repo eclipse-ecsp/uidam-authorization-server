@@ -36,10 +36,15 @@ import org.mockito.Mockito;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -48,8 +53,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -68,6 +75,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -208,6 +216,121 @@ class DatabaseSecurityContextRepositoryTest {
     }
 
     /**
+     * Verifies the core fix for GH-297 ("authenticationTime cannot be null"): when the persisted
+     * authorities string contains a known {@code FACTOR_*} marker (e.g. {@code FACTOR_PASSWORD}),
+     * the rebuilt authority must be a genuine {@link FactorGrantedAuthority} - not a plain {@link
+     * SimpleGrantedAuthority} - carrying this session's own {@code createdDate} as its {@code
+     * issuedAt}. Every other authority name must still be rebuilt as a plain {@code
+     * SimpleGrantedAuthority}, exactly as before.
+     */
+    @Test
+    void loadContextPromotesKnownFactorMarkerToFactorGrantedAuthority() {
+        AuthorizationSecurityContext storedContext = new AuthorizationSecurityContext();
+        storedContext.setPrincipal(TEST_USER_NAME);
+        storedContext.setAuthorities(FactorGrantedAuthority.PASSWORD_AUTHORITY + ",SCOPE_openid");
+        storedContext.setAuthenticated(true);
+        storedContext.setSessionId(REQUESTED_SESSION_ID);
+        Timestamp sessionCreatedDate = Timestamp.from(Instant.now().minus(Duration.ofHours(1)));
+        storedContext.setCreatedDate(sessionCreatedDate);
+        storedContext.setUpdatedDate(Timestamp.from(Instant.now()));
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID)).thenReturn(
+            Optional.of(storedContext));
+
+        SecurityContext context = databaseSecurityContextRepository.loadContext(
+            new HttpRequestResponseHolder(request, response));
+
+        CustomUserPwdAuthenticationToken token = (CustomUserPwdAuthenticationToken) context.getAuthentication();
+        long factorMarkerCount = token.getAuthorities().stream()
+            .filter(FactorGrantedAuthority.class::isInstance)
+            .count();
+        assertEquals(1, factorMarkerCount, "exactly one authority should be promoted to FactorGrantedAuthority");
+        FactorGrantedAuthority factor = token.getAuthorities().stream()
+            .filter(FactorGrantedAuthority.class::isInstance)
+            .map(FactorGrantedAuthority.class::cast)
+            .findFirst().orElseThrow();
+        assertEquals(FactorGrantedAuthority.PASSWORD_AUTHORITY, factor.getAuthority());
+        assertEquals(sessionCreatedDate.toInstant(), factor.getIssuedAt());
+        boolean scopeStillSimple = token.getAuthorities().stream()
+            .anyMatch(a -> "SCOPE_openid".equals(a.getAuthority()) && a instanceof SimpleGrantedAuthority);
+        assertTrue(scopeStillSimple, "non-factor authorities must still be rebuilt as SimpleGrantedAuthority");
+    }
+
+    /**
+     * A completed MFA login saved through the repository must come back with both factor markers
+     * promoted, so the completed OTT factor survives the database round-trip.
+     */
+    @Test
+    void savedCompletedMfaContextKeepsOttFactorAfterReload() {
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID))
+            .thenReturn(Optional.empty());
+        org.mockito.ArgumentCaptor<AuthorizationSecurityContext> saved =
+            org.mockito.ArgumentCaptor.forClass(AuthorizationSecurityContext.class);
+        SecurityContext completed = SecurityContextHolder.createEmptyContext();
+        completed.setAuthentication(CustomUserPwdAuthenticationToken.authenticated(TEST_USER_NAME, null,
+            ACCOUNT_NAME, "acct-1", Boolean.TRUE, List.of(new SimpleGrantedAuthority("SelfManage"),
+                new SimpleGrantedAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY),
+                new SimpleGrantedAuthority(FactorGrantedAuthority.OTT_AUTHORITY))));
+
+        databaseSecurityContextRepository.saveContext(completed, request, response);
+        verify(authorizationSecurityContextRepository).save(saved.capture());
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID))
+            .thenReturn(Optional.of(saved.getValue()));
+        SecurityContext reloaded = databaseSecurityContextRepository.loadContext(
+            new HttpRequestResponseHolder(request, response));
+
+        java.util.Set<String> factors = reloaded.getAuthentication().getAuthorities().stream()
+            .filter(FactorGrantedAuthority.class::isInstance)
+            .map(GrantedAuthority::getAuthority)
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of(FactorGrantedAuthority.PASSWORD_AUTHORITY,
+            FactorGrantedAuthority.OTT_AUTHORITY), factors);
+        assertEquals("acct-1", ((CustomUserPwdAuthenticationToken) reloaded.getAuthentication()).getAccountId());
+    }
+
+    /**
+     * Whitespace around a persisted authority must not defeat the allow-list match, and empty
+     * segments must not fail the whole context load ({@code new SimpleGrantedAuthority("")} throws).
+     */
+    @Test
+    void loadContextTrimsAndSkipsEmptyAuthoritySegments() {
+        CustomUserPwdAuthenticationToken token = loadTokenWithAuthorities(
+            " " + FactorGrantedAuthority.PASSWORD_AUTHORITY + " ,,SCOPE_openid, ");
+
+        assertEquals(2, token.getAuthorities().size());
+        assertTrue(token.getAuthorities().stream().anyMatch(a -> a instanceof FactorGrantedAuthority
+            && FactorGrantedAuthority.PASSWORD_AUTHORITY.equals(a.getAuthority())));
+        assertTrue(token.getAuthorities().stream().anyMatch(a -> "SCOPE_openid".equals(a.getAuthority())));
+    }
+
+    /**
+     * An unrecognised {@code FACTOR_*} name (for example one sourced from a tenant user store) must not be
+     * promoted: a FactorGrantedAuthority counts as a satisfied authentication factor.
+     */
+    @Test
+    void loadContextDoesNotPromoteUnrecognisedFactorAuthority() {
+        CustomUserPwdAuthenticationToken token = loadTokenWithAuthorities("FACTOR_UNKNOWN_TEST,SCOPE_openid");
+
+        assertTrue(token.getAuthorities().stream().noneMatch(FactorGrantedAuthority.class::isInstance));
+        assertTrue(token.getAuthorities().stream()
+            .anyMatch(a -> "FACTOR_UNKNOWN_TEST".equals(a.getAuthority()) && a instanceof SimpleGrantedAuthority));
+    }
+
+    private CustomUserPwdAuthenticationToken loadTokenWithAuthorities(String authorities) {
+        AuthorizationSecurityContext storedContext = new AuthorizationSecurityContext();
+        storedContext.setPrincipal(TEST_USER_NAME);
+        storedContext.setAuthorities(authorities);
+        storedContext.setAuthenticated(true);
+        storedContext.setSessionId(REQUESTED_SESSION_ID);
+        storedContext.setCreatedDate(Timestamp.from(Instant.now()));
+        storedContext.setUpdatedDate(Timestamp.from(Instant.now()));
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID)).thenReturn(
+            Optional.of(storedContext));
+        SecurityContext context = databaseSecurityContextRepository.loadContext(
+            new HttpRequestResponseHolder(request, response));
+        return (CustomUserPwdAuthenticationToken) context.getAuthentication();
+    }
+
+    /**
      * This test method tests the loadDeferredContext method of the DatabaseSecurityContextRepository.
      * It asserts that the returned context is not null.
      */
@@ -274,6 +397,36 @@ class DatabaseSecurityContextRepositoryTest {
         assertDoesNotThrow(() ->
             databaseSecurityContextRepository.saveContext(securityContext, request, response));
         verify(authorizationSecurityContextRepository, times(1)).save(any());
+    }
+
+    @Test
+    void saveContextPersistsNameForUnsupportedPrincipalType() {
+        SecurityContext securityContext = new SecurityContextImpl();
+        UserDetails principal = User.withUsername(TEST_USER_NAME)
+                .password(TEST_PASSWORD)
+                .authorities("ROLE_USER")
+                .build();
+        securityContext.setAuthentication(new CustomUserPwdAuthenticationToken(
+                principal, TEST_PASSWORD, null, null));
+
+        databaseSecurityContextRepository.saveContext(securityContext, request, response);
+
+        ArgumentCaptor<AuthorizationSecurityContext> captor =
+                ArgumentCaptor.forClass(AuthorizationSecurityContext.class);
+        verify(authorizationSecurityContextRepository).save(captor.capture());
+        assertEquals(TEST_USER_NAME, captor.getValue().getPrincipal());
+    }
+
+    @Test
+    void saveContextRejectsUnsupportedPrincipalWithoutName() {
+        SecurityContext securityContext = new SecurityContextImpl();
+        securityContext.setAuthentication(new CustomUserPwdAuthenticationToken(
+                null, TEST_PASSWORD, null, null));
+
+        assertThrows(IllegalStateException.class,
+                () -> databaseSecurityContextRepository.saveContext(securityContext, request, response));
+
+        verify(authorizationSecurityContextRepository, times(0)).save(any());
     }
 
     /**

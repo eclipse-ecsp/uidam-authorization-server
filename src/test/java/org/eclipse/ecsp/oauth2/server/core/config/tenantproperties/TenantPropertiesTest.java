@@ -2,6 +2,7 @@ package org.eclipse.ecsp.oauth2.server.core.config.tenantproperties;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.BindException;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -12,6 +13,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TenantPropertiesTest {
@@ -48,6 +50,29 @@ class TenantPropertiesTest {
 
         assertEquals(expectedMappingsClient1, client1.getMappings());
         assertEquals(expectedMappingsClient2, client2.getMappings());
+    }
+
+    @Test
+    void defaultLoginTypeBindsIndependentlyForEachTenant() {
+        MapConfigurationPropertySource source = new MapConfigurationPropertySource(Map.of(
+                "tenants.profile.ecsp.default-login-type", "SSO",
+                "tenants.profile.sdp.internal-login-enabled", "true"));
+
+        MultiTenantProperties properties = new Binder(source)
+                .bind("tenants", Bindable.of(MultiTenantProperties.class))
+                .orElseThrow(IllegalStateException::new);
+
+        assertEquals(TenantProperties.LoginType.SSO, properties.getTenantProperties("ecsp").getDefaultLoginType());
+        assertEquals(TenantProperties.LoginType.INTERNAL, properties.getTenantProperties("sdp").getDefaultLoginType());
+    }
+
+    @Test
+    void invalidDefaultLoginTypeFailsBinding() {
+        MapConfigurationPropertySource source = new MapConfigurationPropertySource(Map.of(
+                "tenants.profile.ecsp.default-login-type", "INVALID"));
+
+        assertThrows(BindException.class,
+                () -> new Binder(source).bind("tenants", Bindable.of(MultiTenantProperties.class)));
     }
 
     @Test

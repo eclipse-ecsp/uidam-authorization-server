@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.DeferredSecurityContext;
 import org.springframework.security.core.context.SecurityContext;
@@ -41,7 +42,7 @@ import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.jackson2.SecurityJackson2Modules;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.AbstractOAuth2TokenAuthenticationToken;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
@@ -49,14 +50,16 @@ import org.springframework.util.Assert;
 
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.eclipse.ecsp.oauth2.server.core.utils.ObjectMapperUtils.parseMap;
 import static org.eclipse.ecsp.oauth2.server.core.utils.ObjectMapperUtils.writeMap;
@@ -74,6 +77,44 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
     public static final int SEC = 60;
     public static final String MIN = "m";
     public static final String PROTECTED_CREDS = "[PROTECTED]";
+    private static final String NO_SESSION_MESSAGE = "No Session currently exists";
+
+    /**
+     * Prefix shared by every authority Spring Security's factor support emits. Used only to detect
+     * a {@code FACTOR_} authority that is not in the known allow-list, so the maintenance
+     * obligation is logged rather than silent. See GH-297.
+     */
+    private static final String FACTOR_AUTHORITY_PREFIX = "FACTOR_";
+
+    /**
+     * Factor authorities this repository rebuilds as a {@link FactorGrantedAuthority} on load.
+     *
+     * <p>Deliberately an allow-list and not a {@code FACTOR_} prefix match. Spring Security 7 treats
+     * a FactorGrantedAuthority as a SATISFIED authentication factor, so promoting an arbitrary
+     * string on prefix alone would let an authority that merely happens to be named
+     * {@code FACTOR_PASSWORD} (from a tenant user store, an IdP claim mapping or a role sync) count
+     * as a satisfied factor. That is an MFA bypass, not just a wrong auth_time. Built from the
+     * upstream constants so a rename fails the build. Collected rather than {@code Set.of} so a
+     * future upstream duplicate value cannot throw at class initialisation.
+     */
+    private static final Set<String> KNOWN_FACTOR_AUTHORITIES = Stream.of(
+        FactorGrantedAuthority.AUTHORIZATION_CODE_AUTHORITY,
+        FactorGrantedAuthority.BEARER_AUTHORITY,
+        FactorGrantedAuthority.CAS_AUTHORITY,
+        FactorGrantedAuthority.OTT_AUTHORITY,
+        FactorGrantedAuthority.PASSWORD_AUTHORITY,
+        FactorGrantedAuthority.SAML_RESPONSE_AUTHORITY,
+        FactorGrantedAuthority.WEBAUTHN_AUTHORITY,
+        FactorGrantedAuthority.X509_AUTHORITY).collect(Collectors.toUnmodifiableSet());
+
+    /**
+     * Names already warned about, so an unrecognised factor is reported once rather than on every
+     * session load. Bounded because the key is a persisted, potentially tenant-sourced string.
+     */
+    private static final Set<String> WARNED_FACTOR_AUTHORITIES = ConcurrentHashMap.newKeySet();
+
+    /** Cap on distinct names remembered by {@link #WARNED_FACTOR_AUTHORITIES}. */
+    private static final int MAX_WARNED_FACTOR_AUTHORITIES = 64;
 
     private final AuthorizationSecurityContextRepository authorizationSecurityContextRepository;
 
@@ -154,13 +195,13 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
             return;
         }
         Authentication authentication = context.getAuthentication();
-        if (authentication instanceof JwtAuthenticationToken) {
-            LOGGER.debug("Not persisting stateless JWT SecurityContext");
+        if (authentication instanceof AbstractOAuth2TokenAuthenticationToken<?>) {
+            LOGGER.debug("Not persisting stateless bearer-token SecurityContext");
             return;
         }
         HttpSession session = request.getSession(false);
         if (session == null || StringUtils.isEmpty(session.getId())) {
-            LOGGER.debug("No Session currently exists");
+            LOGGER.debug(NO_SESSION_MESSAGE);
             return;
         }
         String requestedSessionId = session.getId();
@@ -184,7 +225,7 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
     private void authenticatedContextInDb(SecurityContext context, HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session == null) {
-            LOGGER.debug("No Session currently exists");
+            LOGGER.debug(NO_SESSION_MESSAGE);
             return;
         }
         String requestedSessionId = session.getId();
@@ -199,11 +240,17 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
         Authentication authentication = context.getAuthentication();
         if (authentication.getPrincipal() instanceof String principalName) {
             authorizationSecurityContext.setPrincipal(principalName);
-        }
-        if (authentication.getPrincipal() instanceof OAuth2User oauth2User) {
+        } else if (authentication.getPrincipal() instanceof OAuth2User oauth2User) {
             Map<String, Object> principal = new HashMap<>();
             principal.put(PRINCIPAL, oauth2User);
             authorizationSecurityContext.setPrincipal(writeMap(this.objectMapper, principal));
+        } else {
+            String principalName = authentication.getName();
+            if (StringUtils.isBlank(principalName)) {
+                throw new IllegalStateException("Cannot persist SecurityContext without a principal name for "
+                        + authentication.getClass().getName());
+            }
+            authorizationSecurityContext.setPrincipal(principalName);
         }
         String accountName = null;
         if (authentication instanceof CustomUserPwdAuthenticationToken customUserPwdAuthenticationToken) {
@@ -280,7 +327,7 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
     private SecurityContext readSecurityContext(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session == null || StringUtils.isEmpty(session.getId())) {
-            LOGGER.debug("No Session currently exists");
+            LOGGER.debug(NO_SESSION_MESSAGE);
             return null;
         }
         String requestedSessionId = session.getId();
@@ -302,13 +349,8 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
         LOGGER.info("diffInMin: {} and sessionTimeoutMin: {} for Session Id: {}", diffInMin, sessionTimeoutMin,
             requestedSessionId);
         if (diffInMin < sessionTimeoutMin) { // Fixed session timeout
-            String grantedAuthoritiesStr = authorizationSecurityContext.getAuthorities();
-            List<SimpleGrantedAuthority> grantedAuthorities = new ArrayList<>();
-            if (StringUtils.isNotEmpty(grantedAuthoritiesStr)) {
-                List<String> grantedAuthorityStrList = Arrays.stream(grantedAuthoritiesStr.split(",")).toList();
-                grantedAuthorities = grantedAuthorityStrList.stream().map(SimpleGrantedAuthority::new)
-                    .toList();
-            }
+            List<GrantedAuthority> grantedAuthorities =
+                rebuildAuthorities(authorizationSecurityContext, updatedDateTime, requestedSessionId);
             AbstractAuthenticationToken abstractAuthenticationToken = null;
             if (StringUtils.isEmpty(authorizationSecurityContext.getAuthorizedClientRegistrationId())) {
                 abstractAuthenticationToken = CustomUserPwdAuthenticationToken.authenticated(
@@ -334,6 +376,102 @@ public class DatabaseSecurityContextRepository implements SecurityContextReposit
             unauthenticatedContextInDb(requestedSessionId); // Authenticated flag false after fixed session timeout
             return null; // Redirect to login page
         }
+    }
+
+    /**
+     * Rebuilds the persisted authority string into GrantedAuthority instances.
+     *
+     * <p>FIX (GH-297): factor authorities come back as {@link FactorGrantedAuthority}, not
+     * {@link SimpleGrantedAuthority}. Spring Security 7 derives the OIDC {@code auth_time} claim
+     * ONLY from {@code FactorGrantedAuthority.getIssuedAt()} and asserts the result is non-null
+     * (see {@code JwtGenerator.getAuthenticationTime}, reached from {@code JwtGenerator.generate}
+     * whenever SessionInformation is present in the token context). Flattening every authority to
+     * SimpleGrantedAuthority erased the only carrier of that timestamp, so an id_token minted from
+     * a context that had been through this repository failed with "authenticationTime cannot be
+     * null" and the token endpoint returned 500.
+     *
+     * <p>{@code createdDate} is the right source for issuedAt: it is set once, when the row for the
+     * session is first created, and approximates when the user authenticated. It is deliberately
+     * NOT {@code updatedDate}, which moves on every save and would keep reporting the authentication
+     * as fresher than it was. When createdDate is absent (the column is NOT NULL today, so this is
+     * purely defensive) updatedDate is used as a fallback, and that substitution is logged when a
+     * factor is present so the inaccuracy is visible rather than silent.
+     *
+     * <p>Limitation: only authority names are persisted, so every rebuilt factor carries the same
+     * createdDate. For MFA users the row is created by {@code MfaStateService.savePending} when the
+     * password step completes, so {@code FACTOR_OTT} reads as old as the password step, not as the
+     * OTP verification. Persisting a per-authority issuedAt needs a schema change on
+     * authorization_security_context and is tracked separately.
+     *
+     * @param authorizationSecurityContext the persisted context row
+     * @param updatedDateTime fallback instant when createdDate is absent
+     * @param requestedSessionId session id, for logging only
+     * @return the rebuilt authorities, never null
+     */
+    private static List<GrantedAuthority> rebuildAuthorities(
+            AuthorizationSecurityContext authorizationSecurityContext,
+            Timestamp updatedDateTime, String requestedSessionId) {
+        String grantedAuthoritiesStr = authorizationSecurityContext.getAuthorities();
+        if (StringUtils.isEmpty(grantedAuthoritiesStr)) {
+            return List.of();
+        }
+        // Trim and drop empties before rebuilding. split(",") keeps surrounding whitespace and
+        // empty segments, and both are damaging here: " FACTOR_PASSWORD" would fail the allow-list
+        // test and silently reintroduce GH-297, while an empty segment from "a,,b" reaches
+        // new SimpleGrantedAuthority("") which throws on Assert.hasText and fails the whole load.
+        List<String> grantedAuthorityStrList = Arrays.stream(grantedAuthoritiesStr.split(","))
+            .map(String::trim)
+            .filter(StringUtils::isNotEmpty)
+            .toList();
+        Timestamp createdDate = authorizationSecurityContext.getCreatedDate();
+        // Only warn when something will actually consume issuedAt: a row holding no known factor
+        // never uses authenticationTime, so warning there would make the harmless case the noisiest.
+        if (createdDate == null && grantedAuthorityStrList.stream().anyMatch(KNOWN_FACTOR_AUTHORITIES::contains)) {
+            LOGGER.warn("No createdDate on persisted security context for Session Id: {}; auth_time falls "
+                + "back to updatedDate and may report the authentication as fresher than it was. See GH-297.",
+                requestedSessionId);
+        }
+        Instant authenticationTime = createdDate != null
+            ? createdDate.toInstant()
+            : updatedDateTime.toInstant();
+        return grantedAuthorityStrList.stream()
+            .map(authority -> toGrantedAuthority(authority, authenticationTime))
+            .toList();
+    }
+
+    /**
+     * Rebuilds a single persisted authority string into a GrantedAuthority. Authorities in
+     * {@link #KNOWN_FACTOR_AUTHORITIES} are rebuilt as {@link FactorGrantedAuthority} carrying
+     * {@code issuedAt}; everything else stays a {@link SimpleGrantedAuthority}.
+     *
+     * <p>Matching is on the allow-list, not the bare {@code FACTOR_} prefix. A FactorGrantedAuthority
+     * counts as a SATISFIED factor in Spring Security 7's authorization checks, so an authority
+     * sourced from a tenant user store or IdP claim mapping must never be promoted just because of
+     * its name. An unrecognised {@code FACTOR_} authority is left as a SimpleGrantedAuthority and
+     * logged once, so a new upstream factor type surfaces as a maintenance task instead of silently
+     * reintroducing GH-297.
+     *
+     * @param authority the persisted authority string
+     * @param authenticationTime issuedAt to stamp on factor authorities
+     * @return a FactorGrantedAuthority for known factor authorities, else a SimpleGrantedAuthority
+     */
+    private static GrantedAuthority toGrantedAuthority(String authority, Instant authenticationTime) {
+        if (KNOWN_FACTOR_AUTHORITIES.contains(authority)) {
+            return FactorGrantedAuthority.withAuthority(authority)
+                .issuedAt(authenticationTime)
+                .build();
+        }
+        if (authority.startsWith(FACTOR_AUTHORITY_PREFIX)
+                && WARNED_FACTOR_AUTHORITIES.size() < MAX_WARNED_FACTOR_AUTHORITIES
+                && WARNED_FACTOR_AUTHORITIES.add(authority)) {
+            // Sanitise before logging: authority is a persisted, potentially tenant-sourced string,
+            // so CR or LF in it would forge log lines. Deduped and bounded above.
+            LOGGER.warn("Unrecognised factor authority '{}' was NOT promoted to FactorGrantedAuthority. If "
+                + "Spring Security added a new factor type, add it to KNOWN_FACTOR_AUTHORITIES, otherwise "
+                + "auth_time may be unresolvable for sessions holding only this factor. See GH-297.",
+                authority.replaceAll("[\\r\\n]", "_"));
+        }
+        return new SimpleGrantedAuthority(authority);
     }
 
     /**
