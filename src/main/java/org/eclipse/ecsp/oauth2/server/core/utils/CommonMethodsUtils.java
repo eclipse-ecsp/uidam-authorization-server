@@ -23,7 +23,11 @@ import org.apache.commons.lang3.BooleanUtils;
 import org.eclipse.ecsp.oauth2.server.core.exception.PatternMismatchException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.util.StringUtils;
+
+import java.util.Locale;
+import java.util.Set;
 
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ACC_NAME_FORMAT_ERROR;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ACC_NAME_REGEX;
@@ -37,8 +41,32 @@ public class CommonMethodsUtils {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CommonMethodsUtils.class);
 
+    private static final Set<String> OIDC_SCOPES = Set.of(OidcScopes.OPENID, OidcScopes.PROFILE,
+            OidcScopes.EMAIL, OidcScopes.PHONE, OidcScopes.ADDRESS);
+
     private CommonMethodsUtils() {
         throw new UnsupportedOperationException("This is a utility class and cannot be instantiated");
+    }
+
+    /**
+     * Checks whether a name is reserved for authentication-factor authorities ({@code FACTOR_*}).
+     * Such names must only be issued by trusted authentication steps, never sourced from user data.
+     *
+     * @param authority authority or scope name
+     * @return true when the name uses the reserved factor prefix
+     */
+    public static boolean isReservedFactorAuthority(String authority) {
+        return authority != null && authority.trim().toUpperCase(Locale.ROOT).startsWith("FACTOR_");
+    }
+
+    /**
+     * Checks whether a non-empty scope request contains only standard OIDC scopes.
+     *
+     * @param scopes requested scopes
+     * @return true when every requested scope is an OIDC scope
+     */
+    public static boolean isOidcOnlyScopeRequest(Set<String> scopes) {
+        return scopes != null && !scopes.isEmpty() && OIDC_SCOPES.containsAll(scopes);
     }
 
     /**

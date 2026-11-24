@@ -18,6 +18,8 @@
 
 package org.eclipse.ecsp.oauth2.server.core.utils;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKMatcher;
 import com.nimbusds.jose.jwk.JWKSelector;
@@ -38,6 +40,7 @@ import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.stereotype.Component;
 
 import java.security.interfaces.RSAPublicKey;
@@ -59,6 +62,7 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 public class JwtTokenValidator {
     private static final Logger LOGGER = LoggerFactory.getLogger(JwtTokenValidator.class);
     private static final String INVALIDATED_KEY = "invalidated";
+    private static final ObjectMapper METADATA_READER = new ObjectMapper();
 
     private static final class MissingExpiryClaimException extends CustomOauth2AuthorizationException {
         private static final long serialVersionUID = 1L;
@@ -312,17 +316,25 @@ public class JwtTokenValidator {
      * @return true if invalidated, false otherwise
      */
     private boolean isTokenInvalidated(Authorization authorization) {
+        return isAccessTokenInvalidated(authorization.getAccessTokenMetadata());
+    }
+
+    /**
+     * Checks access-token metadata for either revocation marker: the session API's {@code invalidated}
+     * key or Spring Authorization Server's {@code metadata.token.invalidated} key set by
+     * {@code /oauth2/revoke}.
+     *
+     * @param accessTokenMetadata persisted access token metadata JSON
+     * @return true if the token has been revoked
+     */
+    public static boolean isAccessTokenInvalidated(String accessTokenMetadata) {
+        if (accessTokenMetadata == null || accessTokenMetadata.isEmpty()) {
+            return false;
+        }
         try {
-            String accessTokenMetadata = authorization.getAccessTokenMetadata();
-            if (accessTokenMetadata == null || accessTokenMetadata.isEmpty()) {
-                return false;
-            }
-            
-            // Parse access_token_metadata JSON and check for invalidated flag
-            // Sample metadata contains: "invalidated":true or "metadata.token.invalidated":false
-            // We check for "invalidated":true which indicates the token has been revoked
-            return accessTokenMetadata.contains("\"" + INVALIDATED_KEY + "\":true");
-                    
+            JsonNode metadata = METADATA_READER.readTree(accessTokenMetadata);
+            return metadata.path(INVALIDATED_KEY).asBoolean(false)
+                    || metadata.path(OAuth2Authorization.Token.INVALIDATED_METADATA_NAME).asBoolean(false);
         } catch (Exception e) {
             LOGGER.error("Error parsing authorization access token metadata", e);
             return false;

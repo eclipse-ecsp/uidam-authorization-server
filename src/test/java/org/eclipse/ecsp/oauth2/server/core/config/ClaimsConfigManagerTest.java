@@ -53,6 +53,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
@@ -70,7 +71,9 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientCredentialsAuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2RefreshTokenAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import java.time.Instant;
@@ -1266,11 +1269,19 @@ class ClaimsConfigManagerTest {
     }
 
     @Test
-    void oidcOnlyScopeExpansion_EnabledAddsUserScopesAndKeepsOidcScopes() {
+    void oidcOnlyScopeExpansion_EnabledAddsOnlyClientRegisteredUserScopes() {
+        // Client is registered for SelfManage only; the user's SelfUserManage must not be added
         assertIssuedScopes(true, false, getUser(),
                 Set.of(OidcScopes.OPENID, OidcScopes.PROFILE, OidcScopes.EMAIL),
-                Set.of(OidcScopes.OPENID, OidcScopes.PROFILE, OidcScopes.EMAIL,
-                        "SelfManage", "SelfUserManage"));
+                Set.of(OidcScopes.OPENID, OidcScopes.PROFILE, OidcScopes.EMAIL, "SelfManage"));
+    }
+
+    @Test
+    void oidcOnlyScopeExpansion_ClientRequiringConsentIsNotExpanded() {
+        RegisteredClient consentClient = registeredClient()
+                .clientSettings(ClientSettings.builder().requireAuthorizationConsent(true).build()).build();
+        assertIssuedScopes(true, false, getUser(), Set.of(OidcScopes.OPENID), Set.of(OidcScopes.OPENID),
+                consentClient);
     }
 
     @Test
@@ -1290,18 +1301,70 @@ class ClaimsConfigManagerTest {
                 Set.of(OidcScopes.OPENID));
     }
 
+    @Test
+    void oidcOnlyScopeExpansion_RefreshKeepsOnlyScopesGrantedAtAuthorization() {
+        // User now also has SelfUserManage, but only SelfManage was granted at authorization
+        assertRefreshScopes(Set.of(), Set.of(OidcScopes.OPENID, "SelfManage"));
+    }
+
+    @Test
+    void oidcOnlyScopeExpansion_RefreshWithExplicitScopesIsNotExpanded() {
+        assertRefreshScopes(Set.of(OidcScopes.OPENID), Set.of(OidcScopes.OPENID));
+    }
+
+    private void assertRefreshScopes(Set<String> refreshRequestScopes, Set<String> expectedScopes) {
+        TenantProperties tenantProperties = createMockTenantProperties();
+        tenantProperties.getClient().setOidcOnlyScopeExpansionEnabled(true);
+        doReturn(tenantProperties).when(tenantConfigurationService).getTenantProperties();
+        RegisteredClient client = registeredClient().scope("SelfUserManage").build();
+        ClientCacheDetails clientCacheDetails = new ClientCacheDetails();
+        clientCacheDetails.setRegisteredClient(client);
+        doReturn(clientCacheDetails).when(cacheClientUtils).getClientDetails(anyString());
+        doReturn(getUser()).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+
+        OAuth2AccessToken previousToken = new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER,
+                "previous-token", Instant.now(), Instant.now().plusSeconds(EXTERNAL_IDP_ID_TOKEN_TTL_SECONDS));
+        OAuth2Authorization authorization = TestOauth2Authorizations.authorization(client, previousToken,
+                Map.of(OAuth2ParameterNames.SCOPE, "openid SelfManage")).build();
+        OAuth2ClientAuthenticationToken clientPrincipal = new OAuth2ClientAuthenticationToken(client,
+                ClientAuthenticationMethod.CLIENT_SECRET_BASIC, client.getClientSecret());
+        OAuth2RefreshTokenAuthenticationToken refreshGrant = new OAuth2RefreshTokenAuthenticationToken(
+                "refresh-token", clientPrincipal, refreshRequestScopes, Map.of());
+        JwtEncodingContext context = JwtEncodingContext.with(jwsHeader(),
+                        jwtClaimsSet().claim(OAuth2ParameterNames.SCOPE, Set.of(OidcScopes.OPENID)))
+                .registeredClient(client)
+                .principal(new CustomUserPwdAuthenticationToken(TEST_USER_NAME, TEST_PASSWORD,
+                        TEST_ACCOUNT_NAME, null))
+                .authorization(authorization)
+                .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                .authorizationGrant(refreshGrant).build();
+
+        jwtCustomizer.customize(context);
+
+        assertEquals(expectedScopes, Set.of(context.getClaims().build()
+                .getClaimAsString(OAuth2ParameterNames.SCOPE).split(" ")));
+    }
+
     private void assertIssuedScopes(boolean oidcOnlyExpansionEnabled, boolean scopelessExpansionEnabled,
             UserDetailsResponse user, Set<String> requestedScopes, Set<String> expectedScopes) {
+        assertIssuedScopes(oidcOnlyExpansionEnabled, scopelessExpansionEnabled, user, requestedScopes,
+                expectedScopes, registeredClient().build());
+    }
+
+    private void assertIssuedScopes(boolean oidcOnlyExpansionEnabled, boolean scopelessExpansionEnabled,
+            UserDetailsResponse user, Set<String> requestedScopes, Set<String> expectedScopes,
+            RegisteredClient client) {
         TenantProperties tenantProperties = createMockTenantProperties();
         tenantProperties.getClient().setOidcOnlyScopeExpansionEnabled(oidcOnlyExpansionEnabled);
         tenantProperties.getClient().setAuthCodeScopelessUserScopes(scopelessExpansionEnabled);
         doReturn(tenantProperties).when(tenantConfigurationService).getTenantProperties();
         ClientCacheDetails clientCacheDetails = new ClientCacheDetails();
-        clientCacheDetails.setRegisteredClient(registeredClient().build());
+        clientCacheDetails.setRegisteredClient(client);
         doReturn(clientCacheDetails).when(cacheClientUtils).getClientDetails(anyString());
         doReturn(user).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
 
-        JwtEncodingContext context = buildAuthCodeAccessTokenContext(requestedScopes);
+        JwtEncodingContext context = buildAuthCodeAccessTokenContext(requestedScopes, client);
         jwtCustomizer.customize(context);
 
         JwtClaimsSet claims = context.getClaims().build();
@@ -1596,7 +1659,11 @@ class ClaimsConfigManagerTest {
     }
 
     private JwtEncodingContext buildAuthCodeAccessTokenContext(Set<String> requestedScopes) {
-        RegisteredClient registeredClient = registeredClient().build();
+        return buildAuthCodeAccessTokenContext(requestedScopes, registeredClient().build());
+    }
+
+    private JwtEncodingContext buildAuthCodeAccessTokenContext(Set<String> requestedScopes,
+            RegisteredClient registeredClient) {
         CustomUserPwdAuthenticationToken principal = new CustomUserPwdAuthenticationToken(TEST_USER_NAME, TEST_PASSWORD,
                 TEST_ACCOUNT_NAME, null);
         OAuth2Authorization authorization = TestOauth2Authorizations.authorization(registeredClient).build();

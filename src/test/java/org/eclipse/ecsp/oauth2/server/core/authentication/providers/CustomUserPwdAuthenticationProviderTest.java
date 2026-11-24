@@ -149,6 +149,31 @@ class CustomUserPwdAuthenticationProviderTest {
             "successful password authentication must carry a FACTOR_PASSWORD marker authority");
     }
 
+    @Test
+    void testAuthenticateDropsReservedFactorNamesFromUserScopes() {
+        TenantProperties tenantProperties = mock(TenantProperties.class);
+        UserProperties userProperties = mock(UserProperties.class);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenantProperties);
+        lenient().when(tenantProperties.getUser()).thenReturn(userProperties);
+        lenient().when(userProperties.getMaxAllowedLoginAttempts()).thenReturn(1);
+        when(tenantProperties.getTenantId()).thenReturn("test-tenant");
+        UserDetailsResponse user = getUser();
+        user.setScopes(new java.util.HashSet<>(java.util.Set.of("SelfManage",
+            FactorGrantedAuthority.OTT_AUTHORITY, "factor_password")));
+        doReturn(user).when(userManagementClient).getUserDetailsByUsername(anyString(), anyString());
+        when(userManagementClient.addUserEvent(any(UserEvent.class), anyString()))
+            .thenReturn(UserEventResponse.builder().userStatus("ACTIVE").lockDurationMinutes(0).build());
+
+        CustomUserPwdAuthenticationToken authenticationToken = (CustomUserPwdAuthenticationToken)
+            customUserPwdAuthenticationProvider.authenticate(new CustomUserPwdAuthenticationToken(TEST_USER_NAME,
+                TEST_PASSWORD, TEST_ACCOUNT_NAME, null));
+
+        java.util.Set<String> authorities = authenticationToken.getAuthorities().stream()
+            .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of("SelfManage", FactorGrantedAuthority.PASSWORD_AUTHORITY), authorities);
+    }
+
     /**
      * This method tests the scenario where the authentication attempt fails.
      * It sets up the necessary parameters and then calls the authenticate method.

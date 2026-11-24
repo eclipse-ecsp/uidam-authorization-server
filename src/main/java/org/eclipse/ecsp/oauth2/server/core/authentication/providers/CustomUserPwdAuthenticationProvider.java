@@ -36,6 +36,8 @@ import org.eclipse.ecsp.oauth2.server.core.request.dto.UserEvent;
 import org.eclipse.ecsp.oauth2.server.core.response.UserDetailsResponse;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.UserEventResponse;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils;
+import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -299,6 +301,14 @@ public class CustomUserPwdAuthenticationProvider implements AuthenticationProvid
         logSuccessfulAuthentication(userDetailsResponse, username, accountName);
         
         List<GrantedAuthority> grantedAuthorities = userDetailsResponse.getScopes().stream()
+            .filter(scope -> {
+                if (CommonMethodsUtils.isReservedFactorAuthority(scope)) {
+                    LOGGER.warn("Ignoring user scope with reserved factor name '{}' for username {}",
+                        InputSanitizer.forLog(scope), username);
+                    return false;
+                }
+                return true;
+            })
             .map(SimpleGrantedAuthority::new).collect(Collectors.toList());
         // Marks the moment password authentication actually succeeded. This name-only marker
         // is later promoted back into a real FactorGrantedAuthority (with the correct

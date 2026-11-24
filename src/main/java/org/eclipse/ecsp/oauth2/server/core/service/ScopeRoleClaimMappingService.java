@@ -148,13 +148,9 @@ public class ScopeRoleClaimMappingService {
                 + "uidamClientRequestedAppScope={}, uidamUserScope={}",
                 extIdpRegClient.getRegistrationId(),
                 scopePreference, uidamClientRequestedAppScope, uidamUserScope);
-        //Log externalIdpTokenClaims
-        LOGGER.debug("applyScopeRoleMapping: externalIdpTokenClaims={}", externalIdpTokenClaims);
-        //Iterate externalIdpTokenClaims
-        for (Map.Entry<String, Object> entry : externalIdpTokenClaims.entrySet()) {
-            LOGGER.debug("applyScopeRoleMapping: externalIdpTokenClaim key='{}', value='{}'",
-                    entry.getKey(), entry.getValue());
-        }
+        // Log only the claim count: raw OIDC claims contain personal data (names, email addresses)
+        LOGGER.debug("applyScopeRoleMapping: externalIdpClaimCount={}",
+                externalIdpTokenClaims != null ? externalIdpTokenClaims.size() : 0);
         Set<String> resolvedUidamScope = null;
         if (ScopePreference.INTERNAL.equals(scopePreference)) {
             resolvedUidamScope = resolveScopeForInternalScopePreference(uidamClientRequestedAppScope, uidamUserScope);

@@ -7,12 +7,14 @@ import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.audit.context.HttpRequestContext;
 import org.eclipse.ecsp.oauth2.server.core.audit.context.UserActorContext;
 import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
+import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.service.DatabaseSecurityContextRepository;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
@@ -25,7 +27,6 @@ import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.savedrequest.CookieRequestCache;
 import org.springframework.security.web.savedrequest.SavedRequest;
 import org.springframework.stereotype.Controller;
@@ -96,6 +97,7 @@ public class MfaController {
     private final MfaStateService mfaStateService;
     private final AuditLogger auditLogger;
     private final AuthorizationMetricsService metricsService;
+    private final DatabaseSecurityContextRepository databaseSecurityContextRepository;
 
     /**
      * Constructs an MfaController.
@@ -105,6 +107,7 @@ public class MfaController {
      * @param mfaProperties              MFA configuration properties.
      * @param tenantConfigurationService service for tenant-specific configuration.
      * @param mfaStateService            DB-backed stateless MFA flow-state manager.
+     * @param databaseSecurityContextRepository DB-backed security context repository.
      */
     public MfaController(MfaSecretService mfaSecretService,
                          TotpService totpService,
@@ -112,7 +115,8 @@ public class MfaController {
                          TenantConfigurationService tenantConfigurationService,
                          MfaStateService mfaStateService,
                          AuditLogger auditLogger,
-                         AuthorizationMetricsService metricsService) {
+                         AuthorizationMetricsService metricsService,
+                         DatabaseSecurityContextRepository databaseSecurityContextRepository) {
         this.mfaSecretService           = mfaSecretService;
         this.totpService                = totpService;
         this.mfaProperties              = mfaProperties;
@@ -120,6 +124,7 @@ public class MfaController {
         this.mfaStateService            = mfaStateService;
         this.auditLogger                = auditLogger;
         this.metricsService             = metricsService;
+        this.databaseSecurityContextRepository = databaseSecurityContextRepository;
     }
 
     // ──────────────────────── Model attribute ──────────────────────────────
@@ -287,22 +292,20 @@ public class MfaController {
             HttpServletResponse response,
             Model model) {
 
-        // Load username and tenant from DB-backed state (no session required).
-        String username = mfaStateService.loadPending(request)
-                .map(p -> (String) p.getPrincipal())
-                .orElse(null);
-
-        if (username == null) {
+        // Load the pending token before clearing it; completeLogin needs its authorities.
+        MfaPendingAuthenticationToken pending = getPending(request);
+        if (pending == null) {
             model.addAttribute(ATTR_ERROR, "Session expired. Please log in again.");
             return VIEW_ERROR;
         }
+        String username = (String) pending.getPrincipal();
 
         String storedTenant = mfaStateService.loadTenant(request);
         String resolvedTenant = resolveTenant(
                 storedTenant != null ? storedTenant : tenantId, request);
 
         mfaStateService.clearPending(request);
-        return completeLogin(username, resolvedTenant, request, response);
+        return completeLogin(pending, resolvedTenant, request, response);
     }
 
     // ─────────────────────────── CHALLENGE ─────────────────────────────────
@@ -354,7 +357,7 @@ public class MfaController {
             recordAudit(AuditEventType.MFA_CHALLENGE_SUCCESS, AuditEventResult.SUCCESS, username, request);
             recordMetric(MetricType.MFA_CHALLENGE_SUCCESS, resolvedTenant);
             mfaStateService.clearPending(request);
-            return completeLogin(username, resolvedTenant, request, response);
+            return completeLogin(pending, resolvedTenant, request, response);
         }
 
         LOGGER.warn("[MFA] Challenge FAILED for user='{}'", username);
@@ -664,33 +667,27 @@ public class MfaController {
     // ─────────────────────────── HELPERS ───────────────────────────────────
 
     /**
-     * Restore a full authenticated token into the security context and resume the OAuth2 flow.
-     * The pending token is read from the DB (no session); tenant is resolved from the DB or URL.
+     * Restore a full authenticated token and resume the OAuth2 flow. The pending token is passed in
+     * because callers clear the DB pending state before completing login.
      */
-    private String completeLogin(String username, String resolvedTenant,
+    private String completeLogin(MfaPendingAuthenticationToken pending, String resolvedTenant,
                                  HttpServletRequest request, HttpServletResponse response) {
 
-        MfaPendingAuthenticationToken pending = getPending(request);
-
-        List<GrantedAuthority> completedAuthorities = pending != null
-                ? new ArrayList<>(pending.getPendingAuthorities())
-                : new ArrayList<>();
+        String username = (String) pending.getPrincipal();
+        List<GrantedAuthority> completedAuthorities = new ArrayList<>(pending.getPendingAuthorities());
         // Marks the moment the second (TOTP) factor actually completed, alongside the
         // FACTOR_PASSWORD marker already carried forward from CustomUserPwdAuthenticationProvider.
         // Both are later promoted back into real FactorGrantedAuthority instances (with the
         // correct timestamp) by DatabaseSecurityContextRepository.
         completedAuthorities.add(new SimpleGrantedAuthority(FactorGrantedAuthority.OTT_AUTHORITY));
 
-        UsernamePasswordAuthenticationToken fullAuth =
-                new UsernamePasswordAuthenticationToken(username, null, completedAuthorities);
-
         SecurityContext ctx = SecurityContextHolder.createEmptyContext();
-        ctx.setAuthentication(fullAuth);
+        ctx.setAuthentication(buildCompletedAuthentication(username, completedAuthorities));
         SecurityContextHolder.setContext(ctx);
-        // Write the full authentication into the shared DB security context repo so other
-        // Spring Security components can find it on the same (or a different) pod.
-        request.getSession(true).setAttribute(
-                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, ctx);
+        // Persist through the configured DB-backed repository: sessions are reloaded from the
+        // database, so the completed factor must be stored there, not only on the HTTP session.
+        request.getSession(true);
+        databaseSecurityContextRepository.saveContext(ctx, request, response);
 
         if (LOGGER.isInfoEnabled()) {
             LOGGER.info("[MFA] Login completed tenant='{}' user='{}' – resuming OAuth flow",
@@ -717,6 +714,22 @@ public class MfaController {
             return REDIRECT_ROOT + resolvedTenant + "/";
         }
         return REDIRECT_ROOT;
+    }
+
+    /**
+     * Builds the completed authentication, keeping the account name, account ID and MFA override
+     * of the password login so persisting it does not replace them with tenant defaults.
+     */
+    private Authentication buildCompletedAuthentication(String username,
+            List<GrantedAuthority> completedAuthorities) {
+        Authentication current = SecurityContextHolder.getContext().getAuthentication();
+        if (current instanceof CustomUserPwdAuthenticationToken passwordAuth
+                && username.equals(passwordAuth.getName())) {
+            return CustomUserPwdAuthenticationToken.authenticated(username, null,
+                    passwordAuth.getAccountName(), passwordAuth.getAccountId(),
+                    passwordAuth.getMfaRequired(), completedAuthorities);
+        }
+        return new UsernamePasswordAuthenticationToken(username, null, completedAuthorities);
     }
 
     /**
