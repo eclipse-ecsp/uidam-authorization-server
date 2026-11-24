@@ -159,6 +159,27 @@ class JwtTokenValidatorTest {
         // Assert
         assertFalse(result, "Token with invalidated:true in metadata should be rejected");
     }
+
+    @Test
+    void testIntrospectToken_TokenRevokedViaOauth2RevokeIsRejected() throws Exception {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("scope", "SelfManage");
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        final String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        org.eclipse.ecsp.oauth2.server.core.entities.Authorization authorization =
+                new org.eclipse.ecsp.oauth2.server.core.entities.Authorization();
+        final int tokenValiditySeconds = 3600;
+        authorization.setAccessTokenExpiresAt(java.time.Instant.now().plusSeconds(tokenValiditySeconds));
+        // Format written by Spring Authorization Server's /oauth2/revoke
+        authorization.setAccessTokenMetadata("{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":true}");
+        when(authorizationRepository.findByAccessTokenValue(any()))
+                .thenReturn(java.util.Optional.of(authorization));
+
+        assertFalse(jwtTokenValidator.introspectToken(token, "SelfManage"),
+                "Token revoked via /oauth2/revoke should be rejected");
+    }
     
     @Test
     void testIntrospectToken_ActiveTokenWithRealMetadata() throws Exception {

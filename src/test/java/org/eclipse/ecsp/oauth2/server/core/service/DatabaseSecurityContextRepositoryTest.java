@@ -36,6 +36,7 @@ import org.mockito.Mockito;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
@@ -55,6 +56,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -251,6 +253,38 @@ class DatabaseSecurityContextRepositoryTest {
         boolean scopeStillSimple = token.getAuthorities().stream()
             .anyMatch(a -> "SCOPE_openid".equals(a.getAuthority()) && a instanceof SimpleGrantedAuthority);
         assertTrue(scopeStillSimple, "non-factor authorities must still be rebuilt as SimpleGrantedAuthority");
+    }
+
+    /**
+     * A completed MFA login saved through the repository must come back with both factor markers
+     * promoted, so the completed OTT factor survives the database round-trip.
+     */
+    @Test
+    void savedCompletedMfaContextKeepsOttFactorAfterReload() {
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID))
+            .thenReturn(Optional.empty());
+        org.mockito.ArgumentCaptor<AuthorizationSecurityContext> saved =
+            org.mockito.ArgumentCaptor.forClass(AuthorizationSecurityContext.class);
+        SecurityContext completed = SecurityContextHolder.createEmptyContext();
+        completed.setAuthentication(CustomUserPwdAuthenticationToken.authenticated(TEST_USER_NAME, null,
+            ACCOUNT_NAME, "acct-1", Boolean.TRUE, List.of(new SimpleGrantedAuthority("SelfManage"),
+                new SimpleGrantedAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY),
+                new SimpleGrantedAuthority(FactorGrantedAuthority.OTT_AUTHORITY))));
+
+        databaseSecurityContextRepository.saveContext(completed, request, response);
+        verify(authorizationSecurityContextRepository).save(saved.capture());
+        when(authorizationSecurityContextRepository.findBySessionId(REQUESTED_SESSION_ID))
+            .thenReturn(Optional.of(saved.getValue()));
+        SecurityContext reloaded = databaseSecurityContextRepository.loadContext(
+            new HttpRequestResponseHolder(request, response));
+
+        java.util.Set<String> factors = reloaded.getAuthentication().getAuthorities().stream()
+            .filter(FactorGrantedAuthority.class::isInstance)
+            .map(GrantedAuthority::getAuthority)
+            .collect(java.util.stream.Collectors.toSet());
+        assertEquals(java.util.Set.of(FactorGrantedAuthority.PASSWORD_AUTHORITY,
+            FactorGrantedAuthority.OTT_AUTHORITY), factors);
+        assertEquals("acct-1", ((CustomUserPwdAuthenticationToken) reloaded.getAuthentication()).getAccountId());
     }
 
     /**

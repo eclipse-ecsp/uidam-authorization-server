@@ -279,7 +279,8 @@ public class IgniteSecurityConfig {
         // code is issued.  UsernamePasswordAuthenticationFilter is earlier in the chain, so
         // placing the filter before it guarantees it runs before any OAuth2 endpoint filter.
         MfaChallengeFilter mfaChallengeFilter = new MfaChallengeFilter(mfaSecretService,
-                this.tenantConfigurationService, mfaStateService, this.authorizationMetricsService);
+                this.tenantConfigurationService, mfaStateService, this.authorizationMetricsService,
+                registeredClientRepository);
         http.addFilterBefore(mfaChallengeFilter, UsernamePasswordAuthenticationFilter.class);
 
         // This filter ensures only tenant-allowed authentication methods are executed
