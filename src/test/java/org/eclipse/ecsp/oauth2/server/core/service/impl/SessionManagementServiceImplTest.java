@@ -147,7 +147,26 @@ class SessionManagementServiceImplTest {
         assertEquals(1, result.getTotalTokens());
         assertEquals(TOKEN_ID_1, result.getTokens().get(0).getId());
     }
-    
+
+    @Test
+    void testGetActiveSessionsForUser_FilterTokensRevokedViaOauth2Revoke() {
+        Authorization validAuth = createAuthorization(TOKEN_ID_1, USERNAME, CLIENT_ID, false);
+        Authorization revokedAuth = createAuthorization(TOKEN_ID_2, USERNAME, CLIENT_ID, false);
+        revokedAuth.setAccessTokenMetadata("{\"metadata.token.invalidated\":true}");
+        when(authorizationRepository.findActiveSessionsByPrincipalNameAndGrantType(
+                eq(USERNAME), eq("authorization_code"), any(Instant.class)))
+                .thenReturn(Arrays.asList(validAuth, revokedAuth));
+        ClientCacheDetails cacheDetails = new ClientCacheDetails();
+        cacheDetails.setRegisteredClient(registeredClient);
+        when(registeredClient.getClientName()).thenReturn(CLIENT_NAME);
+        when(cacheClientService.getClientDetailsWithSync(anyString(), anyString())).thenReturn(cacheDetails);
+
+        ActiveSessionsResponseDto result = service.getActiveSessionsForUser(USERNAME, null, TENANT_ID);
+
+        assertEquals(1, result.getTotalTokens());
+        assertEquals(TOKEN_ID_1, result.getTokens().get(0).getId());
+    }
+
     @Test
     void testGetActiveSessionsForUser_IdentifyCurrentSession() {
         // Arrange

@@ -11,6 +11,7 @@ import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantPropert
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
+import org.eclipse.ecsp.oauth2.server.core.utils.CommonMethodsUtils;
 import org.eclipse.ecsp.oauth2.server.core.utils.InputSanitizer;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.slf4j.Logger;
@@ -19,11 +20,14 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -68,9 +72,11 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     private final TenantConfigurationService tenantConfigurationService;
     private final MfaStateService mfaStateService;
     private final AuthorizationMetricsService metricsService;
+    private final RegisteredClientRepository registeredClientRepository;
 
     /**
-     * Constructs a MfaChallengeFilter.
+     * Constructs a MfaChallengeFilter without client lookup; OIDC-only step-up checks then consider every
+     * user scope.
      *
      * @param mfaSecretService           production MFA service for checking enrollment status.
      * @param tenantConfigurationService service for resolving the per-tenant MFA policy.
@@ -80,10 +86,28 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
                               TenantConfigurationService tenantConfigurationService,
                               MfaStateService mfaStateService,
                               AuthorizationMetricsService metricsService) {
+        this(mfaSecretService, tenantConfigurationService, mfaStateService, metricsService, null);
+    }
+
+    /**
+     * Constructs a MfaChallengeFilter.
+     *
+     * @param mfaSecretService           production MFA service for checking enrollment status.
+     * @param tenantConfigurationService service for resolving the per-tenant MFA policy.
+     * @param mfaStateService            stateless DB-backed MFA state manager.
+     * @param registeredClientRepository client lookup, used to limit OIDC-only step-up checks to scopes the
+     *                                   token can actually receive.
+     */
+    public MfaChallengeFilter(MfaSecretService mfaSecretService,
+                              TenantConfigurationService tenantConfigurationService,
+                              MfaStateService mfaStateService,
+                              AuthorizationMetricsService metricsService,
+                              RegisteredClientRepository registeredClientRepository) {
         this.mfaSecretService = mfaSecretService;
         this.tenantConfigurationService = tenantConfigurationService;
         this.mfaStateService = mfaStateService;
         this.metricsService = metricsService;
+        this.registeredClientRepository = registeredClientRepository;
     }
 
     @Override
@@ -212,7 +236,7 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (mode == MfaMode.CONDITIONAL && !requiresStepUp(request, auth, policy, clientId, accountName)) {
+        if (mode == MfaMode.CONDITIONAL && !requiresStepUp(request, auth, policy, clientId, accountName, tenant)) {
             LOGGER.info("[MFA-FILTER] CONDITIONAL mode and no step-up condition matched for user='{}' "
                     + "– passing through", username);
             chain.doFilter(request, response);
@@ -247,7 +271,7 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
     }
 
     private boolean requiresStepUp(HttpServletRequest request, Authentication auth,
-            MfaPolicyProperties policy, String clientId, String accountName) {
+            MfaPolicyProperties policy, String clientId, String accountName, String tenant) {
 
         if (LOGGER.isInfoEnabled()) {
             LOGGER.info("[MFA-FILTER] CONDITIONAL on client_id='{}'", InputSanitizer.forLog(clientId));
@@ -293,25 +317,81 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
             return false;
         }
 
+        return matchesStepUpScopes(request, auth, stepUpScopes, tenant);
+    }
+
+    /**
+     * Matches step-up scopes against the scopes the issued token will carry: the requested scopes
+     * (always kept in the token), plus the user's scopes when the request is empty or will be expanded
+     * as an OIDC-only request.
+     */
+    private boolean matchesStepUpScopes(HttpServletRequest request, Authentication auth,
+            Set<String> stepUpScopes, String tenant) {
         Set<String> requestedScopes = extractRequestedScopes(request);
-        if (!requestedScopes.isEmpty()) {
-            boolean match = requestedScopes.stream().anyMatch(stepUpScopes::contains);
+        if (requestedScopes.stream().anyMatch(stepUpScopes::contains)) {
             if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on requested scopes={} vs stepUp={} -> {}",
+                LOGGER.info("[MFA-FILTER] CONDITIONAL step-up matched requested scopes={} vs stepUp={}",
                         requestedScopes.stream().map(InputSanitizer::forLog).collect(Collectors.toSet()),
-                        stepUpScopes, match);
+                        stepUpScopes);
             }
-            return match;
+            return true;
+        }
+        boolean expandedToUserScopes = CommonMethodsUtils.isOidcOnlyScopeRequest(requestedScopes)
+                && isOidcOnlyScopeExpansionEnabled(tenant);
+        if (!requestedScopes.isEmpty() && !expandedToUserScopes) {
+            LOGGER.info("[MFA-FILTER] CONDITIONAL step-up: no requested scope matched stepUp={}", stepUpScopes);
+            return false;
         }
 
         Set<String> userScopes = auth.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .map(MfaChallengeFilter::normalizeScope)
                 .collect(Collectors.toSet());
+        if (expandedToUserScopes) {
+            Optional<Set<String>> tokenEligible = resolveExpansionEligibleScopes(request.getParameter("client_id"));
+            if (tokenEligible.isPresent()) {
+                userScopes.retainAll(tokenEligible.get());
+            }
+        }
         boolean match = userScopes.stream().anyMatch(stepUpScopes::contains);
         LOGGER.info("[MFA-FILTER] CONDITIONAL step-up check on user scopes={} vs stepUp={} -> {}",
                 userScopes, stepUpScopes, match);
         return match;
+    }
+
+    /**
+     * Mirrors token issuance: an OIDC-only request expands only to the client's registered scopes, and not at
+     * all for clients requiring consent. Returns empty when the client cannot be resolved, so the caller falls
+     * back to checking every user scope (the stricter choice).
+     */
+    private Optional<Set<String>> resolveExpansionEligibleScopes(String clientId) {
+        if (registeredClientRepository == null || clientId == null || clientId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            RegisteredClient client = registeredClientRepository.findByClientId(clientId);
+            if (client == null) {
+                return Optional.empty();
+            }
+            return Optional.of(client.getClientSettings().isRequireAuthorizationConsent()
+                    ? Set.of() : client.getScopes());
+        } catch (Exception ex) {
+            LOGGER.warn("[MFA-FILTER] Could not resolve client scopes for step-up check: {}", ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private boolean isOidcOnlyScopeExpansionEnabled(String tenant) {
+        try {
+            TenantProperties props = tenantConfigurationService.getTenantProperties(tenant);
+            return props != null && props.getClient() != null
+                    && Boolean.TRUE.equals(props.getClient().getOidcOnlyScopeExpansionEnabled());
+        } catch (Exception ex) {
+            // Treat as expanded so MFA is evaluated against the broader user scopes
+            LOGGER.warn("[MFA-FILTER] Could not resolve OIDC-only scope expansion for tenant='{}': {}",
+                    tenant, ex.getMessage());
+            return true;
+        }
     }
 
     /**
@@ -428,7 +508,12 @@ public class MfaChallengeFilter extends OncePerRequestFilter {
                 || uri.contains("login")
                 || uri.contains("logout")
                 || uri.contains(".well-known")
-                || uri.contains("oauth2/token")
-                || uri.contains("oauth2/jwks");
+                || CLIENT_AUTHENTICATED_ENDPOINTS.stream().anyMatch(uri::contains);
     }
+
+    // Token-authenticated endpoints: the caller is a client presenting credentials or a token,
+    // not a user completing an interactive login, so MFA must never intercept them.
+    private static final List<String> CLIENT_AUTHENTICATED_ENDPOINTS = List.of(
+            "oauth2/token", "oauth2/revoke", "oauth2/introspect", "oauth2/device_authorization",
+            "connect/register", "userinfo", "oauth2/jwks");
 }

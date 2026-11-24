@@ -42,6 +42,7 @@ import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.token.PublicClientAwareRefreshTokenGenerator;
 import org.eclipse.ecsp.oauth2.server.core.utils.PasswordUtils;
+import org.eclipse.ecsp.oauth2.server.core.utils.RequiredExpiryValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -301,14 +302,14 @@ public class AuthorizationServerConfig {
         jwtProcessor.setJWTClaimsSetVerifier((claims, context) -> { });
 
         NimbusJwtDecoder jwtDecoder = new NimbusJwtDecoder(jwtProcessor);
-        // NimbusJwtDecoder's own default jwtValidator (JwtValidators.createDefault()) includes a
-        // JwtTypeValidator that only accepts typ=JWT or absent, independent of the JWS-level type
-        // verifier configured above. Replace just the type check within that validator chain so
-        // at+jwt access tokens pass, while keeping the other default validators (timestamp, x5t#S256).
+        // Replace the default type check so at+jwt access tokens pass, retaining timestamp and
+        // certificate-binding validation. The additional expiry validator requires exp to exist;
+        // JwtTimestampValidator only checks its value when it is present.
         JwtTypeValidator typeValidator = new JwtTypeValidator(List.of(
                 accessTokenType, accessTokenMediaType, JOSEObjectType.JWT.getType()));
         typeValidator.setAllowEmpty(true);
-        jwtDecoder.setJwtValidator(JwtValidators.createDefaultWithValidators(List.of(typeValidator)));
+        jwtDecoder.setJwtValidator(JwtValidators.createDefaultWithValidators(
+                List.of(typeValidator, new RequiredExpiryValidator())));
 
         return jwtDecoder;
     }

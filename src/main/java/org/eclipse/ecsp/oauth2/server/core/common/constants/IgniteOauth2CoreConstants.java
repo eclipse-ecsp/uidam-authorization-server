@@ -126,6 +126,7 @@ public class IgniteOauth2CoreConstants {
             + "reset password link to your email.";
 
     public static final String INTERNAL_LOGIN_ENABLED = "isInternalLoginEnabled";
+    public static final String DEFAULT_LOGIN_TYPE = "defaultLoginType";
 
     public static final String EXTERNAL_IDP_ENABLED = "isExternalIdpEnabled";
     public static final String IS_IDP_AUTO_REDIRECTION_ENABLED = "isIDPAutoRedirectionEnabled";

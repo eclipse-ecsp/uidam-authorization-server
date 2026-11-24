@@ -49,7 +49,8 @@ public enum CustomOauth2TokenGenErrorCodes {
     ACCOUNT_NOT_FOUND("TG-021", "Account not found or user not associated with account", 403),
     RECORD_ALREADY_EXISTS("TG-017", "Record already exists", 409),
     RESOURCE_NOT_FOUND("TG-018", "Resource not found", 404),
-    BAD_REQUEST("TG-019", "Bad Request", 400);
+    BAD_REQUEST("TG-019", "Bad Request", 400),
+    MISSING_TOKEN_EXPIRY("TG-022", "Token expiration (exp) claim is missing", 401);
 
     private final String code;
     private final String description;
