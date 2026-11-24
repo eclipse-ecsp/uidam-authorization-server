@@ -19,6 +19,7 @@
 package org.eclipse.ecsp.oauth2.server.core.config;
 
 import jakarta.servlet.http.HttpSession;
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.authentication.CustomWebAuthenticationDetailsSource;
 import org.eclipse.ecsp.oauth2.server.core.authentication.converters.PublicClientRefreshTokenAuthenticationConverter;
@@ -78,6 +79,8 @@ import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.UriUtils;
+import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -276,7 +279,8 @@ public class IgniteSecurityConfig {
         // code is issued.  UsernamePasswordAuthenticationFilter is earlier in the chain, so
         // placing the filter before it guarantees it runs before any OAuth2 endpoint filter.
         MfaChallengeFilter mfaChallengeFilter = new MfaChallengeFilter(mfaSecretService,
-                this.tenantConfigurationService, mfaStateService, this.authorizationMetricsService);
+                this.tenantConfigurationService, mfaStateService, this.authorizationMetricsService,
+                registeredClientRepository);
         http.addFilterBefore(mfaChallengeFilter, UsernamePasswordAuthenticationFilter.class);
 
         // This filter ensures only tenant-allowed authentication methods are executed
@@ -601,12 +605,20 @@ public class IgniteSecurityConfig {
                 }
             }
             UriComponentsBuilder builder = UriComponentsBuilder.fromPath(issuerPrefix + "/login");
-            params.forEach(builder::queryParam);
+            // Encode names and values ourselves; build(true) avoids treating '{...}' as URI template variables
+            params.forEach((name, value) -> {
+                String encodedName = UriUtils.encode(name, StandardCharsets.UTF_8);
+                if (StringUtils.isEmpty(value)) {
+                    builder.queryParam(encodedName);
+                } else {
+                    builder.queryParam(encodedName, UriUtils.encode(value, StandardCharsets.UTF_8));
+                }
+            });
             // Optionally, add issuerPrefix as a parameter
             if (!issuerPrefix.isEmpty()) {
-                builder.queryParam(ISSUER_PARAM, issuerPrefix.substring(1));
+                builder.queryParam(ISSUER_PARAM, UriUtils.encode(issuerPrefix.substring(1), StandardCharsets.UTF_8));
             }
-            String redirectUrl = builder.build().toUriString();
+            String redirectUrl = builder.build(true).toUriString();
             response.sendRedirect(redirectUrl);
         };
     }

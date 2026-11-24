@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.ACCOUNT_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_FIELD_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.CAPTCHA_SITE;
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.DEFAULT_LOGIN_TYPE;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.EXTERNAL_IDP_AUTHORIZATION_URI;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.EXTERNAL_IDP_ENABLED;
 import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.EXTERNAL_IDP_LIST;
@@ -104,6 +105,7 @@ public class LoginController {
 
         model.addAttribute(EXTERNAL_IDP_ENABLED, tenantProperties.isExternalIdpEnabled());
         model.addAttribute(INTERNAL_LOGIN_ENABLED, tenantProperties.isInternalLoginEnabled());
+        model.addAttribute(DEFAULT_LOGIN_TYPE, tenantProperties.getDefaultLoginType().name());
         model.addAttribute(IS_IDP_AUTO_REDIRECTION_ENABLED, false);
         model.addAttribute(IS_SIGN_UP_ENABLED, tenantProperties.isSignUpEnabled());
         if (tenantProperties.isExternalIdpEnabled()) {

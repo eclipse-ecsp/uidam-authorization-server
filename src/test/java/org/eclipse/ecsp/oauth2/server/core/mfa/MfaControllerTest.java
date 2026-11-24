@@ -23,12 +23,14 @@ package org.eclipse.ecsp.oauth2.server.core.mfa;
 import org.eclipse.ecsp.audit.enums.AuditEventResult;
 import org.eclipse.ecsp.audit.logger.AuditLogger;
 import org.eclipse.ecsp.oauth2.server.core.audit.enums.AuditEventType;
+import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
 import org.eclipse.ecsp.oauth2.server.core.metrics.MetricType;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodeVerifyResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaBackupCodesResponseDto;
 import org.eclipse.ecsp.oauth2.server.core.response.dto.MfaEnrollInitiateResponseDto;
+import org.eclipse.ecsp.oauth2.server.core.service.DatabaseSecurityContextRepository;
 import org.eclipse.ecsp.oauth2.server.core.service.TenantConfigurationService;
 import org.eclipse.ecsp.oauth2.server.core.utils.TenantUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,12 +39,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
@@ -50,6 +56,7 @@ import org.springframework.ui.ExtendedModelMap;
 import org.springframework.ui.Model;
 
 import java.lang.reflect.Field;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -57,9 +64,11 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -98,6 +107,9 @@ class MfaControllerTest {
     @Mock
     private AuthorizationMetricsService metricsService;
 
+    @Mock
+    private DatabaseSecurityContextRepository databaseSecurityContextRepository;
+
     private MfaProperties mfaProperties;
     private MfaController mfaController;
 
@@ -117,7 +129,8 @@ class MfaControllerTest {
         mfaProperties.setRecovery(recovery);
 
         mfaController = new MfaController(mfaSecretService, totpService, mfaProperties,
-                tenantConfigurationService, mfaStateService, auditLogger, metricsService);
+                tenantConfigurationService, mfaStateService, auditLogger, metricsService,
+                databaseSecurityContextRepository);
         SecurityContextHolder.clearContext();
 
         TenantProperties tenantProperties = new TenantProperties();
@@ -453,6 +466,81 @@ class MfaControllerTest {
 
         // Redirects to root since no saved request
         assertNotNull(view);
+    }
+
+    /**
+     * Verifies the GH-297 fix: once the second (TOTP) factor is actually verified, the
+     * resulting authenticated token must carry a {@code FACTOR_OTT} marker authority -
+     * this is later promoted into a real {@link org.springframework.security.core.authority
+     * .FactorGrantedAuthority} by {@code DatabaseSecurityContextRepository} on the next request,
+     * which is what lets {@code JwtGenerator} compute {@code auth_time} without crashing.
+     */
+    @Test
+    void challengeSubmit_withValidCode_authorityCarriesOttFactorMarker() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(
+                USERNAME, List.of(new SimpleGrantedAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY)));
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+
+        when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+        when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
+
+        Model model = new ExtendedModelMap();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        mfaController.challengeSubmit(TENANT_ID, TOTP_CODE, request, response, model);
+
+        Collection<? extends GrantedAuthority> authorities =
+                SecurityContextHolder.getContext().getAuthentication().getAuthorities();
+        assertTrue(authorities.stream().anyMatch(a -> FactorGrantedAuthority.OTT_AUTHORITY.equals(a.getAuthority())),
+            "completed MFA login must carry a FACTOR_OTT marker authority");
+        assertTrue(authorities.stream()
+                .anyMatch(a -> FactorGrantedAuthority.PASSWORD_AUTHORITY.equals(a.getAuthority())),
+            "FACTOR_PASSWORD marker from the earlier password step must still be carried forward");
+    }
+
+    static Stream<Arguments> completionPaths() {
+        return Stream.of(Arguments.of("challenge"), Arguments.of("backupCodes"));
+    }
+
+    /**
+     * Regression: callers clear the DB pending state before completing login, so the pending
+     * authorities must survive that clear and the completed context must be saved to the
+     * DB-backed repository (sessions are reloaded from there) with the account details intact.
+     */
+    @ParameterizedTest
+    @MethodSource("completionPaths")
+    void completedLogin_keepsPendingAuthoritiesAndSavesContextAfterClear(String path) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        final MockHttpServletResponse response = new MockHttpServletResponse();
+        MfaPendingAuthenticationToken pending = new MfaPendingAuthenticationToken(USERNAME, List.of(
+                new SimpleGrantedAuthority("SelfManage"),
+                new SimpleGrantedAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY)));
+        when(mfaStateService.loadPending(request)).thenReturn(Optional.of(pending));
+        doAnswer(invocation -> {
+            lenient().when(mfaStateService.loadPending(request)).thenReturn(Optional.empty());
+            return null;
+        }).when(mfaStateService).clearPending(request);
+        SecurityContextHolder.getContext().setAuthentication(CustomUserPwdAuthenticationToken.authenticated(
+                USERNAME, null, "acctName", "acct-1", Boolean.TRUE, List.of()));
+
+        if ("challenge".equals(path)) {
+            when(mfaSecretService.getSecret(USERNAME)).thenReturn(Optional.of(BASE32_SECRET));
+            when(totpService.validateCode(USERNAME, BASE32_SECRET, TOTP_CODE)).thenReturn(true);
+            mfaController.challengeSubmit(TENANT_ID, TOTP_CODE, request, response, new ExtendedModelMap());
+        } else {
+            mfaController.backupCodesConfirm(TENANT_ID, request, response, new ExtendedModelMap());
+        }
+
+        ArgumentCaptor<SecurityContext> saved = ArgumentCaptor.forClass(SecurityContext.class);
+        verify(databaseSecurityContextRepository).saveContext(saved.capture(), eq(request), eq(response));
+        CustomUserPwdAuthenticationToken auth =
+                (CustomUserPwdAuthenticationToken) saved.getValue().getAuthentication();
+        assertEquals(java.util.Set.of("SelfManage", FactorGrantedAuthority.PASSWORD_AUTHORITY,
+                FactorGrantedAuthority.OTT_AUTHORITY), auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority).collect(java.util.stream.Collectors.toSet()));
+        assertEquals("acctName", auth.getAccountName());
+        assertEquals("acct-1", auth.getAccountId());
+        assertEquals(Boolean.TRUE, auth.getMfaRequired());
     }
 
     @Test

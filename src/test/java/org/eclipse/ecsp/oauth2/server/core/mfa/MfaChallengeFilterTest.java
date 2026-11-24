@@ -23,6 +23,7 @@ package org.eclipse.ecsp.oauth2.server.core.mfa;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import org.eclipse.ecsp.oauth2.server.core.authentication.tokens.CustomUserPwdAuthenticationToken;
+import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.ClientProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.MfaPolicyProperties;
 import org.eclipse.ecsp.oauth2.server.core.config.tenantproperties.TenantProperties;
 import org.eclipse.ecsp.oauth2.server.core.metrics.AuthorizationMetricsService;
@@ -45,21 +46,28 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -137,6 +145,25 @@ class MfaChallengeFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
+    }
+
+    // ─────────────── MFA_VERIFIED single-use pass-through ──────────────────
+
+    /**
+     * Client-authenticated endpoints must pass through even when the request carries a session
+     * cookie for a user who would otherwise be challenged (REQUIRED mode, not enrolled).
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/sdp/oauth2/revoke", "/oauth2/introspect", "/ecsp/oauth2/token", "/userinfo"})
+    void doFilterInternal_clientAuthenticatedEndpoint_withUserSession_passesThrough(String uri)
+            throws ServletException, IOException {
+        request.setRequestURI(uri);
+        setAuthenticatedUser(USERNAME);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertNull(response.getRedirectedUrl());
     }
 
     // ─────────────── MFA_VERIFIED single-use pass-through ──────────────────
@@ -343,6 +370,80 @@ class MfaChallengeFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain, never()).doFilter(request, response);
+    }
+
+    // ─────────────── Case 2: REQUIRED mode, enrolled user ────────────────────
+
+    @Test
+    void conditionalMode_oidcOnlyRequestWithExpansion_checksUserScopes() throws ServletException, IOException {
+        assertOidcOnlyStepUp(true, true, "ManageUsers", "ManageUsers");
+    }
+
+    @Test
+    void conditionalMode_oidcOnlyRequestWithoutExpansion_checksRequestedScopes()
+            throws ServletException, IOException {
+        assertOidcOnlyStepUp(false, false, "ManageUsers", "ManageUsers");
+    }
+
+    @Test
+    void conditionalMode_oidcOnlyRequestWithExpansion_stillEnforcesStepUpOnRequestedScope()
+            throws ServletException, IOException {
+        // email is requested and kept in the token, even though the user has no matching authority
+        assertOidcOnlyStepUp(true, true, "email", "SelfManage");
+    }
+
+    static Stream<Arguments> clientEligibilityData() {
+        return Stream.of(
+            Arguments.of(Set.of("ManageUsers"), false, true),   // client can receive ManageUsers
+            Arguments.of(Set.of("SelfManage"), false, false),   // ManageUsers can't reach the token
+            Arguments.of(Set.of("ManageUsers"), true, false)    // consent client: no expansion
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("clientEligibilityData")
+    void conditionalMode_oidcOnlyExpansion_onlyChecksScopesTheTokenCanReceive(Set<String> clientScopes,
+            boolean requireConsent, boolean expectMfa) throws ServletException, IOException {
+        RegisteredClientRepository clientRepository = mock(RegisteredClientRepository.class);
+        RegisteredClient client = RegisteredClient.withId("id").clientId("web-portal")
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client/callback")
+                .scopes(s -> s.addAll(clientScopes))
+                .clientSettings(ClientSettings.builder().requireAuthorizationConsent(requireConsent).build())
+                .build();
+        when(clientRepository.findByClientId("web-portal")).thenReturn(client);
+        filter = new MfaChallengeFilter(mfaSecretService, tenantConfigurationService, mfaStateService,
+                metricsService, clientRepository);
+        request.setParameter("client_id", "web-portal");
+
+        assertOidcOnlyStepUp(true, expectMfa, "ManageUsers", "ManageUsers");
+    }
+
+    private void assertOidcOnlyStepUp(boolean expansionEnabled, boolean expectMfa, String stepUpScope,
+            String userScope) throws ServletException, IOException {
+        request.setRequestURI("/oauth2/authorize");
+        request.setParameter("scope", "openid profile email");
+        SecurityContextHolder.getContext().setAuthentication(CustomUserPwdAuthenticationToken.authenticated(
+                USERNAME, "password", "testAccount", List.of(new SimpleGrantedAuthority(userScope))));
+        TenantProperties props = new TenantProperties();
+        ClientProperties client = new ClientProperties();
+        client.setOidcOnlyScopeExpansionEnabled(expansionEnabled);
+        props.setClient(client);
+        MfaPolicyProperties policy = new MfaPolicyProperties();
+        policy.setMode(MfaPolicyProperties.MfaMode.CONDITIONAL);
+        policy.setStepUpScopes(stepUpScope);
+        props.setMfa(policy);
+        when(tenantConfigurationService.getTenantProperties(anyString())).thenReturn(props);
+        lenient().when(mfaSecretService.isEnrolled(USERNAME)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        if (expectMfa) {
+            verify(filterChain, never()).doFilter(request, response);
+            assertNotNull(response.getRedirectedUrl());
+        } else {
+            verify(filterChain).doFilter(request, response);
+        }
     }
 
     // ─────────────── Case 2: REQUIRED mode, enrolled user ────────────────────

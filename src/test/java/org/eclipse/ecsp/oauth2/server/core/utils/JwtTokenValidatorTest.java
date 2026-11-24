@@ -25,6 +25,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import org.eclipse.ecsp.oauth2.server.core.exception.CustomOauth2AuthorizationException;
 import org.eclipse.ecsp.oauth2.server.core.repositories.AuthorizationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,8 +44,10 @@ import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2C
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -155,6 +158,27 @@ class JwtTokenValidatorTest {
         
         // Assert
         assertFalse(result, "Token with invalidated:true in metadata should be rejected");
+    }
+
+    @Test
+    void testIntrospectToken_TokenRevokedViaOauth2RevokeIsRejected() throws Exception {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("scope", "SelfManage");
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        final String token = createValidToken(claims, EXPIRATION_MILLIS, privateKey);
+        org.eclipse.ecsp.oauth2.server.core.entities.Authorization authorization =
+                new org.eclipse.ecsp.oauth2.server.core.entities.Authorization();
+        final int tokenValiditySeconds = 3600;
+        authorization.setAccessTokenExpiresAt(java.time.Instant.now().plusSeconds(tokenValiditySeconds));
+        // Format written by Spring Authorization Server's /oauth2/revoke
+        authorization.setAccessTokenMetadata("{\"@class\":\"java.util.Collections$UnmodifiableMap\","
+                + "\"metadata.token.invalidated\":true}");
+        when(authorizationRepository.findByAccessTokenValue(any()))
+                .thenReturn(java.util.Optional.of(authorization));
+
+        assertFalse(jwtTokenValidator.introspectToken(token, "SelfManage"),
+                "Token revoked via /oauth2/revoke should be rejected");
     }
     
     @Test
@@ -327,7 +351,7 @@ class JwtTokenValidatorTest {
     }
     
     @Test
-    void testIntrospectToken_NullExpiryDate() throws Exception {
+    void testIntrospectToken_NullDatabaseExpiryWithTokenExpiryClaim() throws Exception {
         // Arrange - create valid JWT
         Map<String, Object> claims = new HashMap<>();
         claims.put("scope", "SessionManagement");
@@ -349,7 +373,7 @@ class JwtTokenValidatorTest {
         boolean result = jwtTokenValidator.introspectToken(token, "SessionManagement");
         
         // Assert
-        assertTrue(result, "Token with null expiry should be accepted (no expiry check)");
+        assertTrue(result, "The JWT's own expiry claim should still be enforced by the parser");
     }
     
     @Test
@@ -446,6 +470,46 @@ class JwtTokenValidatorTest {
         assertEquals("testuser", claims.get("username"));
         assertEquals("ManageUsers", claims.get("scope"));
     }
+
+    @Test
+    void testGetClaimsFromToken_RejectsTokenWithoutExpiration() throws Exception {
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        String token = createTokenWithoutExpiration(Map.of("sub", "test-user"), privateKey);
+
+        CustomOauth2AuthorizationException exception = assertThrows(CustomOauth2AuthorizationException.class,
+                () -> jwtTokenValidator.getClaimsFromToken(token));
+        assertEquals("TG-022", exception.getId());
+        assertEquals("Token expiration (exp) claim is missing", exception.getMessage());
+        assertEquals(org.springframework.http.HttpStatus.UNAUTHORIZED.value(), exception.getStatusCode());
+        assertFalse(jwtTokenValidator.validateToken(token));
+        assertFalse(jwtTokenValidator.introspectToken(token, "SessionManagement"));
+        verifyNoInteractions(authorizationRepository);
+    }
+
+    @Test
+    void testGetClaimsFromToken_MalformedTokenRetainsInvalidTokenError() {
+        CustomOauth2AuthorizationException exception = assertThrows(CustomOauth2AuthorizationException.class,
+                () -> jwtTokenValidator.getClaimsFromToken("invalid.token"));
+
+        assertEquals("TG-008", exception.getId());
+        assertEquals("Token is invalid", exception.getMessage());
+        assertEquals(org.springframework.http.HttpStatus.UNAUTHORIZED.value(), exception.getStatusCode());
+    }
+
+    @Test
+    void testGetClaimsFromToken_ExpiredTokenRetainsInvalidTokenError() throws Exception {
+        PrivateKey privateKey = KeyStoreLoader.loadPrivateKey("uidamauthserver.jks",
+                "uidam-dev", "uidam-test-pwd", "uidam-test-pwd");
+        String token = createValidToken(Map.of("sub", "test-user"), -EXPIRATION_MILLIS, privateKey);
+
+        CustomOauth2AuthorizationException exception = assertThrows(CustomOauth2AuthorizationException.class,
+                () -> jwtTokenValidator.getClaimsFromToken(token));
+
+        assertEquals("TG-008", exception.getId());
+        assertEquals("Token is invalid", exception.getMessage());
+        assertEquals(org.springframework.http.HttpStatus.UNAUTHORIZED.value(), exception.getStatusCode());
+    }
     
     @Test
     void testIntrospectToken_MultipleScopes() throws Exception {
@@ -536,6 +600,13 @@ class JwtTokenValidatorTest {
         return Jwts.builder()
                 .setClaims(claims)
                 .setExpiration(new Date(System.currentTimeMillis() + expirationMillis))
+                .signWith(privateKey, SignatureAlgorithm.RS256)
+                .compact();
+    }
+
+    private static String createTokenWithoutExpiration(Map<String, Object> claims, PrivateKey privateKey) {
+        return Jwts.builder()
+                .setClaims(claims)
                 .signWith(privateKey, SignatureAlgorithm.RS256)
                 .compact();
     }

@@ -48,21 +48,28 @@
             You have been logged out.
         </div>
         <section class="login-sso" aria-label="Single sign-on" th:if="${showExternal}">
-            <p class="login-section-label">Sign in with your SSO</p>
+            <details class="login-method" name="login-method"
+                     th:open="${defaultLoginType == 'SSO'}"
+                     th:remove="${isInternalLoginEnabled} ? 'none' : 'tag'">
+            <summary th:if="${isInternalLoginEnabled}">Sign in with SSO</summary>
+            <p class="login-section-label" th:unless="${isInternalLoginEnabled}">Sign in with SSO</p>
             <div class="login-provider-list">
                 <a class="btn btn-light login-provider" th:each="externalIdp: ${externalIdpList}"
                    th:href="@{'/' + ${issuer} + ${externalIdpAuthorizationUri} + ${issuer} + '-' + ${externalIdp.getRegistrationId()}}">
-                    <img th:src="@{'/images/' + ${#strings.toLowerCase(externalIdp.getRegistrationId())} + '.png'}"
-                         width="24" height="24" alt=""/>
                     <span th:text="${externalIdp.getClientName()}"></span>
                     <span class="login-provider-arrow" aria-hidden="true">&#8594;</span>
                 </a>
             </div>
+            </details>
         </section>
         <div class="login-divider" th:if="${showExternal and isInternalLoginEnabled == true}">
-            <span>or sign in with your username</span>
+            <span>or</span>
         </div>
         <div th:if="true == ${isInternalLoginEnabled}">
+            <details class="login-method" name="login-method"
+                     th:open="${defaultLoginType != 'SSO'}"
+                     th:remove="${showExternal} ? 'none' : 'tag'">
+            <summary th:if="${showExternal}">Sign in with username and password</summary>
             <form  class="login-form" th:action="@{/login}" method="post">
                 <div class="container-auth-input">
                     <label for="username">Username <span class="login-required" aria-hidden="true">*</span></label>
@@ -124,6 +131,7 @@
                 <input type="hidden" name="issuer" th:value="${issuer}" />
                 <input type="hidden" name="tenantId" th:value="${issuer}" />
             </form>
+            </details>
         </div>
 
         <div th:if="false == ${isInternalLoginEnabled} and true == ${isExternalIdpEnabled} and true == ${isIDPAutoRedirectionEnabled}
@@ -140,6 +148,12 @@
 
     <script th:inline="javascript">
         $(document).ready(function() {
+
+            $('details[name="login-method"]').on('toggle', function() {
+                if (this.open) {
+                    $('details[name="login-method"]').not(this).prop('open', false);
+                }
+            });
 
             $('#toggleAccountName').on('click', function() {
                 var expanded = $(this).attr('aria-expanded') !== 'true';

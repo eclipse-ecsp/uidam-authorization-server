@@ -274,20 +274,7 @@ public class SessionManagementServiceImpl implements SessionManagementService {
      * @return true if invalidated
      */
     private boolean isInvalidated(Authorization authorization) {
-        String metadata = authorization.getAccessTokenMetadata();
-        if (metadata == null || metadata.isEmpty()) {
-            return false;
-        }
-        
-        try {
-            JsonNode metadataNode = objectMapper.readTree(metadata);
-            JsonNode invalidatedNode = metadataNode.get(INVALIDATED_KEY);
-            return invalidatedNode != null && invalidatedNode.asBoolean(false);
-        } catch (JsonProcessingException e) {
-            LOGGER.warn("Error parsing access token metadata for token {}: {}", 
-                    authorization.getId(), e.getMessage());
-            return false;
-        }
+        return JwtTokenValidator.isAccessTokenInvalidated(authorization.getAccessTokenMetadata());
     }
     
     /**

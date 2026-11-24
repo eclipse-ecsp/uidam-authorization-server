@@ -120,7 +120,18 @@ public class TenantProperties {
     private String externalIdpClientName;
     
     private boolean internalLoginEnabled = true;
+    private LoginType defaultLoginType = LoginType.INTERNAL;
     private boolean signUpEnabled;
+
+    /**
+     * Initially expanded login section when both authentication methods are available.
+     */
+    public enum LoginType {
+        /** Username and password login. */
+        INTERNAL,
+        /** External identity provider login. */
+        SSO
+    }
 
     /** MFA issuer/app name displayed in authenticator apps. Default: UIDAM. Overridable per tenant. */
     private String mfaAppName = "UIDAM";

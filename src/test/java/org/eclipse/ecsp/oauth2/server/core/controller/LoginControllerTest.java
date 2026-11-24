@@ -40,6 +40,7 @@ import org.springframework.web.servlet.View;
 import java.util.Collections;
 import java.util.Map;
 
+import static org.eclipse.ecsp.oauth2.server.core.common.constants.IgniteOauth2CoreConstants.DEFAULT_LOGIN_TYPE;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
@@ -140,6 +141,7 @@ class LoginControllerTest {
             .perform(get("/ecsp/login"))
             .andExpect(status().isOk())
             .andExpect(view().name("login"))
+            .andExpect(model().attribute(DEFAULT_LOGIN_TYPE, "INTERNAL"))
             .andExpect(model().attributeExists("isAccountFieldEnabled"))
             .andExpect(model().attributeExists("isCaptchaFieldEnabled"))
             .andExpect(model().attributeExists("captchaSite"))
@@ -147,6 +149,20 @@ class LoginControllerTest {
             .andExpect(model().attributeExists("isInternalLoginEnabled"))
             .andExpect(model().attributeExists("isIDPAutoRedirectionEnabled"))
             .andExpect(model().attributeExists("isSignUpEnabled"));
+    }
+
+    @Test
+    void shouldUseCurrentTenantDefaultLoginType() throws Exception {
+        TenantProperties tenant = createMockTenantProperties();
+        tenant.setExternalIdpEnabled(true);
+        tenant.setDefaultLoginType(TenantProperties.LoginType.SSO);
+        when(tenantConfigurationService.getTenantProperties()).thenReturn(tenant);
+
+        mockMvc.perform(get("/ecsp/login"))
+            .andExpect(status().isOk())
+            .andExpect(model().attribute(DEFAULT_LOGIN_TYPE, "SSO"))
+            .andExpect(model().attribute("isInternalLoginEnabled", true))
+            .andExpect(model().attribute("isExternalIdpEnabled", true));
     }
 
     /**
